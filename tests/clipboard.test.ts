@@ -33,15 +33,11 @@ vi.mock("../src/utils/logger", () => ({
 	logError: vi.fn(),
 }));
 
-vi.mock("node:fs", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("node:fs")>();
-	return {
-		...actual,
-		appendFileSync: vi.fn(),
-		existsSync: vi.fn(() => true),
-		mkdirSync: vi.fn(),
-	};
-});
+vi.mock("node:fs", () => ({
+	appendFileSync: vi.fn(),
+	existsSync: vi.fn(() => true),
+	mkdirSync: vi.fn(),
+}));
 
 vi.mock("node:child_process", () => ({
 	exec: vi.fn(),
@@ -57,36 +53,15 @@ describe("ClipboardManager", () => {
 		manager = new ClipboardManager();
 	});
 
-	it("should append text to existing content", async () => {
-		(clipboardy.read as any).mockReturnValue("old");
+	it("should write text as new clipboard entry", async () => {
 		(clipboardy.write as any).mockResolvedValue(undefined);
 
 		await manager.append("new");
 
-		expect(clipboardy.write).toHaveBeenCalledWith("old\nnew");
-	});
-
-	it("should write directly if clipboard is empty", async () => {
-		(clipboardy.read as any).mockReturnValue("");
-		(clipboardy.write as any).mockResolvedValue(undefined);
-
-		await manager.append("new");
-
-		expect(clipboardy.write).toHaveBeenCalledWith("new");
-	});
-
-	it("should write directly if append is disabled", async () => {
-		vi.mocked(loadConfig).mockReturnValueOnce({
-			behavior: { clipboard: { append: false } },
-		} as any);
-
-		(clipboardy.read as any).mockReturnValue("old");
-		await manager.append("new");
 		expect(clipboardy.write).toHaveBeenCalledWith("new");
 	});
 
 	it("should fallback to file if clipboard write fails and throw ClipboardAccessError", async () => {
-		(clipboardy.read as any).mockReturnValue("old");
 		(clipboardy.write as any).mockRejectedValue(new Error("clipboard fail"));
 
 		await expect(manager.append("new")).rejects.toThrow(
@@ -105,28 +80,13 @@ describe("ClipboardManager", () => {
 			const mockStdin = { write: vi.fn(), end: vi.fn() };
 			const mockChild = new EventEmitter();
 			(mockChild as any).stdin = mockStdin;
-			vi.mocked(spawn).mockReturnValue(mockChild as any);
+			(spawn as any).mockReturnValue(mockChild as any);
 			setTimeout(() => mockChild.emit("close", 0), 10);
 			return { mockChild, mockStdin };
 		};
 
-		it("should use wl-paste to read clipboard on Wayland", async () => {
-			vi.mocked(exec).mockImplementation(((_cmd: string, cb: any) => {
-				cb(null, { stdout: "wayland content" });
-			}) as any);
-
-			mockSpawnSuccess();
-
-			await manager.append("new");
-
-			expect(exec).toHaveBeenCalledWith(
-				expect.stringContaining("wl-paste"),
-				expect.any(Function),
-			);
-		});
-
 		it("should use wl-copy to write clipboard on Wayland", async () => {
-			const { mockStdin, mockChild } = mockSpawnSuccess();
+			const { mockStdin } = mockSpawnSuccess();
 
 			const promise = manager.append("new");
 			await promise;
@@ -137,18 +97,6 @@ describe("ClipboardManager", () => {
 				expect.any(Object),
 			);
 			expect(mockStdin.write).toHaveBeenCalled();
-		});
-
-		it("should fallback to clipboardy if wl-paste fails", async () => {
-			vi.mocked(exec).mockImplementation(((_cmd: string, cb: any) => {
-				cb(new Error("wl-paste missing"), null);
-			}) as any);
-
-			mockSpawnSuccess();
-			(clipboardy.read as any).mockReturnValue("clipboardy content");
-
-			await manager.append("new");
-			expect(clipboardy.read).toHaveBeenCalled();
 		});
 	});
 });

@@ -34,38 +34,15 @@ export class ClipboardManager {
 	}
 
 	public async append(text: string): Promise<void> {
-		const config = loadConfig();
-		const shouldAppend = config.behavior.clipboard.append;
-
 		try {
-			let currentContent = "";
-
-			try {
-				currentContent = await this.read();
-			} catch (_e) {
-				logger.warn(
-					"Failed to read clipboard, proceeding with overwrite/first entry",
-				);
-			}
-
-			const newContent =
-				shouldAppend && currentContent ? `${currentContent}\n${text}` : text;
-
-			try {
-				await this.write(newContent);
-				logger.info("Clipboard updated successfully");
-			} catch (error) {
-				logger.error("Clipboard write failed, falling back to file");
-				this.saveToFallbackFile(text);
-				throw new ClipboardAccessError("Failed to write to clipboard", {
-					error,
-				});
-			}
+			await this.write(text);
+			logger.info("Clipboard updated successfully");
 		} catch (error) {
-			if (!(error instanceof ClipboardAccessError)) {
-				logError("Clipboard operation failed", error);
-			}
-			throw error;
+			logger.error("Clipboard write failed, falling back to file");
+			this.saveToFallbackFile(text);
+			throw new ClipboardAccessError("Failed to write to clipboard", {
+				error,
+			});
 		}
 	}
 
