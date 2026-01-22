@@ -160,6 +160,26 @@ program
   });
 
 program
+  .command("toggle")
+  .description("Toggle recording (start/stop)")
+  .action(() => {
+    if (!existsSync(pidFile)) {
+      console.error(colors.red("Error: Daemon is not running."));
+      console.log(`Start it with: ${colors.cyan("voice-cli start")}`);
+      process.exit(1);
+    }
+
+    try {
+      const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+      process.kill(pid, "SIGUSR1");
+      console.log(`${colors.green("✅")} Toggle signal sent to daemon (${colors.dim("PID: " + pid)})`);
+    } catch (error) {
+      console.error(colors.red("Failed to send toggle signal:"), error);
+      process.exit(1);
+    }
+  });
+
+program
   .command("install")
   .description("Install systemd service")
   .action(() => {

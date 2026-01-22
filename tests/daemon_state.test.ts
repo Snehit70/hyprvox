@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, vi } from "vitest";
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const EventEmitter = require("node:events").EventEmitter;
@@ -131,6 +131,10 @@ describe("DaemonService State Management", () => {
     mocks.recorderInstance.removeAllListeners();
     mocks.hotkeyListenerInstance.removeAllListeners();
     service = new DaemonService();
+  });
+
+  afterEach(() => {
+    service.stop();
   });
 
   test("Initial state should be idle", () => {
