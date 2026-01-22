@@ -227,10 +227,10 @@ interface DaemonState {
 - [x] Install Deepgram SDK
 - [x] Implement Deepgram API client with authentication
 - [x] Implement audio upload to Deepgram (Nova-3)
-- [ ] Add boost words support (custom vocabulary)
-- [ ] Implement retry logic (max 2 attempts, short backoff)
-- [ ] Add timeout handling (fail fast)
-- [ ] Add error handling for invalid API key
+- [x] Add boost words support (custom vocabulary)
+- [x] Implement retry logic (max 2 attempts, short backoff)
+- [x] Add timeout handling (fail fast)
+- [x] Add error handling for invalid API key
 - [ ] Add error handling for API timeout
 - [ ] Add error handling for rate limits
 

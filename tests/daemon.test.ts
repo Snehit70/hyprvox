@@ -23,16 +23,13 @@ mock.module("../src/daemon/hotkey", () => ({
   }
 }));
 
-mock.module("../src/transcribe/groq", () => ({
-  GroqClient: class {
-    transcribe() { return Promise.resolve("Groq text"); }
-  }
+mock.module("groq-sdk", () => ({
+  default: class { audio = { transcriptions: { create: mock() } } }
 }));
 
-mock.module("../src/transcribe/deepgram", () => ({
-  DeepgramTranscriber: class {
-    transcribe() { return Promise.resolve("Deepgram text"); }
-  }
+
+mock.module("@deepgram/sdk", () => ({
+  createClient: () => ({ listen: { prerecorded: { transcribeFile: mock() } } })
 }));
 
 mock.module("../src/transcribe/merger", () => ({
@@ -54,9 +51,11 @@ mock.module("../src/output/notification", () => ({
 mock.module("../src/config/loader", () => ({
   loadConfig: () => ({
     transcription: { language: "en", boostWords: [] },
-    behavior: { audioDevice: "default" }
+    behavior: { audioDevice: "default" },
+    apiKeys: { groq: "mock", deepgram: "mock" }
   })
 }));
+
 
 mock.module("../src/audio/converter", () => ({
   convertAudio: (buf: Buffer) => Promise.resolve(buf)
@@ -77,6 +76,8 @@ mock.module("node:os", () => ({
 
 const { DaemonService } = await import("../src/daemon/service");
 import { logger } from "../src/utils/logger";
+import { GroqClient } from "../src/transcribe/groq";
+import { DeepgramTranscriber } from "../src/transcribe/deepgram";
 
 describe("DaemonService State Management", () => {
   let service: any;
@@ -90,6 +91,9 @@ describe("DaemonService State Management", () => {
     spyOn(logger, "info").mockImplementation(() => {});
     spyOn(logger, "warn").mockImplementation(() => {});
     spyOn(logger, "error").mockImplementation(() => {});
+
+    spyOn(GroqClient.prototype, "transcribe").mockResolvedValue("Groq text");
+    spyOn(DeepgramTranscriber.prototype, "transcribe").mockResolvedValue("Deepgram text");
 
     service = new DaemonService();
   });
