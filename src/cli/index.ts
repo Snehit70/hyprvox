@@ -129,16 +129,66 @@ program
   .command("install")
   .description("Install systemd service")
   .action(() => {
-    const installScript = join(process.cwd(), "scripts", "install.sh");
-    
-    if (!existsSync(installScript)) {
-      console.error(`Installation script not found at: ${installScript}`);
-      process.exit(1);
-    }
-
     try {
-      console.log("Running installation script...");
-      execSync(`bash ${installScript}`, { stdio: "inherit" });
+      const serviceName = "voice-cli";
+      const serviceDir = join(homedir(), ".config", "systemd", "user");
+      const servicePath = join(serviceDir, `${serviceName}.service`);
+      const workingDir = process.cwd();
+      const bunPath = process.argv[0];
+      const entryPoint = join(workingDir, "index.ts");
+      const userId = process.getuid?.() ?? 1000;
+
+      if (!existsSync(serviceDir)) {
+        mkdirSync(serviceDir, { recursive: true });
+      }
+
+      console.log(`Installing systemd service for ${serviceName}...`);
+
+      const serviceContent = `[Unit]
+Description=Voice CLI Daemon
+After=network.target sound.target
+
+[Service]
+Type=simple
+WorkingDirectory=${workingDir}
+ExecStart=${bunPath} run ${entryPoint} start --no-supervisor
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=3
+Environment=PATH=${process.env.PATH}
+Environment=DISPLAY=${process.env.DISPLAY || ""}
+Environment=XAUTHORITY=${process.env.XAUTHORITY || ""}
+Environment=WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY || ""}
+Environment=XDG_RUNTIME_DIR=/run/user/${userId}
+
+[Install]
+WantedBy=default.target
+`;
+
+      writeFileSync(servicePath, serviceContent);
+      console.log("Service file created.");
+
+      console.log("Reloading systemd daemon...");
+      execSync("systemctl --user daemon-reload");
+
+      console.log(`Enabling ${serviceName} service...`);
+      execSync(`systemctl --user enable ${serviceName}`);
+
+      console.log(`Starting ${serviceName} service...`);
+      execSync(`systemctl --user start ${serviceName}`);
+
+      console.log("------------------------------------------------");
+      console.log("Installation complete!");
+      try {
+        const isActive = execSync(`systemctl --user is-active ${serviceName}`).toString().trim();
+        console.log(`Status: ${isActive}`);
+      } catch (e) {
+        console.log("Status: inactive (but installed)");
+      }
+      console.log(`Use 'systemctl --user status ${serviceName}' to check details.`);
+      console.log(`Use 'journalctl --user -u ${serviceName} -f' to see logs.`);
+      console.log("------------------------------------------------");
     } catch (error) {
       console.error("Installation failed:", (error as Error).message);
       process.exit(1);
@@ -149,14 +199,27 @@ program
   .command("uninstall")
   .description("Remove systemd service")
   .action(() => {
-    const servicePath = join(homedir(), ".config", "systemd", "user", "voice-cli.service");
+    const serviceName = "voice-cli";
+    const serviceDir = join(homedir(), ".config", "systemd", "user");
+    const servicePath = join(serviceDir, `${serviceName}.service`);
+
     if (existsSync(servicePath)) {
-      console.log("Stopping and disabling service...");
+      console.log(`Stopping and disabling ${serviceName} service...`);
       try {
-        execSync("systemctl --user stop voice-cli", { stdio: "ignore" });
-        execSync("systemctl --user disable voice-cli", { stdio: "ignore" });
+        try {
+          execSync(`systemctl --user stop ${serviceName}`, { stdio: "ignore" });
+        } catch (e) {}
+        
+        try {
+          execSync(`systemctl --user disable ${serviceName}`, { stdio: "ignore" });
+        } catch (e) {}
+
         unlinkSync(servicePath);
-        execSync("systemctl --user daemon-reload", { stdio: "ignore" });
+        
+        try {
+          execSync("systemctl --user daemon-reload", { stdio: "ignore" });
+        } catch (e) {}
+        
         console.log("Service removed successfully.");
       } catch (error) {
         console.error("Failed to remove service:", (error as Error).message);

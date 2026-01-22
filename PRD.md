@@ -292,12 +292,12 @@ interface DaemonState {
 
 ### Phase 13: systemd Integration (Priority: High)
 - [x] Create systemd service file (`voice-cli.service`)
-- [ ] Add installation script for systemd service
-- [ ] Implement `voice-cli install` command (install systemd service)
-- [ ] Implement `voice-cli uninstall` command (remove systemd service)
-- [ ] Add systemd service enable on install
-- [ ] Add systemd service start on system boot
-- [ ] Document systemd setup instructions in README
+- [x] Add installation script for systemd service
+- [x] Implement `voice-cli install` command (install systemd service)
+- [x] Implement `voice-cli uninstall` command (remove systemd service)
+- [x] Add systemd service enable on install
+- [x] Add systemd service start on system boot
+- [x] Document systemd setup instructions in README
 - [ ] Add troubleshooting section for systemd issues
 - [ ] Document tested distributions (Ubuntu, Fedora, Arch) in README
 
