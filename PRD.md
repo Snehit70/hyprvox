@@ -424,8 +424,8 @@ interface DaemonState {
 - [x] Run full test suite (unit + integration)
 - [x] Verify clipboard APPEND mode (critical test)
 - [x] Verify daemon auto-restart (crash recovery)
-- [ ] Verify all error messages are user-friendly
-- [ ] Document platform compatibility matrix in README (Wayland/X11, tested distros)
+- [x] Verify all error messages are user-friendly
+- [x] Document platform compatibility matrix in README (Wayland/X11, tested distros)
 - [x] Add platform-specific troubleshooting guide
 - [x] Document known issues and workarounds for different environments
 - [ ] Fix any remaining bugs

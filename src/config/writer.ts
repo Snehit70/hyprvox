@@ -29,8 +29,11 @@ export const saveConfig = (config: ConfigFile, path: string = DEFAULT_CONFIG_FIL
   if (!existsSync(dir)) {
     try {
       mkdirSync(dir, { recursive: true, mode: 0o700 });
-    } catch (error) {
-      throw new AppError("WRITE_FAILED", formatUserError(ErrorTemplates.CONFIG.WRITE_FAILED), { originalError: error });
+    } catch (error: any) {
+      throw new AppError("WRITE_FAILED", formatUserError(ErrorTemplates.CONFIG.WRITE_FAILED), { 
+        originalError: error,
+        message: error?.message || String(error)
+      });
     }
   }
   
@@ -38,7 +41,10 @@ export const saveConfig = (config: ConfigFile, path: string = DEFAULT_CONFIG_FIL
     writeFileSync(resolvedPath, JSON.stringify(dataToWrite, null, 2));
     
     chmodSync(resolvedPath, 0o600);
-  } catch (error) {
-    throw new AppError("WRITE_FAILED", formatUserError(ErrorTemplates.CONFIG.WRITE_FAILED), { originalError: error });
+  } catch (error: any) {
+    throw new AppError("WRITE_FAILED", formatUserError(ErrorTemplates.CONFIG.WRITE_FAILED), { 
+      originalError: error,
+      message: error?.message || String(error)
+    });
   }
 };

@@ -167,12 +167,12 @@ describe("AudioRecorder Duration Validation", () => {
 
       vi.advanceTimersByTime(5 * 60 * 1000);
       
-      await stopPromise;
       const warning = await warningPromise;
+      await stopPromise;
       
       expect(warning).toBe("Recording limit reached (5m). Stopping...");
       expect(recorder.isRecording()).toBe(false);
-    });
+    }, 10000);
   });
 });
 

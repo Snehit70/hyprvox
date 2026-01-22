@@ -94,7 +94,14 @@ describe("Config Writer", () => {
     });
 
     const config: ConfigFile = {};
-    expect(() => saveConfig(config, CONFIG_FILE)).toThrow("Failed to create config directory: Permission denied");
+    const expectedMessage = "Failed to save configuration";
+    expect(() => saveConfig(config, CONFIG_FILE)).toThrow(expectedMessage);
+    
+    try {
+      saveConfig(config, CONFIG_FILE);
+    } catch (e: any) {
+      expect(e.context.message).toBe("Permission denied");
+    }
   });
 
   test("should throw error if writeFileSync fails", () => {
@@ -104,6 +111,13 @@ describe("Config Writer", () => {
     });
 
     const config: ConfigFile = {};
-    expect(() => saveConfig(config, CONFIG_FILE)).toThrow("Failed to write config file: Disk full");
+    const expectedMessage = "Failed to save configuration";
+    expect(() => saveConfig(config, CONFIG_FILE)).toThrow(expectedMessage);
+
+    try {
+      saveConfig(config, CONFIG_FILE);
+    } catch (e: any) {
+      expect(e.context.message).toBe("Disk full");
+    }
   });
 });

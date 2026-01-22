@@ -140,7 +140,7 @@ export class AudioRecorder extends EventEmitter {
 
       if (this.isSilent(audioBuffer)) {
         logger.warn("Silent audio detected");
-        this.emit("error", new AppError("SILENT_AUDIO", "No audio detected"));
+        this.emit("warning", "No audio detected");
       }
     }
 
