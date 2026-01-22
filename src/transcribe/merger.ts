@@ -1,6 +1,7 @@
 import Groq from "groq-sdk";
 import { loadConfig } from "../config/loader";
 import { logError } from "../utils/logger";
+import { withRetry } from "../utils/retry";
 
 export class TranscriptMerger {
   private client: Groq;
@@ -20,11 +21,12 @@ export class TranscriptMerger {
     if (groqText === deepgramText) return deepgramText;
 
     try {
-      const completion = await this.client.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: `You are an expert editor. I will provide two transcripts of the same audio.
+      const completion = await withRetry(async () => {
+        return await this.client.chat.completions.create({
+          messages: [
+            {
+              role: "system",
+              content: `You are an expert editor. I will provide two transcripts of the same audio.
 Transcript 1 (Groq Whisper): Accurate words, technical terms.
 Transcript 2 (Deepgram Nova): Good formatting, punctuation, casing.
 
@@ -34,19 +36,25 @@ Rules:
 2. Trust Transcript 2 for punctuation, casing, and number formatting.
 3. Remove any hallucinations (repeated phrases, non-speech, silence).
 4. Output ONLY the final merged text. Do not add any preamble or quotes.`,
-          },
-          {
-            role: "user",
-            content: `Transcript 1:
+            },
+            {
+              role: "user",
+              content: `Transcript 1:
 ${groqText}
 
 Transcript 2:
 ${deepgramText}`,
-          },
-        ],
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.1,
-        max_tokens: 4096,
+            },
+          ],
+          model: "llama-3.3-70b-versatile",
+          temperature: 0.1,
+          max_tokens: 4096,
+        });
+      }, {
+        operationName: "LLM Merge",
+        maxRetries: 2,
+        backoffs: [100, 200],
+        timeout: 30000
       });
 
       const merged = completion.choices[0]?.message?.content?.trim();

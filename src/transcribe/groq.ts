@@ -1,4 +1,5 @@
 import Groq from "groq-sdk";
+import { withRetry } from "../utils/retry";
 import { writeFileSync, unlinkSync, createReadStream } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -16,25 +17,32 @@ export class GroqClient {
     });
   }
 
+
   public async transcribe(audioBuffer: Buffer, language: string = "en", boostWords: string[] = []): Promise<string> {
     const tempFile = join(tmpdir(), `voice-cli-${randomUUID()}.wav`);
     
     try {
       writeFileSync(tempFile, audioBuffer);
+      
+      return await withRetry(async () => {
+        const stream = createReadStream(tempFile);
+        const prompt = boostWords.length > 0 ? `Keywords: ${boostWords.join(", ")}` : undefined;
 
-      const stream = createReadStream(tempFile);
+        const completion = await this.client.audio.transcriptions.create({
+          file: stream,
+          model: "whisper-large-v3",
+          language: language,
+          prompt: prompt,
+          response_format: "json",
+        });
 
-      const prompt = boostWords.length > 0 ? `Keywords: ${boostWords.join(", ")}` : undefined;
-
-      const completion = await this.client.audio.transcriptions.create({
-        file: stream,
-        model: "whisper-large-v3",
-        language: language,
-        prompt: prompt,
-        response_format: "json",
+        return completion.text.trim();
+      }, {
+        operationName: "Groq Transcription",
+        maxRetries: 2,
+        backoffs: [100, 200],
+        timeout: 30000
       });
-
-      return completion.text.trim();
     } catch (error) {
       logError("Groq transcription failed", error);
       throw error;
