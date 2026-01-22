@@ -208,25 +208,25 @@ interface DaemonState {
 - [x] Add hotkey configuration from config file
 - [x] Document Wayland compatibility requirements in README
 - [x] Document X11 compatibility requirements in README
-- [ ] Add error handling for hotkey registration failure
-- [ ] Add hotkey conflict detection (if key already in use)
+- [x] Add error handling for hotkey registration failure
+- [x] Add hotkey conflict detection (if key already in use)
 
 ### Phase 5: STT Integration - Groq (Priority: Critical)
-- [ ] Install Groq SDK
-- [ ] Implement Groq API client with authentication
-- [ ] Implement audio upload to Groq (Whisper Large V3)
-- [ ] Add boost words support (custom vocabulary)
-- [ ] Add language detection (English-only validation)
-- [ ] Implement retry logic (max 2 attempts, short backoff)
-- [ ] Add timeout handling (fail fast)
-- [ ] Add error handling for invalid API key
-- [ ] Add error handling for API timeout
-- [ ] Add error handling for rate limits
+- [x] Install Groq SDK
+- [x] Implement Groq API client with authentication
+- [x] Implement audio upload to Groq (Whisper Large V3)
+- [x] Add boost words support (custom vocabulary)
+- [x] Add language detection (English-only validation)
+- [x] Implement retry logic (max 2 attempts, short backoff)
+- [x] Add timeout handling (fail fast)
+- [x] Add error handling for invalid API key
+- [x] Add error handling for API timeout
+- [x] Add error handling for rate limits
 
 ### Phase 6: STT Integration - Deepgram (Priority: Critical)
-- [ ] Install Deepgram SDK
-- [ ] Implement Deepgram API client with authentication
-- [ ] Implement audio upload to Deepgram (Nova-3)
+- [x] Install Deepgram SDK
+- [x] Implement Deepgram API client with authentication
+- [x] Implement audio upload to Deepgram (Nova-3)
 - [ ] Add boost words support (custom vocabulary)
 - [ ] Implement retry logic (max 2 attempts, short backoff)
 - [ ] Add timeout handling (fail fast)
@@ -432,7 +432,7 @@ interface DaemonState {
 
 ### API Keys
 - Groq API key: Must start with `gsk_` (format validation)
-- Deepgram API key: Must be valid UUID format (format validation)
+- Deepgram API key: Must be valid 40-character hex string (format validation)
 - Both keys required before daemon can start
 
 ### Boost Words

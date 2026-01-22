@@ -26,13 +26,13 @@ mock.module("@deepgram/sdk", () => ({
 mock.module("../../src/config/loader", () => ({
   loadConfig: () => ({
     apiKeys: {
-      deepgram: "12345678-1234-1234-1234-1234567890ab"
+      deepgram: "4b5c1234567890abcdef1234567890abcdef12"
     }
   })
 }));
 
 mock.module("../../src/utils/logger", () => ({
-  logger: { info: () => {}, error: () => {}, warn: () => {} },
+  logger: { info: () => {}, error: () => {}, warn: () => {}, debug: () => {} },
   logError: () => {}
 }));
 

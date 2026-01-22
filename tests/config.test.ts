@@ -24,7 +24,7 @@ describe("Config Loader", () => {
     const configData = {
       apiKeys: {
         groq: "gsk_1234567890",
-        deepgram: "12345678-1234-1234-1234-1234567890ab",
+        deepgram: "4b5c1234567890abcdef1234567890abcdef12",
       },
     };
     writeFileSync(CONFIG_FILE, JSON.stringify(configData));
@@ -32,7 +32,7 @@ describe("Config Loader", () => {
 
     const config = loadConfig(CONFIG_FILE);
     expect(config.apiKeys.groq).toBe("gsk_1234567890");
-    expect(config.apiKeys.deepgram).toBe("12345678-1234-1234-1234-1234567890ab");
+    expect(config.apiKeys.deepgram).toBe("4b5c1234567890abcdef1234567890abcdef12");
   });
 
   test("should fallback to env vars if keys missing in file", () => {
@@ -40,11 +40,11 @@ describe("Config Loader", () => {
     chmodSync(CONFIG_FILE, 0o600);
 
     process.env.GROQ_API_KEY = "gsk_env_key_12345";
-    process.env.DEEPGRAM_API_KEY = "11111111-2222-3333-4444-555555555555";
+    process.env.DEEPGRAM_API_KEY = "4b5c1234567890abcdef1234567890abcdef12";
 
     const config = loadConfig(CONFIG_FILE);
     expect(config.apiKeys.groq).toBe("gsk_env_key_12345");
-    expect(config.apiKeys.deepgram).toBe("11111111-2222-3333-4444-555555555555");
+    expect(config.apiKeys.deepgram).toBe("4b5c1234567890abcdef1234567890abcdef12");
   });
 
   test("should throw error if keys are missing in both file and env", () => {
@@ -62,7 +62,7 @@ describe("Config Loader", () => {
     const configData = {
       apiKeys: {
         groq: "invalid_key",
-        deepgram: "12345678-1234-1234-1234-1234567890ab",
+        deepgram: "4b5c1234567890abcdef1234567890abcdef12",
       },
     };
     writeFileSync(CONFIG_FILE, JSON.stringify(configData));
@@ -75,20 +75,20 @@ describe("Config Loader", () => {
     const configData = {
       apiKeys: {
         groq: "gsk_1234567890",
-        deepgram: "invalid-uuid",
+        deepgram: "short",
       },
     };
     writeFileSync(CONFIG_FILE, JSON.stringify(configData));
     chmodSync(CONFIG_FILE, 0o600);
 
-    expect(() => loadConfig(CONFIG_FILE)).toThrow("Deepgram API key must be a valid UUID");
+    expect(() => loadConfig(CONFIG_FILE)).toThrow("Deepgram API key is too short");
   });
 
   test("should validate valid boost words", () => {
     const configData = {
       apiKeys: {
         groq: "gsk_1234567890",
-        deepgram: "12345678-1234-1234-1234-1234567890ab",
+        deepgram: "4b5c1234567890abcdef1234567890abcdef12",
       },
       transcription: {
         boostWords: ["React", "TypeScript", "Artificial Intelligence"],
@@ -109,7 +109,7 @@ describe("Config Loader", () => {
     const configData = {
       apiKeys: {
         groq: "gsk_1234567890",
-        deepgram: "12345678-1234-1234-1234-1234567890ab",
+        deepgram: "4b5c1234567890abcdef1234567890abcdef12",
       },
       transcription: {
         boostWords: manyWords,
@@ -126,7 +126,7 @@ describe("Config Loader", () => {
      const configData = {
       apiKeys: {
         groq: "gsk_1234567890",
-        deepgram: "12345678-1234-1234-1234-1234567890ab",
+        deepgram: "4b5c1234567890abcdef1234567890abcdef12",
       },
     };
     writeFileSync(CONFIG_FILE, JSON.stringify(configData));
@@ -158,7 +158,7 @@ describe("Config Loader", () => {
       const configData = {
         apiKeys: {
           groq: "gsk_1234567890",
-          deepgram: "12345678-1234-1234-1234-1234567890ab",
+          deepgram: "4b5c1234567890abcdef1234567890abcdef12",
         },
         behavior: {
           hotkey: hotkey,
@@ -187,7 +187,7 @@ describe("Config Loader", () => {
       const configData = {
         apiKeys: {
           groq: "gsk_1234567890",
-          deepgram: "12345678-1234-1234-1234-1234567890ab",
+          deepgram: "4b5c1234567890abcdef1234567890abcdef12",
         },
         behavior: {
           hotkey: hotkey,
