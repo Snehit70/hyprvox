@@ -60,6 +60,14 @@ export const ErrorTemplates = {
       message: "No microphone detected or could not be opened.",
       action: "1. Check if your microphone is physically connected.\n2. Ensure your user is in the 'audio' group: 'sudo usermod -aG audio $USER'.\n3. Verify the correct device is selected in ~/.config/voice-cli/config.json.\n4. Check if another application is using the microphone (e.g., 'Device busy').\n5. Run 'arecord -l' to list available hardware devices."
     },
+    PERMISSION_DENIED: {
+      message: "Microphone permission denied.",
+      action: "1. Ensure your user is in the 'audio' and 'input' groups: 'sudo usermod -aG audio,input $USER'.\n2. Log out and back in for group changes to take effect.\n3. Check if your desktop environment (GNOME/KDE/Hyprland) is blocking microphone access in Privacy settings."
+    },
+    DEVICE_BUSY: {
+      message: "Microphone is busy or already in use.",
+      action: "1. Close other applications that might be using the microphone (e.g., Discord, Zoom, Browser).\n2. Run 'fuser /dev/snd/*' to see which processes are using audio devices.\n3. Try restarting the audio service: 'systemctl --user restart pipewire' or 'pulseaudio -k'."
+    },
     SILENT_AUDIO: {
       message: "No audio detected in the recording.",
       action: "Check your microphone settings and ensure the correct input device is selected."

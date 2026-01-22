@@ -127,6 +127,12 @@ export class DaemonService {
       if ((err as any).code === "NO_MICROPHONE") {
         title = "Microphone Error";
         message = formatUserError(ErrorTemplates.AUDIO.NO_MICROPHONE);
+      } else if ((err as any).code === "PERMISSION_DENIED") {
+        title = "Microphone Error";
+        message = formatUserError(ErrorTemplates.AUDIO.PERMISSION_DENIED);
+      } else if ((err as any).code === "DEVICE_BUSY") {
+        title = "Microphone Error";
+        message = formatUserError(ErrorTemplates.AUDIO.DEVICE_BUSY);
       } else if (message.toLowerCase().includes("permission denied") || message.toLowerCase().includes("microphone")) {
         title = "Microphone Error";
       }
