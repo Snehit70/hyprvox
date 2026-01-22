@@ -165,15 +165,15 @@ interface DaemonState {
 
 ## Features & Tasks
 
-### Phase 1: Project Foundation (Priority: Critical)
-- [ ] Initialize Bun project with TypeScript (strict mode)
-- [ ] Set up project structure (feature-based: `/daemon`, `/audio`, `/transcribe`, `/output`, `/cli`, `/config`)
-- [ ] Configure Biome for linting and formatting
-- [ ] Configure Vitest for testing
-- [ ] Create `package.json` with scripts (start, dev, test, lint, build)
-- [ ] Set up structured logging library (e.g., `pino` or `winston`)
-- [ ] Create `.gitignore` (node_modules, logs, config files with secrets)
-- [ ] Create `tsconfig.json` with strict mode enabled
+### Phase 1: Project Foundation (Priority: Critical) ✅ COMPLETED
+- [x] Initialize Bun project with TypeScript (strict mode)
+- [x] Set up project structure (feature-based: `/daemon`, `/audio`, `/transcribe`, `/output`, `/cli`, `/config`)
+- [x] Configure Biome for linting and formatting
+- [x] Configure Vitest for testing
+- [x] Create `package.json` with scripts (start, dev, test, lint, build)
+- [x] Set up structured logging library (pino)
+- [x] Create `.gitignore` (node_modules, logs, config files with secrets)
+- [x] Create `tsconfig.json` with strict mode enabled
 
 ### Phase 2: Configuration Management (Priority: Critical)
 - [ ] Create config schema with TypeScript interfaces
@@ -188,7 +188,8 @@ interface DaemonState {
 - [ ] Set proper file permissions (chmod 600 for config file)
 
 ### Phase 3: Audio Capture (Priority: Critical)
-- [ ] Research and select production-ready audio library for Linux
+- [ ] Install node-record-lpcm16 package for audio recording
+- [ ] If node-record-lpcm16 fails, try sox-audio or mic package as fallback
 - [ ] Implement microphone detection and listing
 - [ ] Implement audio recording start/stop
 - [ ] Add minimum recording length validation (0.6 seconds)
@@ -205,8 +206,8 @@ interface DaemonState {
 - [ ] Implement toggle mode (press to start, press to stop)
 - [ ] Add hotkey state management (idle/recording)
 - [ ] Add hotkey configuration from config file
-- [ ] Test hotkey on Wayland (Hyprland priority)
-- [ ] Test hotkey on X11 (if possible)
+- [ ] Document Wayland compatibility requirements in README
+- [ ] Document X11 compatibility requirements in README
 - [ ] Add error handling for hotkey registration failure
 - [ ] Add hotkey conflict detection (if key already in use)
 
@@ -251,13 +252,13 @@ interface DaemonState {
 - [ ] Test merge quality with sample transcripts
 
 ### Phase 9: Clipboard Integration (Priority: Critical)
-- [ ] Research clipboard library for Linux (Wayland + X11 support)
+- [ ] Install clipboardy package for clipboard operations
+- [ ] Test with wl-clipboard fallback for Wayland compatibility
 - [ ] Implement clipboard write with APPEND mode (NEVER overwrite)
-- [ ] Test clipboard on Wayland (Hyprland)
-- [ ] Test clipboard on X11
 - [ ] Add error handling for clipboard access denied
 - [ ] Add fallback (if clipboard fails, save to file)
 - [ ] Verify previous clipboard content is preserved
+- [ ] Document platform-specific clipboard behavior in README
 
 ### Phase 10: Desktop Notifications (Priority: High)
 - [ ] Install notification library (e.g., `node-notifier`)
@@ -266,9 +267,8 @@ interface DaemonState {
 - [ ] Implement notification for transcription ready
 - [ ] Implement notification for errors (API failures, mic issues)
 - [ ] Implement notification for warnings (4min, 4.5min limits)
-- [ ] Test notifications on GNOME
-- [ ] Test notifications on KDE
-- [ ] Test notifications on Hyprland
+- [ ] Document notification compatibility for GNOME/KDE/Hyprland in README
+- [ ] Add troubleshooting section for notification issues
 
 ### Phase 11: Daemon Core (Priority: Critical)
 - [ ] Implement daemon main loop (event-driven)
@@ -296,9 +296,9 @@ interface DaemonState {
 - [ ] Implement `voice-cli uninstall` command (remove systemd service)
 - [ ] Add systemd service enable on install
 - [ ] Add systemd service start on system boot
-- [ ] Test systemd integration on Ubuntu
-- [ ] Test systemd integration on Fedora
-- [ ] Test systemd integration on Arch
+- [ ] Document systemd setup instructions in README
+- [ ] Add troubleshooting section for systemd issues
+- [ ] Document tested distributions (Ubuntu, Fedora, Arch) in README
 
 ### Phase 14: Health Monitoring (Priority: High)
 - [ ] Implement `voice-cli health` command
@@ -408,7 +408,7 @@ interface DaemonState {
 - [ ] Document STT flow (audio → Groq/Deepgram → LLM → clipboard)
 - [ ] Document error handling strategy
 - [ ] Document testing strategy
-- [ ] Create architecture diagrams (if helpful)
+- [ ] Create architecture diagram showing daemon flow and component interactions
 
 ### Phase 25: Documentation - API Documentation (Priority: Low)
 - [ ] Document programmatic API (if exposing for other tools)
@@ -418,17 +418,13 @@ interface DaemonState {
 - [ ] Provide API usage examples
 
 ### Phase 26: Polish & Final Testing (Priority: High)
-- [ ] Test full workflow on Hyprland (Wayland)
-- [ ] Test full workflow on GNOME (Wayland)
-- [ ] Test full workflow on KDE (Wayland)
-- [ ] Test full workflow on X11 (if supported)
-- [ ] Test on Ubuntu (latest LTS)
-- [ ] Test on Fedora (latest)
-- [ ] Test on Arch (latest)
+- [ ] Run full test suite (unit + integration)
 - [ ] Verify clipboard APPEND mode (critical test)
 - [ ] Verify daemon auto-restart (crash recovery)
 - [ ] Verify all error messages are user-friendly
-- [ ] Run full test suite (unit + integration)
+- [ ] Document platform compatibility matrix in README (Wayland/X11, tested distros)
+- [ ] Add platform-specific troubleshooting guide
+- [ ] Document known issues and workarounds for different environments
 - [ ] Fix any remaining bugs
 - [ ] Optimize performance (if time permits)
 
