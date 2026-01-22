@@ -1,0 +1,63 @@
+{
+  "apiKeys": {
+    // Groq API Key (Whisper Large V3)
+    // Obtain from: https://console.groq.com/keys
+    // Validation: Must start with 'gsk_'
+    "groq": "gsk_enter_your_groq_api_key_here",
+
+    // Deepgram API Key (Nova-3)
+    // Obtain from: https://console.deepgram.com/
+    // Validation: 40-character hex string or valid UUID
+    "deepgram": "00000000-0000-0000-0000-000000000000"
+  },
+  "behavior": {
+    // Global hotkey to trigger recording. Case-insensitive.
+    // Examples: "Right Control", "Ctrl+Space", "Alt+Shift+V", "F10"
+    "hotkey": "Right Control",
+
+    // If true, press hotkey once to start, again to stop.
+    // If false, recording stops automatically at maxDuration.
+    "toggleMode": true,
+
+    // Enable desktop notifications for recording status and errors.
+    "notifications": true,
+
+    "clipboard": {
+      // If true, appends transcript to current clipboard content.
+      // If false, replaces current clipboard content.
+      "append": true,
+
+      // Minimum recording duration in seconds. Recordings shorter than this are rejected.
+      "minDuration": 0.6,
+
+      // Maximum recording duration in seconds (5 minutes limit).
+      "maxDuration": 300
+    },
+
+    // Optional: Specify a custom ALSA audio device (e.g., "hw:0,0" or "default").
+    // Run 'bun run index.ts list-mics' to see available devices.
+    "audioDevice": "default"
+  },
+  "paths": {
+    // Directory for structured JSON logs. Supports '~' expansion.
+    "logs": "~/.config/voice-cli/logs/",
+
+    // Path to transcription history file. Supports '~' expansion.
+    "history": "~/.config/voice-cli/history.json"
+  },
+  "transcription": {
+    // Language code for transcription. Currently only 'en' is officially supported.
+    "language": "en",
+
+    // Custom vocabulary to improve accuracy for jargon, names, or acronyms.
+    // Limit: Total word count across all entries must not exceed 450 words.
+    "boostWords": [
+      "voice-cli",
+      "Sisyphus",
+      "Groq",
+      "Deepgram",
+      "Wayland",
+      "Hyprland"
+    ]
+  }
+}

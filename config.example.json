@@ -11,13 +11,22 @@
       "append": true,
       "minDuration": 0.6,
       "maxDuration": 300
-    }
+    },
+    "audioDevice": "default"
   },
   "paths": {
-    "logs": "~/.config/voice-cli/logs/"
+    "logs": "~/.config/voice-cli/logs/",
+    "history": "~/.config/voice-cli/history.json"
   },
   "transcription": {
     "language": "en",
-    "boostWords": []
+    "boostWords": [
+      "voice-cli",
+      "Sisyphus",
+      "Groq",
+      "Deepgram",
+      "Wayland",
+      "Hyprland"
+    ]
   }
 }
