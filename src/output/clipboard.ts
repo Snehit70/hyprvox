@@ -1,10 +1,8 @@
-import { exec, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import clipboardy from "clipboardy";
-import { loadConfig } from "../config/loader";
 import { AppError } from "../utils/errors";
 import { logError, logger } from "../utils/logger";
 
@@ -14,8 +12,6 @@ export class ClipboardAccessError extends AppError {
 		this.name = "ClipboardAccessError";
 	}
 }
-
-const execAsync = promisify(exec);
 
 export class ClipboardManager {
 	private isWayland: boolean;
@@ -55,20 +51,6 @@ export class ClipboardManager {
 		} catch (e) {
 			logError("Failed to save to fallback file", e);
 		}
-	}
-
-	private async read(): Promise<string> {
-		if (this.isWayland) {
-			try {
-				const { stdout } = await execAsync(
-					"wl-paste --no-newline --type text/plain",
-				);
-				return stdout;
-			} catch (_e) {
-				return clipboardy.read();
-			}
-		}
-		return clipboardy.read();
 	}
 
 	private async write(text: string): Promise<void> {
