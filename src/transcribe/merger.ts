@@ -61,7 +61,7 @@ ${deepgramText}`,
         timeout: 30000,
         shouldRetry: (error: any) => {
           const status = error?.status;
-          return status !== 401 && status !== 429;
+          return status !== 401;
         }
       });
 
@@ -69,7 +69,7 @@ ${deepgramText}`,
       return merged || deepgramText;
     } catch (error: any) {
       if (error?.status === 429) {
-        logError("LLM merge skipped (Rate Limit)", error);
+        logError("LLM merge skipped (Rate Limit exceeded after retries)", error);
       } else if (error?.message?.includes("timed out")) {
         logError("LLM merge skipped (Timeout)", error);
       } else {

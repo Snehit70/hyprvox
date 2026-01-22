@@ -222,8 +222,8 @@ interface DaemonState {
 - [x] Add error handling for invalid API key
 - [x] Add error handling for API timeout
 - [x] Add error handling for rate limits
-
-### Phase 6: STT Integration - Deepgram (Priority: Critical)
+ 
+ ### Phase 6: STT Integration - Deepgram (Priority: Critical)
 - [x] Install Deepgram SDK
 - [x] Implement Deepgram API client with authentication
 - [x] Implement audio upload to Deepgram (Nova-3)
@@ -231,10 +231,10 @@ interface DaemonState {
 - [x] Implement retry logic (max 2 attempts, short backoff)
 - [x] Add timeout handling (fail fast)
 - [x] Add error handling for invalid API key
-- [ ] Add error handling for API timeout
-- [ ] Add error handling for rate limits
-
-### Phase 7: Dual STT Orchestration (Priority: Critical)
+- [x] Add error handling for API timeout
+- [x] Add error handling for rate limits
+ 
+ ### Phase 7: Dual STT Orchestration (Priority: Critical)
 - [ ] Implement parallel execution (Promise.all for Groq + Deepgram)
 - [ ] Add fallback logic (if one fails, use the other)
 - [ ] Add error handling for both APIs failing

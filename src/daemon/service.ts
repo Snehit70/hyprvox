@@ -130,29 +130,23 @@ export class DaemonService {
       const groqText = groqResult.status === "fulfilled" ? groqResult.value : "";
       const deepgramText = deepgramResult.status === "fulfilled" ? deepgramResult.value : "";
 
-      if (groqResult.status === "rejected") {
-        const err = groqResult.reason;
-        if (err?.message === "Groq: Invalid API Key") {
-          notify("Configuration Error", "Invalid Groq API Key. Check config.", "error");
-        } else if (err?.message === "Groq: Rate limit exceeded") {
-          notify("Rate Limit", "Groq rate limit exceeded.", "error");
+      const handleTranscriptionError = (err: any, failedService: string) => {
+        if (err?.message?.includes("Invalid API Key")) {
+          notify("Configuration Error", `Invalid ${failedService} API Key. Check config.`, "error");
+        } else if (err?.message?.includes("Rate limit exceeded")) {
+          notify("Rate Limit", err.message, "error");
         } else if (err?.message?.includes("timed out")) {
-          logError("Groq API timed out", err);
+          logError(`${failedService} API timed out`, err);
         } else {
-          logError("Groq failed", err);
+          logError(`${failedService} failed`, err);
         }
+      };
+
+      if (groqResult.status === "rejected") {
+        handleTranscriptionError(groqResult.reason, "Groq");
       }
       if (deepgramResult.status === "rejected") {
-        const err = deepgramResult.reason;
-        if (err?.message === "Deepgram: Invalid API Key") {
-          notify("Configuration Error", "Invalid Deepgram API Key. Check config.", "error");
-        } else if (err?.message === "Deepgram: Rate limit exceeded") {
-          notify("Rate Limit", "Deepgram rate limit exceeded.", "error");
-        } else if (err?.message?.includes("timed out")) {
-          logError("Deepgram API timed out", err);
-        } else {
-          logError("Deepgram failed", err);
-        }
+        handleTranscriptionError(deepgramResult.reason, "Deepgram");
       }
 
       if (!groqText && !deepgramText) {

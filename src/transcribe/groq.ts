@@ -48,7 +48,7 @@ export class GroqClient {
         timeout: 30000,
         shouldRetry: (error: any) => {
           const status = error?.status;
-          return status !== 401 && status !== 429;
+          return status !== 401;
         }
       });
     } catch (error: any) {
@@ -56,7 +56,7 @@ export class GroqClient {
         throw new Error("Groq: Invalid API Key");
       }
       if (error?.status === 429) {
-        throw new Error("Groq: Rate limit exceeded");
+        throw new Error("Groq: Rate limit exceeded. Please wait a moment before trying again.");
       }
       if (error?.message?.includes("timed out")) {
         throw new Error("Groq: Request timed out");

@@ -44,7 +44,7 @@ export class DeepgramTranscriber {
         timeout: 30000,
         shouldRetry: (error: any) => {
           const status = error?.status || (error?.message?.includes("401") ? 401 : undefined) || (error?.message?.includes("429") ? 429 : undefined);
-          return status !== 401 && status !== 429;
+          return status !== 401;
         }
       });
     } catch (error: any) {
@@ -52,7 +52,7 @@ export class DeepgramTranscriber {
         throw new Error("Deepgram: Invalid API Key");
       }
       if (error?.status === 429 || error?.message?.includes("429")) {
-        throw new Error("Deepgram: Rate limit exceeded");
+        throw new Error("Deepgram: Rate limit exceeded. Please wait a moment before trying again.");
       }
       logError("Deepgram Nova-3 failed, trying fallback", error);
       
@@ -85,7 +85,7 @@ export class DeepgramTranscriber {
           timeout: 30000,
           shouldRetry: (error: any) => {
             const status = error?.status || (error?.message?.includes("401") ? 401 : undefined) || (error?.message?.includes("429") ? 429 : undefined);
-            return status !== 401 && status !== 429;
+            return status !== 401;
           }
         });
       } catch (retryError: any) {
@@ -93,7 +93,7 @@ export class DeepgramTranscriber {
           throw new Error("Deepgram: Invalid API Key");
         }
         if (retryError?.status === 429 || retryError?.message?.includes("429")) {
-          throw new Error("Deepgram: Rate limit exceeded");
+          throw new Error("Deepgram: Rate limit exceeded. Please wait a moment before trying again.");
         }
         if (retryError?.message?.includes("timed out")) {
           throw new Error("Deepgram: Request timed out");
