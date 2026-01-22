@@ -34,7 +34,7 @@ configCommand
       const deepgramKey = readlineSync.question("\nEnter Deepgram API Key (UUID): ", {
         hideEchoBack: true,
         mask: "*",
-        validate: (input: string) => /^[a-fA-F0-9-]+$/.test(input) && input.length >= 32 || colors.red("Invalid format: Deepgram API key must be a valid UUID or 40-char hex string")
+        validate: (input: string) => /^[a-fA-F0-9-]+$/.test(input) && input.length >= 32 && input.length <= 40 || colors.red("Invalid format: Deepgram API key must be a valid UUID or 40-char hex string")
       });
 
       console.log("");

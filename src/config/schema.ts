@@ -102,7 +102,8 @@ export const ApiKeysSchema = z.object({
   deepgram: z
     .string()
     .min(32, { message: "Deepgram API key is too short" })
-    .regex(/^[a-fA-F0-9-]+$/, { message: "Deepgram API key must be a valid format (UUID or 40-char hex)" }),
+    .max(40, { message: "Deepgram API key is too long" })
+    .regex(/^[a-fA-F0-9-]+$/, { message: "Deepgram API key must be a valid format (UUID or 40-char hex string)" }),
 });
 
 export const BehaviorSchema = z.object({

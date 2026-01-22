@@ -329,11 +329,11 @@ interface DaemonState {
 - [x] Log all errors with stack traces
 - [x] Log daemon lifecycle events (start, stop, restart, crash)
 - [x] Add log level configuration (debug, info, warn, error)
-- [ ] Implement `voice-cli logs` command (tail recent logs)
+- [x] Implement `voice-cli logs` command (tail recent logs)
 
 ### Phase 17: CLI Interactive Setup (Priority: Medium)
-- [ ] Implement `voice-cli config` command
-- [ ] Create interactive prompts for API keys (Groq, Deepgram)
+- [x] Implement `voice-cli config` command
+- [x] Create interactive prompts for API keys (Groq, Deepgram)
 - [ ] Add API key validation (format check)
 - [ ] Create interactive hotkey selection
 - [ ] Add hotkey validation (valid key combinations)

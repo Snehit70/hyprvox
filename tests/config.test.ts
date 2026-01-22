@@ -84,6 +84,19 @@ describe("Config Loader", () => {
     expect(() => loadConfig(CONFIG_FILE)).toThrow("Deepgram API key is too short");
   });
 
+  test("should reject too long Deepgram API key", () => {
+    const configData = {
+      apiKeys: {
+        groq: "gsk_1234567890",
+        deepgram: "a".repeat(41),
+      },
+    };
+    writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+    chmodSync(CONFIG_FILE, 0o600);
+
+    expect(() => loadConfig(CONFIG_FILE)).toThrow("Deepgram API key is too long");
+  });
+
   test("should validate valid boost words", () => {
     const configData = {
       apiKeys: {
