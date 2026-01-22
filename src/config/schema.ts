@@ -4,7 +4,7 @@ import { z } from "zod";
  * Custom validator for boost words count.
  * Ensures the total number of words across all entries does not exceed 450.
  */
-const boostWordsValidator = (words: string[] | undefined) => {
+export const boostWordsValidator = (words: string[] | undefined) => {
   if (!words) return true;
   const totalWords = words.reduce((count, entry) => {
     return count + entry.trim().split(/\s+/).filter((w) => w.length > 0).length;
