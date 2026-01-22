@@ -10,6 +10,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "node-record-lpcm16": "^1.0.1",
     "zod": "^4.3.5"
   }
 }
