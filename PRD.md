@@ -417,7 +417,7 @@ interface DaemonState {
 - [x] Document programmatic API (if exposing for other tools)
 - [x] Document CLI commands (all available commands)
 - [x] Document command options and flags
-- [ ] Document exit codes (for scripting)
+- [x] Document exit codes (for scripting)
 - [ ] Provide API usage examples
 
 ### Phase 26: Polish & Final Testing (Priority: High)

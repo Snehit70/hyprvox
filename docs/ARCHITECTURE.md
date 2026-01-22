@@ -90,8 +90,36 @@ For details on using these modules programmatically, see the [Programmatic API R
 - **Safety**: Never overwrites clipboard content; always appends to history.
 - **Structured Error Responses**: All internal errors are mapped to user-friendly templates in `src/utils/error-templates.ts`.
 
-## Testing Strategy
-- **Unit Testing**: Vitest is used for testing individual modules (config, conversion, merging).
-- **Integration Testing**: End-to-end tests for transcription APIs (using mock and real buffers) and daemon lifecycle.
-- **Coverage**: Aiming for 80%+ coverage with a focus on error recovery paths.
-- **Mocking**: External APIs are mocked in unit tests, while integration tests use a mix of mocks and controlled live requests.
+## Contributor Guide
+
+### Development Environment
+- **Runtime**: [Bun](https://bun.sh) is the required runtime and package manager.
+- **Language**: TypeScript (strict mode enabled).
+- **Audio Logic**: Uses `node-record-lpcm16` which wraps `arecord`.
+- **Keyboard Logic**: Uses `node-global-key-listener`.
+
+### Getting Started
+1. Clone the repository: `git clone https://github.com/snehit/voice-cli.git`
+2. Install dependencies: `bun install`
+3. Run in development mode: `bun run index.ts start`
+
+### Testing
+We use [Vitest](https://vitest.dev/) for testing.
+- **Run all tests**: `bun test`
+- **Run with coverage**: `bun test --coverage`
+- **Unit tests**: Located in `tests/` directory, mirroring the `src/` structure.
+- **Integration tests**: Located in `tests/integration/`.
+
+### Code Style
+- Follow the existing functional programming patterns where appropriate.
+- Use `async/await` for all asynchronous operations.
+- Ensure all new features are accompanied by tests.
+- Add JSDoc comments for complex logic.
+
+### Error Handling
+- All new functions should have comprehensive error handling.
+- Use `src/utils/error-templates.ts` for user-facing error messages.
+- Log errors using the structured `logger` from `src/utils/logger.ts`.
+
+## Data Flow Diagram
+For a detailed visualization of how audio moves through the system, refer to [STT Flow Details](STT_FLOW.md).

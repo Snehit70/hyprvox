@@ -108,35 +108,52 @@ Located in `src/daemon/service.ts`. The central orchestrator that manages the en
 
 ## Example Usage
 
-### Simple Transcription Script
+Detailed examples are available in the [scripts/examples/](../scripts/examples/) directory.
 
+### Simple Transcription
 ```typescript
-import { AudioRecorder } from "./src/audio/recorder";
 import { GroqClient } from "./src/transcribe/groq";
+import { readFileSync } from "node:fs";
 
-const recorder = new AudioRecorder();
 const groq = new GroqClient();
-
-console.log("Press Enter to start recording...");
-// ... handle input ...
-
-await recorder.start();
-
-// After some time...
-const buffer = await recorder.stop();
-if (buffer) {
-  const text = await groq.transcribe(buffer);
-  console.log("Transcription:", text);
-}
+const buffer = readFileSync("audio.wav");
+const text = await groq.transcribe(buffer);
+console.log(text);
 ```
 
-### Listing Microphones
+### Parallel Transcription with Merging
+This is the recommended way to use the API for maximum accuracy.
 
 ```typescript
-import { AudioDeviceService } from "./src/audio/device-service";
+import { GroqClient } from "./src/transcribe/groq";
+import { DeepgramTranscriber } from "./src/transcribe/deepgram";
+import { TranscriptMerger } from "./src/transcribe/merger";
 
-const deviceService = new AudioDeviceService();
-const devices = await deviceService.listDevices();
+const groq = new GroqClient();
+const deepgram = new DeepgramTranscriber();
+const merger = new TranscriptMerger();
 
-devices.forEach(d => console.log(`${d.id}: ${d.description}`));
+const buffer = Buffer.from(...); // Your audio buffer
+
+const [groqText, deepgramText] = await Promise.all([
+  groq.transcribe(buffer),
+  deepgram.transcribe(buffer)
+]);
+
+const finalResult = await merger.merge(groqText, deepgramText);
+```
+
+### Full Event-Driven Recording
+```typescript
+import { AudioRecorder } from "./src/audio/recorder";
+
+const recorder = new AudioRecorder();
+
+recorder.on("start", () => console.log("Recording..."));
+recorder.on("warning", (msg) => console.warn(msg));
+recorder.on("error", (err) => console.error(err));
+
+await recorder.start();
+// ... wait ...
+const audioBuffer = await recorder.stop();
 ```

@@ -105,4 +105,13 @@ A unique feature of `voice-cli` is that it never overwrites your clipboard. It a
 2. Copy the URL.
 3. Your clipboard now has both, ready to paste.
 
-*Note: The tool is designed to help you build up text naturally.*
+---
+
+## 7. Programmatic API Examples
+
+If you are a developer looking to integrate `voice-cli` core logic into your own tools, check out the dedicated [API Examples Reference](API.md#example-usage) and the runnable scripts in `scripts/examples/`:
+
+- `simple-transcription.ts`: Basic Groq transcription.
+- `parallel-transcription.ts`: Parallel Groq + Deepgram.
+- `full-workflow.ts`: Recorder + Parallel + Merge.
+- `list-microphones.ts`: Device discovery.
