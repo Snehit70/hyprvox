@@ -42,6 +42,13 @@ export class AudioRecorder extends EventEmitter {
         device: config.behavior.audioDevice,
       });
 
+      let stderrOutput = "";
+      if (this.recording.process && this.recording.process.stderr) {
+        this.recording.process.stderr.on("data", (chunk: Buffer) => {
+          stderrOutput += chunk.toString();
+        });
+      }
+
       const stream = this.recording.stream();
 
       stream.on("data", (chunk: Buffer) => {
@@ -49,8 +56,21 @@ export class AudioRecorder extends EventEmitter {
       });
 
       stream.on("error", (err: unknown) => {
-        logError("Audio stream error", err);
-        this.emit("error", err);
+        let errorMessage = err instanceof Error ? err.message : String(err);
+        
+        if (stderrOutput) {
+          if (stderrOutput.includes("Permission denied") || stderrOutput.includes("audio open error")) {
+            errorMessage = "Microphone permission denied. Please check your system settings and ensure your user is in the 'audio' group.";
+          } else if (stderrOutput.includes("Device or resource busy")) {
+            errorMessage = "Microphone is busy. Another application might be using it.";
+          } else {
+            errorMessage = `${errorMessage}. Details: ${stderrOutput.trim()}`;
+          }
+        }
+
+        const enhancedError = new Error(errorMessage);
+        logError("Audio stream error", enhancedError);
+        this.emit("error", enhancedError);
         this.stop(true);
       });
 

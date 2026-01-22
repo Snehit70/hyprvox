@@ -55,7 +55,15 @@ export class DaemonService {
 
     this.recorder.on("error", (err: Error) => {
       this.status = "error";
-      notify("Error", err.message, "error");
+      
+      let title = "Error";
+      const message = err.message;
+
+      if (message.toLowerCase().includes("permission denied") || message.toLowerCase().includes("microphone")) {
+        title = "Microphone Error";
+      }
+
+      notify(title, message, "error");
       this.status = "idle";
     });
   }
