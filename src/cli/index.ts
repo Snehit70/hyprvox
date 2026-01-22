@@ -5,6 +5,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadConfig } from "../config/loader";
+import { boostCommand } from "./boost";
 
 const program = new Command();
 const pidFile = join(homedir(), ".config", "voice-cli", "daemon.pid");
@@ -98,6 +99,8 @@ program
   .action(() => {
     console.log("Configuration wizard not implemented yet. Please edit ~/.config/voice-cli/config.json directly.");
   });
+
+program.addCommand(boostCommand);
 
 program
   .command("health")
