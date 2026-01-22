@@ -106,7 +106,7 @@ Controls the core functionality and user interaction of the daemon.
 | `hotkey` | String | `"Right Control"` | Global hotkey to trigger recording. | Supports `Modifier+Key` format. |
 | `toggleMode` | Boolean | `true` | If `true`, press once to start and again to stop. If `false`, recording duration is fixed. | N/A |
 | `notifications` | Boolean | `true` | Enable/disable desktop notifications for recording status. | N/A |
-| `audioDevice` | String | Optional | Specify a custom ALSA audio device name (e.g., `"hw:0,0"` or `"default"`). | N/A |
+| `audioDevice` | String | Optional | Specify a custom ALSA audio device name (e.g., `"hw:0,0"`). See **[Audio Device Selection](AUDIO_DEVICES.md)** for details. | N/A |
 
 #### Clipboard Settings (`behavior.clipboard`)
 

@@ -105,6 +105,7 @@ For contributing guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 ### Essential Commands
 - `bun run index.ts status`: Check if the daemon is running and see stats.
 - `bun run index.ts health`: Verify API keys and microphone setup.
+- `bun run index.ts list-mics`: List available audio input devices.
 - `bun run index.ts history list`: View recent transcriptions.
 - `bun run index.ts config bind`: Change the global hotkey.
 
@@ -225,7 +226,7 @@ For a comprehensive list of errors and solutions, see the **[Troubleshooting Gui
 | Issue | Resolution |
 |-------|------------|
 | **Hotkey not working** | Ensure user is in `input` group: `sudo usermod -aG input $USER` (re-login required). |
-| **No audio recorded** | Ensure user is in `audio` group and check `arecord -l`. |
+| **No audio recorded** | Ensure user is in `audio` group. See [Audio Device Selection](docs/AUDIO_DEVICES.md). |
 | **API Errors** | Verify API keys in `config.json` (Groq starts with `gsk_`, Deepgram is a UUID). |
 | **Clipboard fail** | Install `wl-clipboard` (Wayland) or `xclip` (X11). |
 | **Service fails** | Check logs: `journalctl --user -u voice-cli -f`. |

@@ -107,6 +107,13 @@ Verify your configuration, API connectivity, and microphone access:
 bun run index.ts health
 ```
 
+### Microphone Selection
+If you have multiple microphones, you can list them and select the correct one:
+```bash
+bun run index.ts list-mics
+```
+For more information, see the **[Audio Device Selection Guide](AUDIO_DEVICES.md)**.
+
 ### Viewing Logs
 `voice-cli` stores logs in `~/.config/voice-cli/logs/`. You can view them via the CLI:
 ```bash
