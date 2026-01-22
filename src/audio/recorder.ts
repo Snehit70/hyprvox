@@ -161,15 +161,20 @@ export class AudioRecorder extends EventEmitter {
   private isSilent(buffer: Buffer): boolean {
     if (buffer.length === 0) return true;
     
-    let sumSquares = 0;
-    const sampleCount = buffer.length / 2;
+    const int16Array = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 2);
+    const sampleCount = int16Array.length;
     
-    for (let i = 0; i < buffer.length; i += 2) {
-      const sample = buffer.readInt16LE(i);
+    const step = 10;
+    let sumSquares = 0;
+    let countedSamples = 0;
+    
+    for (let i = 0; i < sampleCount; i += step) {
+      const sample = int16Array[i] as number;
       sumSquares += sample * sample;
+      countedSamples++;
     }
     
-    const rms = Math.sqrt(sumSquares / sampleCount);
+    const rms = Math.sqrt(sumSquares / (countedSamples || 1));
     const threshold = 100;
     
     return rms < threshold;

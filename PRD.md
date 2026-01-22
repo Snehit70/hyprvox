@@ -428,7 +428,7 @@ interface DaemonState {
 - [x] Document platform compatibility matrix in README (Wayland/X11, tested distros)
 - [x] Add platform-specific troubleshooting guide
 - [x] Document known issues and workarounds for different environments
-- [ ] Fix any remaining bugs
+- [x] Fix any remaining bugs
 - [ ] Optimize performance (if time permits)
 
 ## Validation Rules

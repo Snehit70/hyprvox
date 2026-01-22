@@ -19,13 +19,19 @@ export const resolvePath = (path: string): string => {
   return resolve(path);
 };
 
+let cachedConfig: Config | null = null;
+
 /**
  * Loads and validates the configuration.
  * Prioritizes config file, falls back to environment variables for API keys.
  * Handles permission checks and path resolution.
  * @throws {AppError} if config is corrupted or validation fails
  */
-export const loadConfig = (configPath: string = DEFAULT_CONFIG_FILE): Config => {
+export const loadConfig = (configPath: string = DEFAULT_CONFIG_FILE, forceReload: boolean = false): Config => {
+  if (cachedConfig && !forceReload && configPath === DEFAULT_CONFIG_FILE) {
+    return cachedConfig;
+  }
+
   let fileConfig: unknown = {};
 
   if (existsSync(configPath)) {
@@ -79,6 +85,10 @@ export const loadConfig = (configPath: string = DEFAULT_CONFIG_FILE): Config => 
   const config = result.data;
   config.paths.logs = resolvePath(config.paths.logs);
   config.paths.history = resolvePath(config.paths.history);
+
+  if (configPath === DEFAULT_CONFIG_FILE) {
+    cachedConfig = config;
+  }
 
   return config;
 };

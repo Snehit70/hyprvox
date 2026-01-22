@@ -1,9 +1,5 @@
 import Groq from "groq-sdk";
 import { withRetry } from "../utils/retry";
-import { writeFileSync, unlinkSync, createReadStream } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
 import { loadConfig } from "../config/loader";
 import { logError, logger } from "../utils/logger";
 import { TranscriptionError } from "../utils/errors";
@@ -43,17 +39,13 @@ export class GroqClient {
 
 
   public async transcribe(audioBuffer: Buffer, language: string = "en", boostWords: string[] = []): Promise<string> {
-    const tempFile = join(tmpdir(), `voice-cli-${randomUUID()}.wav`);
-    
     try {
-      writeFileSync(tempFile, audioBuffer);
-      
       return await withRetry(async (signal) => {
-        const stream = createReadStream(tempFile);
+        const file = new File([audioBuffer], "audio.wav", { type: "audio/wav" });
         const prompt = boostWords.length > 0 ? `Keywords: ${boostWords.join(", ")}` : undefined;
 
         const completion = await this.client.audio.transcriptions.create({
-          file: stream,
+          file: file as any,
           model: "whisper-large-v3",
           language: language,
           prompt: prompt,
@@ -97,12 +89,6 @@ export class GroqClient {
         boostWordsCount: boostWords.length 
       });
       throw error;
-    } finally {
-      try {
-        unlinkSync(tempFile);
-      } catch (e) {
-        
-      }
     }
   }
 }
