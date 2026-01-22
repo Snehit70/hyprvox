@@ -1,17 +1,20 @@
-import { describe, expect, test, beforeEach, afterEach, mock } from "bun:test";
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import { loadConfig } from "../src/config/loader";
-import { writeFileSync, unlinkSync, chmodSync, mkdirSync, rmSync } from "node:fs";
+import { writeFileSync, chmodSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { tmpdir, homedir } from "node:os";
 
 const TEST_DIR = join(tmpdir(), "voice-cli-test-" + Math.random().toString(36).slice(2));
 const CONFIG_FILE = join(TEST_DIR, "config.json");
 
 describe("Config Loader", () => {
   beforeEach(() => {
-    mkdirSync(TEST_DIR, { recursive: true });
+    if (!require("node:fs").existsSync(TEST_DIR)) {
+      mkdirSync(TEST_DIR, { recursive: true });
+    }
     process.env.GROQ_API_KEY = "";
     process.env.DEEPGRAM_API_KEY = "";
+    vi.clearAllMocks();
   });
 
   afterEach(() => {
@@ -32,6 +35,16 @@ describe("Config Loader", () => {
 
     const config = loadConfig(CONFIG_FILE);
     expect(config.apiKeys.groq).toBe("gsk_1234567890");
+    expect(config.apiKeys.deepgram).toBe("4b5c1234-5678-90ab-cdef-1234567890ab");
+  });
+
+  test("should load config when file does not exist (env fallback)", () => {
+    const NON_EXISTENT_FILE = join(TEST_DIR, "non-existent.json");
+    process.env.GROQ_API_KEY = "gsk_env_key";
+    process.env.DEEPGRAM_API_KEY = "4b5c1234-5678-90ab-cdef-1234567890ab";
+
+    const config = loadConfig(NON_EXISTENT_FILE);
+    expect(config.apiKeys.groq).toBe("gsk_env_key");
     expect(config.apiKeys.deepgram).toBe("4b5c1234-5678-90ab-cdef-1234567890ab");
   });
 
@@ -145,16 +158,40 @@ describe("Config Loader", () => {
     writeFileSync(CONFIG_FILE, JSON.stringify(configData));
     chmodSync(CONFIG_FILE, 0o644); // User read/write, Group read, Others read
 
-    const warnSpy = mock(console.warn);
-    const originalWarn = console.warn;
-    console.warn = warnSpy;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     loadConfig(CONFIG_FILE);
 
     expect(warnSpy).toHaveBeenCalled();
     expect(warnSpy.mock.calls[0]?.[0]).toContain("WARNING: Config file permissions");
     
-    console.warn = originalWarn;
+    warnSpy.mockRestore();
+  });
+
+  test("should resolve paths with ~", () => {
+    const configData = {
+      apiKeys: {
+        groq: "gsk_1234567890",
+        deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+      },
+      paths: {
+        logs: "~/logs",
+        history: "~/history.json"
+      }
+    };
+    writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+    chmodSync(CONFIG_FILE, 0o600);
+
+    const config = loadConfig(CONFIG_FILE);
+    expect(config.paths.logs).toBe(join(homedir(), "logs"));
+    expect(config.paths.history).toBe(join(homedir(), "history.json"));
+  });
+
+  test("should throw error if config file is corrupted", () => {
+    writeFileSync(CONFIG_FILE, "invalid json {");
+    chmodSync(CONFIG_FILE, 0o600);
+
+    expect(() => loadConfig(CONFIG_FILE)).toThrow("Configuration file is corrupted");
   });
 
   test("should validate valid hotkeys", () => {
