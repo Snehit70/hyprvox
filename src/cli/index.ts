@@ -35,7 +35,9 @@ program
         const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
         try {
           process.kill(pid, 0); 
-          console.error(`Daemon is already running (PID: ${pid})`);
+          console.error(colors.red(`Error: Daemon is already running (PID: ${pid})`));
+          console.log(`To stop the daemon, run: ${colors.cyan("voice-cli stop")}`);
+          console.log(`Or if using systemd: ${colors.cyan("systemctl --user stop voice-cli")}`);
           process.exit(1);
         } catch (e) {
         }
