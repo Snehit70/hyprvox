@@ -223,17 +223,30 @@ For more details on formatting, token limits, and case sensitivity, see the **[C
 
 ## Linux Compatibility
 
+### Platform Compatibility Matrix
+
+| Feature | Wayland (Hyprland/GNOME/KDE) | X11 (GNOME/KDE/XFCE) | Required Packages / Notes |
+| :--- | :--- | :--- | :--- |
+| **Global Hotkey** | ⚠️ Partial (via XWayland) | ✅ Native | Wayland requires XWayland or native compositor binds. |
+| **Clipboard** | ✅ Native | ✅ Native | `wl-clipboard` (Wayland) or `xclip/xsel` (X11). |
+| **Notifications** | ✅ Supported | ✅ Supported | Requires `libnotify` / `notify-send`. |
+| **Audio (ALSA)** | ✅ Supported | ✅ Supported | Works with PulseAudio and PipeWire via ALSA layer. |
+
 ### Tested Distributions
 
 The following distributions have been tested and verified:
 
-- **Ubuntu** (GNOME)
-- **Fedora** (GNOME, KDE)
-- **Arch Linux** (Hyprland, Sway)
+- **Ubuntu 22.04+** (GNOME)
+- **Fedora 39+** (GNOME, KDE)
+- **Arch Linux** (Hyprland, Sway, GNOME)
 
 ### Wayland Support (Hyprland, GNOME, KDE)
 
-This tool prioritizes Wayland support but relies on specific system packages to function correctly. Ensure you have installed the dependencies listed in the [Prerequisites](#prerequisites) section.
+`voice-cli` prioritizes Wayland support (specifically Hyprland) but relies on specific system packages and XWayland for global hotkeys. 
+
+**Important for Wayland Users:**
+- **Global Hotkeys**: Since `node-global-key-listener` uses X11 XInput2, hotkeys may only trigger when an XWayland window has focus. For 100% reliability on Wayland, we recommend binding the `toggle` command directly in your compositor config (e.g., Hyprland `bind`).
+- **Clipboard**: Ensure `wl-clipboard` is installed to allow the daemon to interact with the Wayland clipboard buffer.
 
 ## Troubleshooting
 
