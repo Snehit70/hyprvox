@@ -106,4 +106,60 @@ describe("Config Loader", () => {
     
     console.warn = originalWarn;
   });
+
+  test("should validate valid hotkeys", () => {
+    const validHotkeys = [
+      "F8",
+      "Right Control",
+      "Ctrl+Space",
+      "Alt+Shift+K",
+      "Meta+Enter",
+      "NUMPAD 0",
+    ];
+
+    for (const hotkey of validHotkeys) {
+      const configData = {
+        apiKeys: {
+          groq: "gsk_1234567890",
+          deepgram: "12345678-1234-1234-1234-1234567890ab",
+        },
+        behavior: {
+          hotkey: hotkey,
+        }
+      };
+      writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+      chmodSync(CONFIG_FILE, 0o600);
+      
+      const config = loadConfig(CONFIG_FILE);
+      expect(config.behavior.hotkey).toBe(hotkey);
+    }
+  });
+
+  test("should reject invalid hotkeys", () => {
+    const invalidHotkeys = [
+      "InvalidKeyName",
+      "Ctrl-Space", // Wrong separator
+      "Super+BadKey",
+      "",
+      "   ",
+      "Ctrl+", // Trailing plus
+      "+A" // Leading plus
+    ];
+
+    for (const hotkey of invalidHotkeys) {
+      const configData = {
+        apiKeys: {
+          groq: "gsk_1234567890",
+          deepgram: "12345678-1234-1234-1234-1234567890ab",
+        },
+        behavior: {
+          hotkey: hotkey,
+        }
+      };
+      writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+      chmodSync(CONFIG_FILE, 0o600);
+      
+      expect(() => loadConfig(CONFIG_FILE)).toThrow("Invalid hotkey format");
+    }
+  });
 });

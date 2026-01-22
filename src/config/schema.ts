@@ -12,6 +12,68 @@ const boostWordsValidator = (words: string[] | undefined) => {
   return totalWords <= 450;
 };
 
+// Valid hotkey parts for validation
+// Includes generic modifiers, specific modifiers, and standard keys
+const VALID_HOTKEY_PARTS = new Set([
+  // Generic Modifiers
+  "CTRL", "CONTROL", "ALT", "SHIFT", "META", "SUPER", "WIN", "COMMAND", "CMD", "OPTION",
+  
+  // Specific Modifiers
+  "LEFT CTRL", "RIGHT CTRL", "LEFT CONTROL", "RIGHT CONTROL", 
+  "LEFT ALT", "RIGHT ALT", 
+  "LEFT SHIFT", "RIGHT SHIFT", "LEFT META", "RIGHT META",
+
+  // Alphanumeric
+  ..."ABCDEFGHIJKLMNOPQRSTUVWXYZ".split(""),
+  ..."0123456789".split(""),
+
+  // Function Keys
+  ..."123456789".split("").map(n => `F${n}`),
+  ..."10 11 12 13 14 15 16 17 18 19 20 21 22 23 24".split(" ").map(n => `F${n}`),
+
+  // Navigation & Editing
+  "SPACE", "ENTER", "RETURN", "TAB", "ESC", "ESCAPE", "BACKSPACE", 
+  "DELETE", "INSERT", "HOME", "END", "PAGE UP", "PAGE DOWN", 
+  "UP", "DOWN", "LEFT", "RIGHT", "UP ARROW", "DOWN ARROW", "LEFT ARROW", "RIGHT ARROW",
+  "PRINTSCREEN", "PRINT SCREEN", "SCROLL LOCK", "PAUSE", "BREAK",
+
+  // Locks
+  "CAPS LOCK", "NUM LOCK", 
+
+  // Symbols (Common names)
+  "MINUS", "EQUAL", "EQUALS", "BRACKET LEFT", "BRACKET RIGHT", 
+  "SEMICOLON", "QUOTE", "BACKQUOTE", "BACKSLASH", "COMMA", "PERIOD", "SLASH", 
+  "GRAVE", "TILDE", "BACKTICK", "SQUARE BRACKET OPEN", "SQUARE BRACKET CLOSE",
+  "DOT",
+
+  // Numpad
+  "NUMPAD 0", "NUMPAD 1", "NUMPAD 2", "NUMPAD 3", "NUMPAD 4", 
+  "NUMPAD 5", "NUMPAD 6", "NUMPAD 7", "NUMPAD 8", "NUMPAD 9",
+  "NUMPAD DIVIDE", "NUMPAD MULTIPLY", "NUMPAD SUBTRACT", "NUMPAD ADD", 
+  "NUMPAD ENTER", "NUMPAD DECIMAL", "NUMPAD DOT"
+]);
+
+/**
+ * Validates a hotkey string.
+ * Supports "Modifier+Key" format (e.g., "Ctrl+Space", "Right Control").
+ * Case-insensitive.
+ */
+const hotkeyValidator = (hotkey: string) => {
+  if (!hotkey || hotkey.trim().length === 0) return false;
+  
+  const parts = hotkey.split("+").map(p => p.trim().toUpperCase());
+  
+  // Check if all parts are valid
+  const allValid = parts.every(part => VALID_HOTKEY_PARTS.has(part));
+  if (!allValid) return false;
+
+  // Ideally, ensure at least one part is a key (not just modifiers), 
+  // but "Right Control" is a valid trigger in some contexts.
+  // For now, just ensuring parts are valid names is sufficient for configuration safety.
+  
+  return true;
+};
+
 const defaultBehavior = {
   hotkey: "Right Control",
   toggleMode: true,
@@ -45,7 +107,12 @@ export const ApiKeysSchema = z.object({
 });
 
 export const BehaviorSchema = z.object({
-  hotkey: z.string().default(defaultBehavior.hotkey),
+  hotkey: z
+    .string()
+    .default(defaultBehavior.hotkey)
+    .refine(hotkeyValidator, {
+      message: "Invalid hotkey format. Use 'Modifier+Key' (e.g. 'Ctrl+Space', 'Right Control').",
+    }),
   toggleMode: z.boolean().default(defaultBehavior.toggleMode),
   notifications: z.boolean().default(defaultBehavior.notifications),
   clipboard: z.object({
