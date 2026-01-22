@@ -15,6 +15,14 @@ import { homedir } from "node:os";
 
 type DaemonStatus = "idle" | "starting" | "recording" | "stopping" | "processing" | "error";
 
+export interface DaemonState {
+  status: DaemonStatus;
+  pid: number;
+  uptime: number;
+  lastTranscription?: string;
+  errorCount: number;
+}
+
 export class DaemonService {
   private status: DaemonStatus = "idle";
   private recorder: AudioRecorder;
@@ -24,6 +32,10 @@ export class DaemonService {
   private merger: TranscriptMerger;
   private clipboard: ClipboardManager;
   private pidFile: string;
+  private stateFile: string;
+  private lastTranscription?: Date;
+  private errorCount: number = 0;
+  private startTime: number = Date.now();
 
   constructor() {
     this.recorder = new AudioRecorder();
@@ -32,21 +44,42 @@ export class DaemonService {
     this.deepgram = new DeepgramTranscriber();
     this.merger = new TranscriptMerger();
     this.clipboard = new ClipboardManager();
-    this.pidFile = join(homedir(), ".config", "voice-cli", "daemon.pid");
+    const configDir = join(homedir(), ".config", "voice-cli");
+    this.pidFile = join(configDir, "daemon.pid");
+    this.stateFile = join(configDir, "daemon.state");
 
     this.setupListeners();
+  }
+
+  private updateState() {
+    const state: DaemonState = {
+      status: this.status,
+      pid: process.pid,
+      uptime: Math.floor((Date.now() - this.startTime) / 1000),
+      lastTranscription: this.lastTranscription?.toISOString(),
+      errorCount: this.errorCount,
+    };
+    try {
+      writeFileSync(this.stateFile, JSON.stringify(state, null, 2));
+    } catch (e) {
+    }
+  }
+
+  private setStatus(status: DaemonStatus) {
+    this.status = status;
+    this.updateState();
   }
 
   private setupListeners() {
     this.hotkeyListener.on("trigger", () => this.handleTrigger());
     
     this.recorder.on("start", () => {
-      this.status = "recording";
+      this.setStatus("recording");
       notify("Recording Started", "Listening...", "info");
     });
 
     this.recorder.on("stop", (audioBuffer: Buffer, duration: number) => {
-      this.status = "processing";
+      this.setStatus("processing");
       this.processAudio(audioBuffer, duration);
     });
 
@@ -55,7 +88,8 @@ export class DaemonService {
     });
 
     this.recorder.on("error", (err: Error) => {
-      this.status = "error";
+      this.errorCount++;
+      this.setStatus("error");
       
       let title = "Error";
       const message = err.message;
@@ -65,13 +99,14 @@ export class DaemonService {
       }
 
       notify(title, message, "error");
-      this.status = "idle";
+      this.setStatus("idle");
     });
   }
 
   public async start() {
     try {
       writeFileSync(this.pidFile, process.pid.toString());
+      this.updateState();
       
       const config = loadConfig();
       await checkHotkeyConflict(config.behavior.hotkey);
@@ -80,7 +115,7 @@ export class DaemonService {
       logger.info("Daemon started. Waiting for hotkey...");
     } catch (error) {
       logError("Failed to start daemon", error);
-      process.exit(1);
+      throw error;
     }
   }
 
@@ -89,6 +124,7 @@ export class DaemonService {
     this.recorder.stop(true);
     try {
       unlinkSync(this.pidFile);
+      unlinkSync(this.stateFile);
     } catch (e) {
       
     }
@@ -98,13 +134,13 @@ export class DaemonService {
   private async handleTrigger() {
     if (this.status === "idle") {
       try {
-        this.status = "starting";
+        this.setStatus("starting");
         await this.recorder.start();
       } catch (error) {
-        this.status = "idle";
+        this.setStatus("idle");
       }
     } else if (this.status === "recording") {
-      this.status = "stopping";
+      this.setStatus("stopping");
       await this.recorder.stop();
     } else {
       logger.warn(`Hotkey ignored in state: ${this.status}`);
@@ -204,7 +240,8 @@ export class DaemonService {
       
       notify("Error", message, "error");
     } finally {
-      this.status = "idle";
+      this.lastTranscription = new Date();
+      this.setStatus("idle");
     }
   }
 }

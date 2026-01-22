@@ -1,6 +1,6 @@
 import pino from "pino";
 import { join } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, unlinkSync, statSync } from "node:fs";
 import { loadConfig } from "../config/loader";
 
 let logDir: string;
@@ -18,6 +18,27 @@ if (!existsSync(logDir)) {
     console.error(`Failed to create log directory: ${logDir}`, e);
   }
 }
+
+const rotateLogs = (dir: string) => {
+  try {
+    const files = readdirSync(dir);
+    const now = Date.now();
+    const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+
+    for (const file of files) {
+      if (file.startsWith("voice-cli-") && file.endsWith(".log")) {
+        const filePath = join(dir, file);
+        const stats = statSync(filePath);
+        if (now - stats.mtimeMs > sevenDaysMs) {
+          unlinkSync(filePath);
+        }
+      }
+    }
+  } catch (e) {
+  }
+};
+
+rotateLogs(logDir);
 
 const dateStr = new Date().toISOString().split("T")[0];
 const logFile = join(logDir, `voice-cli-${dateStr}.log`);

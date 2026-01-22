@@ -1,14 +1,17 @@
 import { Command } from "commander";
-import { DaemonService } from "../daemon/service";
+import { DaemonService, type DaemonState } from "../daemon/service";
+import { DaemonSupervisor } from "../daemon/supervisor";
 import { AudioDeviceService } from "../audio/device-service";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { loadConfig } from "../config/loader";
 import { boostCommand } from "./boost";
 
 const program = new Command();
-const pidFile = join(homedir(), ".config", "voice-cli", "daemon.pid");
+const configDir = join(homedir(), ".config", "voice-cli");
+const pidFile = join(configDir, "daemon.pid");
+const stateFile = join(configDir, "daemon.state");
 
 program
   .name("voice-cli")
@@ -18,7 +21,8 @@ program
 program
   .command("start")
   .description("Start the daemon")
-  .action(() => {
+  .option("--no-supervisor", "Run directly without supervisor")
+  .action((options) => {
     if (existsSync(pidFile)) {
       try {
         const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
@@ -27,22 +31,30 @@ program
           console.error(`Daemon is already running (PID: ${pid})`);
           process.exit(1);
         } catch (e) {
-          
         }
       } catch (e) {
-        
       }
     }
 
-    console.log("Starting daemon...");
-    const service = new DaemonService();
-    service.start();
+    if (options.supervisor && !process.env.VOICE_CLI_DAEMON_WORKER) {
+      console.log("Starting daemon with supervisor...");
+      const supervisor = new DaemonSupervisor(join(process.cwd(), "index.ts"));
+      supervisor.start();
+    } else {
+      console.log("Starting daemon worker...");
+      const service = new DaemonService();
+      service.start().catch(() => process.exit(1));
 
-    process.on("SIGINT", () => {
-      console.log("Stopping daemon...");
-      service.stop();
-      process.exit(0);
-    });
+      process.on("SIGINT", () => {
+        service.stop();
+        process.exit(0);
+      });
+      
+      process.on("SIGTERM", () => {
+        service.stop();
+        process.exit(0);
+      });
+    }
   });
 
 program
@@ -56,10 +68,112 @@ program
 
     try {
       const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
-      process.kill(pid, "SIGINT");
+      process.kill(pid, "SIGTERM");
       console.log(`Stopped daemon (PID: ${pid})`);
+      
+      if (existsSync(stateFile)) unlinkSync(stateFile);
     } catch (error) {
       console.error("Failed to stop daemon:", error);
+      if (existsSync(pidFile)) unlinkSync(pidFile);
+    }
+  });
+
+program
+  .command("restart")
+  .description("Restart the daemon")
+  .action(async () => {
+    if (existsSync(pidFile)) {
+      const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+      process.kill(pid, "SIGTERM");
+      console.log("Stopping daemon...");
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    console.log("Starting daemon...");
+    const supervisor = new DaemonSupervisor(join(process.cwd(), "index.ts"));
+    supervisor.start();
+  });
+
+program
+  .command("status")
+  .description("Show daemon status")
+  .action(() => {
+    if (!existsSync(pidFile)) {
+      console.log("Status: Stopped");
+      return;
+    }
+
+    const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+    try {
+      process.kill(pid, 0);
+      console.log(`Status: Running (PID: ${pid})`);
+      
+      if (existsSync(stateFile)) {
+        const state: DaemonState = JSON.parse(readFileSync(stateFile, "utf-8"));
+        console.log(`State:  ${state.status.toUpperCase()}`);
+        console.log(`Uptime: ${state.uptime}s`);
+        console.log(`Errors: ${state.errorCount}`);
+        if (state.lastTranscription) {
+          console.log(`Last:   ${new Date(state.lastTranscription).toLocaleString()}`);
+        }
+      }
+    } catch (e) {
+      console.log("Status: Dead (PID file exists but process is not running)");
+    }
+  });
+
+program
+  .command("install")
+  .description("Install systemd service")
+  .action(() => {
+    const user = process.env.USER;
+    const workingDir = process.cwd();
+    const bunPath = "bun";
+
+    const serviceFile = `[Unit]
+Description=Voice CLI Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=${user}
+WorkingDirectory=${workingDir}
+ExecStart=${workingDir}/node_modules/.bin/bun run ${workingDir}/index.ts start --no-supervisor
+Restart=always
+RestartSec=5
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:${process.env.PATH}
+Environment=DISPLAY=${process.env.DISPLAY}
+Environment=XAUTHORITY=${process.env.XAUTHORITY}
+Environment=WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY}
+
+[Install]
+WantedBy=default.target
+`;
+
+    const servicePath = join(homedir(), ".config", "systemd", "user", "voice-cli.service");
+    const systemdDir = join(homedir(), ".config", "systemd", "user");
+    
+    if (!existsSync(systemdDir)) mkdirSync(systemdDir, { recursive: true });
+    
+    writeFileSync(servicePath, serviceFile);
+    console.log(`Service file created at: ${servicePath}`);
+    console.log("\nTo enable and start the service, run:");
+    console.log("systemctl --user daemon-reload");
+    console.log("systemctl --user enable voice-cli");
+    console.log("systemctl --user start voice-cli");
+  });
+
+program
+  .command("uninstall")
+  .description("Remove systemd service")
+  .action(() => {
+    const servicePath = join(homedir(), ".config", "systemd", "user", "voice-cli.service");
+    if (existsSync(servicePath)) {
+      console.log("Stopping and disabling service...");
+      unlinkSync(servicePath);
+      console.log("Service file removed. Please run:");
+      console.log("systemctl --user daemon-reload");
+    } else {
+      console.log("Service file not found.");
     }
   });
 
