@@ -187,6 +187,8 @@ program
       const serviceContent = `[Unit]
 Description=Voice CLI Daemon
 After=network.target sound.target
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -194,8 +196,6 @@ WorkingDirectory=${workingDir}
 ExecStart=${bunPath} run ${entryPoint} start --no-supervisor
 Restart=always
 RestartSec=5
-StartLimitIntervalSec=300
-StartLimitBurst=3
 Environment=PATH=${process.env.PATH}
 Environment=DISPLAY=${process.env.DISPLAY || ""}
 Environment=XAUTHORITY=${process.env.XAUTHORITY || ""}
