@@ -107,6 +107,8 @@ For contributing guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 For a deep dive into the underlying data flow, see [STT Flow Documentation](docs/STT_FLOW.md).
 
 ### Essential Commands
+For a complete list of commands and options, see the **[CLI Command Reference](docs/CLI_COMMANDS.md)**.
+
 - `bun run index.ts status`: Check if the daemon is running and see stats.
 - `bun run index.ts health`: Verify API keys and microphone setup.
 - `bun run index.ts list-mics`: List available audio input devices.
