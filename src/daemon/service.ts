@@ -277,8 +277,11 @@ export class DaemonService {
       logger.info({ 
         duration, 
         processingTime,
+        text: finalText,
         textLength: finalText.length,
+        groqText,
         groqTextLength: groqText.length,
+        deepgramText,
         deepgramTextLength: deepgramText.length,
         models: groqText && deepgramText ? "groq+deepgram+llama" : (groqText ? "groq" : "deepgram")
       }, "Transcription complete");

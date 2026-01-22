@@ -41,6 +41,12 @@ mock.module("../src/transcribe/merger", () => ({
 mock.module("../src/output/clipboard", () => ({
   ClipboardManager: class {
     append() { return Promise.resolve(); }
+  },
+  ClipboardAccessError: class extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "ClipboardAccessError";
+    }
   }
 }));
 

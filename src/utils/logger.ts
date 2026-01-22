@@ -21,6 +21,7 @@ if (!existsSync(logDir)) {
 
 const rotateLogs = (dir: string) => {
   try {
+    if (!existsSync(dir)) return;
     const files = readdirSync(dir);
     const now = Date.now();
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
@@ -28,9 +29,12 @@ const rotateLogs = (dir: string) => {
     for (const file of files) {
       if (file.startsWith("voice-cli-") && file.endsWith(".log")) {
         const filePath = join(dir, file);
-        const stats = statSync(filePath);
-        if (now - stats.mtimeMs > sevenDaysMs) {
-          unlinkSync(filePath);
+        try {
+          const stats = statSync(filePath);
+          if (now - stats.mtimeMs > sevenDaysMs) {
+            unlinkSync(filePath);
+          }
+        } catch (e) {
         }
       }
     }
@@ -38,10 +42,13 @@ const rotateLogs = (dir: string) => {
   }
 };
 
-rotateLogs(logDir);
+const getLogFile = () => {
+  const dateStr = new Date().toISOString().split("T")[0];
+  return join(logDir, `voice-cli-${dateStr}.log`);
+};
 
-const dateStr = new Date().toISOString().split("T")[0];
-const logFile = join(logDir, `voice-cli-${dateStr}.log`);
+const logFile = getLogFile();
+rotateLogs(logDir);
 
 export const logger = pino({
   level: process.env.LOG_LEVEL || "info",
@@ -49,6 +56,10 @@ export const logger = pino({
     pid: process.pid,
   },
   timestamp: pino.stdTimeFunctions.isoTime,
+  serializers: {
+    err: pino.stdSerializers.err,
+    error: pino.stdSerializers.err,
+  },
   transport: {
     targets: [
       {
@@ -64,9 +75,6 @@ export const logger = pino({
 });
 
 export const logError = (msg: string, error?: unknown, context?: Record<string, any>) => {
-  if (error instanceof Error) {
-    logger.error({ err: error, ...context }, msg);
-  } else {
-    logger.error({ error, ...context }, msg);
-  }
+  const errorObj = error instanceof Error ? error : new Error(String(error || "Unknown error"));
+  logger.error({ err: errorObj, ...context }, msg);
 };

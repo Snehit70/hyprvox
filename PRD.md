@@ -352,7 +352,7 @@ interface DaemonState {
 - [x] Add error for clipboard access denied (show fallback option)
 - [x] Add error for daemon already running (show how to stop)
 - [x] Add error for config file corrupted (show how to reset)
-- [ ] Add error for both APIs failing (show retry instructions)
+- [x] Add error for both APIs failing (show retry instructions)
 - [ ] Log all errors to file for debugging
 
 ### Phase 19: Testing - Unit Tests (Priority: High)
