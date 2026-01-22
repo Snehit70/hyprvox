@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Technical Acronyms",
+    "groq": "The ROI for our SaaS platform increased after migrating to AWS Lambda and using S3 buckets for storage.",
+    "deepgram": "The roi for our saas platform increased after migrating to aws lambda and using s3 buckets for storage.",
+    "ideal": "The ROI for our SaaS platform increased after migrating to AWS Lambda and using S3 buckets for storage."
+  },
+  {
+    "name": "Punctuation and Formatting",
+    "groq": "wait are you saying we should deploy now or should we wait for the staging tests to finish",
+    "deepgram": "Wait, are you saying we should deploy now, or should we wait for the staging tests to finish?",
+    "ideal": "Wait, are you saying we should deploy now, or should we wait for the staging tests to finish?"
+  },
+  {
+    "name": "Homophones and Context",
+    "groq": "there were their favorite people they're going to the party",
+    "deepgram": "They were their favorite people, they're going to the party.",
+    "ideal": "They were their favorite people, they're going to the party."
+  },
+  {
+    "name": "Hallucination in Groq",
+    "groq": "The weather is nice today. Thank you for watching. Please subscribe to my channel.",
+    "deepgram": "The weather is nice today.",
+    "ideal": "The weather is nice today."
+  },
+  {
+    "name": "Casing in Names",
+    "groq": "Sisyphus is pushing the boulder up the hill while Antigravity watches.",
+    "deepgram": "sisyphus is pushing the boulder up the hill while antigravity watches.",
+    "ideal": "Sisyphus is pushing the boulder up the hill while Antigravity watches."
+  }
+]
