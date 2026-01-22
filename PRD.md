@@ -364,12 +364,12 @@ interface DaemonState {
 - [x] Write unit tests for transcript merging logic
 - [x] Write unit tests for error handling paths
 - [x] Write unit tests for daemon state management
-- [ ] Achieve 80%+ test coverage
+- [x] Achieve 80%+ test coverage
 
 ### Phase 20: Testing - Integration Tests (Priority: High)
-- [ ] Write integration test for Groq API (with test API key)
-- [ ] Write integration test for Deepgram API (with test API key)
-- [ ] Write integration test for LLM merger (with sample transcripts)
+- [x] Write integration test for Groq API (with test API key)
+- [x] Write integration test for Deepgram API (with test API key)
+- [x] Write integration test for LLM merger (with sample transcripts)
 - [ ] Write integration test for clipboard write (verify append mode)
 - [ ] Write integration test for daemon lifecycle (start/stop/restart)
 - [ ] Write integration test for config file operations

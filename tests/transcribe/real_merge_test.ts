@@ -1,5 +1,5 @@
-import { TranscriptMerger } from "../src/transcribe/merger";
-import { loadConfig } from "../src/config/loader";
+import { TranscriptMerger } from "../../src/transcribe/merger";
+import { loadConfig } from "../../src/config/loader";
 
 async function runMergeTest() {
   const merger = new TranscriptMerger();
