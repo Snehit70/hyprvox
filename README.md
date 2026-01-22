@@ -12,6 +12,31 @@ To run:
 bun run index.ts
 ```
 
+
+## Configuration
+
+The configuration file is located at `~/.config/voice-cli/config.json`.
+
+### Boost Words (Custom Vocabulary)
+
+You can improve transcription accuracy for specific terms (names, technical jargon, acronyms) by adding them to the `boostWords` array in the `transcription` section.
+
+- **Limit**: Maximum 450 words total.
+- **Usage**:
+  ```json
+  "transcription": {
+    "language": "en",
+    "boostWords": [
+      "Sisyphus",
+      "voice-cli",
+      "Groq",
+      "Deepgram",
+      "Wayland",
+      "Hyprland"
+    ]
+  }
+  ```
+
 ## Linux Compatibility
 
 ### Wayland Support (Hyprland, GNOME, KDE)

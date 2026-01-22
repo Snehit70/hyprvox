@@ -83,7 +83,45 @@ describe("Config Loader", () => {
 
     expect(() => loadConfig(CONFIG_FILE)).toThrow("Deepgram API key must be a valid UUID");
   });
-  
+
+  test("should validate valid boost words", () => {
+    const configData = {
+      apiKeys: {
+        groq: "gsk_1234567890",
+        deepgram: "12345678-1234-1234-1234-1234567890ab",
+      },
+      transcription: {
+        boostWords: ["React", "TypeScript", "Artificial Intelligence"],
+        language: "en"
+      }
+    };
+    writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+    chmodSync(CONFIG_FILE, 0o600);
+
+    const config = loadConfig(CONFIG_FILE);
+    expect(config.transcription.boostWords).toEqual(["React", "TypeScript", "Artificial Intelligence"]);
+  });
+
+  test("should reject boost words exceeding limit", () => {
+    // Generate 451 words
+    const manyWords = Array(451).fill("word");
+    
+    const configData = {
+      apiKeys: {
+        groq: "gsk_1234567890",
+        deepgram: "12345678-1234-1234-1234-1234567890ab",
+      },
+      transcription: {
+        boostWords: manyWords,
+        language: "en"
+      }
+    };
+    writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+    chmodSync(CONFIG_FILE, 0o600);
+
+    expect(() => loadConfig(CONFIG_FILE)).toThrow("Boost words limit exceeded");
+  });
+
   test("should warn if permissions are not 600", () => {
      const configData = {
       apiKeys: {
@@ -95,7 +133,6 @@ describe("Config Loader", () => {
     chmodSync(CONFIG_FILE, 0o644); // User read/write, Group read, Others read
 
     const warnSpy = mock(console.warn);
-    // Replace console.warn with mock
     const originalWarn = console.warn;
     console.warn = warnSpy;
 
