@@ -131,19 +131,33 @@ export class DaemonService {
       const deepgramText = deepgramResult.status === "fulfilled" ? deepgramResult.value : "";
 
       if (groqResult.status === "rejected") {
-        if (groqResult.reason?.message === "Groq: Invalid API Key") {
+        const err = groqResult.reason;
+        if (err?.message === "Groq: Invalid API Key") {
           notify("Configuration Error", "Invalid Groq API Key. Check config.", "error");
+        } else if (err?.message?.includes("timed out")) {
+          logError("Groq API timed out", err);
+        } else {
+          logError("Groq failed", err);
         }
-        logError("Groq failed", groqResult.reason);
       }
       if (deepgramResult.status === "rejected") {
-        if (deepgramResult.reason?.message === "Deepgram: Invalid API Key") {
+        const err = deepgramResult.reason;
+        if (err?.message === "Deepgram: Invalid API Key") {
           notify("Configuration Error", "Invalid Deepgram API Key. Check config.", "error");
+        } else if (err?.message?.includes("timed out")) {
+          logError("Deepgram API timed out", err);
+        } else {
+          logError("Deepgram failed", err);
         }
-        logError("Deepgram failed", deepgramResult.reason);
       }
 
       if (!groqText && !deepgramText) {
+        const groqErr = (groqResult as PromiseRejectedResult).reason;
+        const deepgramErr = (deepgramResult as PromiseRejectedResult).reason;
+
+        if (groqErr?.message?.includes("timed out") && deepgramErr?.message?.includes("timed out")) {
+          throw new Error("Transcription request timed out (both APIs)");
+        }
         throw new Error("Both transcription services failed");
       }
 
@@ -152,7 +166,17 @@ export class DaemonService {
         finalText = await this.merger.merge(groqText, deepgramText);
       } else {
         finalText = groqText || deepgramText;
-        notify("Warning", "One API failed, used fallback", "warning");
+        
+        const failedService = !groqText ? "Groq" : "Deepgram";
+        const result = !groqText ? groqResult : deepgramResult;
+        const reason = (result as PromiseRejectedResult).reason?.message || "Unknown error";
+        
+        let warningMsg = `${failedService} failed, using fallback`;
+        if (reason.includes("timed out")) {
+          warningMsg = `${failedService} timed out, using fallback`;
+        }
+        
+        notify("Warning", warningMsg, "warning");
       }
 
       if (!finalText) {
