@@ -122,9 +122,12 @@ export class DaemonService {
       this.setStatus("error", err.message);
       
       let title = "Error";
-      const message = err.message;
+      let message = err.message;
 
-      if (message.toLowerCase().includes("permission denied") || message.toLowerCase().includes("microphone")) {
+      if ((err as any).code === "NO_MICROPHONE") {
+        title = "Microphone Error";
+        message = formatUserError(ErrorTemplates.AUDIO.NO_MICROPHONE);
+      } else if (message.toLowerCase().includes("permission denied") || message.toLowerCase().includes("microphone")) {
         title = "Microphone Error";
       }
 

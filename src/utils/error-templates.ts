@@ -56,6 +56,10 @@ export const ErrorTemplates = {
       message: "Maximum recording duration reached (5 minutes).",
       action: "Recording stopped automatically. For longer transcriptions, please split your speech into multiple recordings."
     },
+    NO_MICROPHONE: {
+      message: "No microphone detected or could not be opened.",
+      action: "1. Check if your microphone is physically connected.\n2. Ensure your user is in the 'audio' group: 'sudo usermod -aG audio $USER'.\n3. Verify the correct device is selected in ~/.config/voice-cli/config.json.\n4. Check if another application is using the microphone (e.g., 'Device busy').\n5. Run 'arecord -l' to list available hardware devices."
+    },
     SILENT_AUDIO: {
       message: "No audio detected in the recording.",
       action: "Check your microphone settings and ensure the correct input device is selected."
