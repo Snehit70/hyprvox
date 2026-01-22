@@ -334,12 +334,13 @@ interface DaemonState {
 ### Phase 17: CLI Interactive Setup (Priority: Medium)
 - [x] Implement `voice-cli config` command
 - [x] Create interactive prompts for API keys (Groq, Deepgram)
-- [ ] Add API key validation (format check)
-- [ ] Create interactive hotkey selection
-- [ ] Add hotkey validation (valid key combinations)
-- [ ] Create boost words management (add/remove/list)
-- [ ] Add boost words validation (max 450 words)
-- [ ] Save config to file after setup
+- [x] Add API key validation (format check)
+  - [x] Create interactive hotkey selection
+  - [x] Add hotkey validation (valid key combinations)
+  - [x] Create boost words management (add/remove/list)
+  - [x] Add boost words validation (max 450 words)
+  - [x] Save config to file after setup
+
 - [ ] Display success message with next steps
 
 ### Phase 18: Error Handling & User-Friendly Messages (Priority: High)
