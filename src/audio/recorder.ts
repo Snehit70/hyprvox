@@ -7,9 +7,9 @@ export class AudioRecorder extends EventEmitter {
   private recording: Recording | null = null;
   private chunks: Buffer[] = [];
   private startTime: number = 0;
-  private timer: Timer | null = null;
-  private warningTimer4m: Timer | null = null;
-  private warningTimer430m: Timer | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  private warningTimer4m: ReturnType<typeof setTimeout> | null = null;
+  private warningTimer430m: ReturnType<typeof setTimeout> | null = null;
   private readonly MIN_DURATION = 600;
   private readonly MAX_DURATION = 300000;
   private readonly WARNING_4M = 240000;

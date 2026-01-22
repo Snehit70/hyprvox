@@ -190,12 +190,12 @@ interface DaemonState {
 ### Phase 3: Audio Capture (Priority: Critical)
 - [x] Install node-record-lpcm16 package for audio recording
 - [x] If node-record-lpcm16 fails, try sox-audio or mic package as fallback
-- [ ] Implement microphone detection and listing
-- [ ] Implement audio recording start/stop
-- [ ] Add minimum recording length validation (0.6 seconds)
-- [ ] Add maximum recording length limit (5 minutes)
-- [ ] Implement recording duration tracking
-- [ ] Add silent audio detection (warn if no audio)
+- [x] Implement microphone detection and listing
+- [x] Implement audio recording start/stop
+- [x] Add minimum recording length validation (0.6 seconds)
+- [x] Add maximum recording length limit (5 minutes)
+- [x] Implement recording duration tracking
+- [x] Add silent audio detection (warn if no audio)
 - [ ] Implement audio format conversion (to format required by STT APIs)
 - [ ] Add error handling for microphone permission denied
 - [ ] Add error handling for no microphone detected
