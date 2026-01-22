@@ -12,6 +12,7 @@ import { healthCommand } from "./health";
 import { errorsCommand } from "./errors";
 import { historyCommand } from "./history";
 import { logsCommand } from "./logs";
+import { configCommand } from "./config";
 import * as colors from "yoctocolors";
 
 const program = new Command();
@@ -286,17 +287,11 @@ program
     }
   });
 
-program
-  .command("config")
-  .description("Configure settings (interactive)")
-  .action(() => {
-    console.log("Configuration wizard not implemented yet. Please edit ~/.config/voice-cli/config.json directly.");
-  });
-
+program.addCommand(logsCommand);
+program.addCommand(configCommand);
 program.addCommand(boostCommand);
 program.addCommand(healthCommand);
 program.addCommand(errorsCommand);
 program.addCommand(historyCommand);
-program.addCommand(logsCommand);
 
 export { program };
