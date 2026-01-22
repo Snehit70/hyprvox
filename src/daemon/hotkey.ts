@@ -6,6 +6,7 @@ import { loadConfig } from "../config/loader";
 export class HotkeyListener extends EventEmitter {
   private listener: GlobalKeyboardListener | null = null;
   private registered = false;
+  private isPressed = false;
 
   constructor() {
     super();
@@ -20,13 +21,22 @@ export class HotkeyListener extends EventEmitter {
       const hotkey = config.behavior.hotkey.toUpperCase();
       
       const parts = hotkey.split("+").map(p => p.trim());
-      const triggerKey = parts[parts.length - 1];
+      const triggerKeyRaw = parts[parts.length - 1];
+      if (!triggerKeyRaw) {
+        logger.warn("Invalid hotkey configuration: empty trigger key");
+        return;
+      }
+
       const modifiers = parts.slice(0, parts.length - 1);
+      
+      const triggerKey = triggerKeyRaw.replace("CONTROL", "CTRL");
 
       this.listener.addListener((e: IGlobalKeyEvent, down: Record<string, boolean>) => {
+        const keyName = e.name?.toUpperCase();
+        const normalizedKeyName = keyName?.replace("CONTROL", "CTRL");
+
         if (e.state === "DOWN") {
-          const keyName = e.name?.toUpperCase();
-          if (keyName === triggerKey) {
+          if (normalizedKeyName === triggerKey) {
             const allModifiersPressed = modifiers.every(mod => {
               if (mod === "CTRL" || mod === "CONTROL") return down["LEFT CTRL"] || down["RIGHT CTRL"] || down["LEFT CONTROL"] || down["RIGHT CONTROL"];
               if (mod === "ALT") return down["LEFT ALT"] || down["RIGHT ALT"];
@@ -37,9 +47,16 @@ export class HotkeyListener extends EventEmitter {
             });
 
             if (allModifiersPressed) {
-              logger.info(`Hotkey triggered: ${hotkey}`);
-              this.emit("trigger");
+              if (!this.isPressed) {
+                this.isPressed = true;
+                logger.info(`Hotkey triggered: ${hotkey}`);
+                this.emit("trigger");
+              }
             }
+          }
+        } else if (e.state === "UP") {
+          if (normalizedKeyName === triggerKey) {
+            this.isPressed = false;
           }
         }
       });
