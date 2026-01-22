@@ -317,18 +317,18 @@ interface DaemonState {
 - [x] Add history entry on each transcription (timestamp + text)
 - [x] Implement `voice-cli history` command (display past transcriptions)
 - [x] Add history pagination (show last 20, option to show more)
-- [ ] Add history search (filter by date, keyword)
+- [x] Add history search (filter by date, keyword)
 - [x] Add history clear command (`voice-cli history clear`)
 - [x] Format history output (readable timestamps, truncated text)
 
 ### Phase 16: Logging System (Priority: High)
-- [ ] Implement structured logging (JSON format)
-- [ ] Create log directory (`~/.config/voice-cli/logs/`)
-- [ ] Add log rotation (daily logs, keep last 7 days)
-- [ ] Log all transcriptions with full details (groqText, deepgramText, duration, etc.)
-- [ ] Log all errors with stack traces
-- [ ] Log daemon lifecycle events (start, stop, restart, crash)
-- [ ] Add log level configuration (debug, info, warn, error)
+- [x] Implement structured logging (JSON format)
+- [x] Create log directory (`~/.config/voice-cli/logs/`)
+- [x] Add log rotation (daily logs, keep last 7 days)
+- [x] Log all transcriptions with full details (groqText, deepgramText, duration, etc.)
+- [x] Log all errors with stack traces
+- [x] Log daemon lifecycle events (start, stop, restart, crash)
+- [x] Add log level configuration (debug, info, warn, error)
 - [ ] Implement `voice-cli logs` command (tail recent logs)
 
 ### Phase 17: CLI Interactive Setup (Priority: Medium)
@@ -462,9 +462,9 @@ interface DaemonState {
 ## Error Handling Strategy
 
 ### Logging
-- All errors logged to file (`~/.config/voice-cli/logs/error.log`)
-- Structured format (JSON) for easy parsing
-- Include timestamp, error type, stack trace, context
+- [x] All errors logged to file (`~/.config/voice-cli/logs/voice-cli-YYYY-MM-DD.log`)
+- [x] Structured format (JSON) for easy parsing
+- [x] Include timestamp, error type, stack trace, context
 
 ### User Notifications
 - Critical errors: Desktop notification + log

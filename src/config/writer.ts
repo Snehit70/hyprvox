@@ -26,7 +26,7 @@ export const saveConfig = (config: ConfigFile, path: string = DEFAULT_CONFIG_FIL
   const dir = dirname(resolvedPath);
   if (!existsSync(dir)) {
     try {
-      mkdirSync(dir, { recursive: true });
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
     } catch (error) {
       throw new Error(`Failed to create config directory: ${(error as Error).message}`);
     }

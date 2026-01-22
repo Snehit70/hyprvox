@@ -13,7 +13,7 @@ try {
 
 if (!existsSync(logDir)) {
   try {
-    mkdirSync(logDir, { recursive: true });
+    mkdirSync(logDir, { recursive: true, mode: 0o700 });
   } catch (e) {
     console.error(`Failed to create log directory: ${logDir}`, e);
   }

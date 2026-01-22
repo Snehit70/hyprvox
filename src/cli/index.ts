@@ -152,6 +152,7 @@ program
     try {
       const serviceName = "voice-cli";
       const serviceDir = join(homedir(), ".config", "systemd", "user");
+      const logsDir = join(configDir, "logs");
       const servicePath = join(serviceDir, `${serviceName}.service`);
       const workingDir = process.cwd();
       const bunPath = process.argv[0];
@@ -160,6 +161,11 @@ program
 
       if (!existsSync(serviceDir)) {
         mkdirSync(serviceDir, { recursive: true });
+      }
+
+      if (!existsSync(logsDir)) {
+        console.log(`Creating log directory: ${logsDir}`);
+        mkdirSync(logsDir, { recursive: true, mode: 0o700 });
       }
 
       console.log(`Installing systemd service for ${serviceName}...`);
