@@ -24,7 +24,7 @@ export const ErrorTemplates = {
     }),
     BOTH_SERVICES_FAILED: {
       message: "Both Groq and Deepgram transcription services failed.",
-      action: "Check your internet connection and verify that both API keys are correct and active."
+      action: "1. Check your internet connection.\n2. Verify both API keys in ~/.config/voice-cli/config.json.\n3. Try again in a few seconds (retry instructions)."
     }
   },
 

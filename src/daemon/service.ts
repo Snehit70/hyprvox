@@ -231,11 +231,9 @@ export class DaemonService {
         if (groqErr) handleTranscriptionError(groqErr, "Groq");
         if (deepgramErr) handleTranscriptionError(deepgramErr, "Deepgram");
 
-        if (groqErr?.message?.includes("timed out") && deepgramErr?.message?.includes("timed out")) {
-          const template = ErrorTemplates.API.BOTH_SERVICES_FAILED;
-          notify("Error", formatUserError(template), "error");
-          throw new Error("Transcription request timed out (both APIs)");
-        }
+        const template = ErrorTemplates.API.BOTH_SERVICES_FAILED;
+        notify("Transcription Failed", formatUserError(template), "error");
+        
         throw new Error("Both transcription services failed");
       }
 
