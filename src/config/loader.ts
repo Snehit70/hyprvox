@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { ConfigSchema, type Config, type ConfigFile } from "./schema";
+import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 
 export const DEFAULT_CONFIG_DIR = join(homedir(), ".config", "voice-cli");
 export const DEFAULT_CONFIG_FILE = join(DEFAULT_CONFIG_DIR, "config.json");
@@ -40,7 +41,7 @@ export const loadConfig = (configPath: string = DEFAULT_CONFIG_FILE): Config => 
       const content = readFileSync(configPath, "utf-8");
       fileConfig = JSON.parse(content);
     } catch (error) {
-      throw new Error(`Failed to parse config file: ${(error as Error).message}`);
+      throw new Error(formatUserError(ErrorTemplates.CONFIG.CORRUPTED));
     }
   }
 

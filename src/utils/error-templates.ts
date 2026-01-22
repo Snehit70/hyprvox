@@ -112,6 +112,10 @@ export const ErrorTemplates = {
       message: "Config file has insecure permissions.",
       action: "Run 'chmod 600 ~/.config/voice-cli/config.json' to restrict access to the current user only."
     },
+    CORRUPTED: {
+      message: "Configuration file is corrupted (invalid JSON).",
+      action: "To reset, delete the file: rm ~/.config/voice-cli/config.json or run 'voice-cli config init --force'"
+    },
     WRITE_FAILED: {
       message: "Failed to save configuration.",
       action: "Ensure the daemon has write permissions for ~/.config/voice-cli/."

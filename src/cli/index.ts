@@ -51,8 +51,17 @@ program
       supervisor.start();
     } else {
       console.log(`${colors.cyan("Starting daemon worker...")}`);
-      const service = new DaemonService();
-      service.start().catch(() => process.exit(1));
+      let service: DaemonService;
+      try {
+        service = new DaemonService();
+        service.start().catch((err) => {
+          console.error(colors.red("\nFailed to start daemon:"), err.message);
+          process.exit(1);
+        });
+      } catch (err: any) {
+        console.error(colors.red("\nFailed to initialize daemon:"), err.message);
+        process.exit(1);
+      }
 
       process.on("SIGINT", () => {
         service.stop();

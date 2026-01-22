@@ -350,8 +350,8 @@ interface DaemonState {
 - [x] Add error for no microphone detected (show troubleshooting steps)
 - [x] Add error for microphone permission denied (show how to grant)
 - [x] Add error for clipboard access denied (show fallback option)
-- [ ] Add error for daemon already running (show how to stop)
-- [ ] Add error for config file corrupted (show how to reset)
+- [x] Add error for daemon already running (show how to stop)
+- [x] Add error for config file corrupted (show how to reset)
 - [ ] Add error for both APIs failing (show retry instructions)
 - [ ] Log all errors to file for debugging
 
