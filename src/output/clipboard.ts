@@ -77,7 +77,7 @@ export class ClipboardManager {
     if (this.isWayland) {
       try {
         const { stdout } = await execAsync("wl-paste --no-newline --type text/plain");
-        return stdout.trim();
+        return stdout;
       } catch (e) {
         return clipboardy.read();
       }

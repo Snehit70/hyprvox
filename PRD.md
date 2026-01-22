@@ -421,8 +421,8 @@ interface DaemonState {
 - [x] Provide API usage examples
 
 ### Phase 26: Polish & Final Testing (Priority: High)
-- [ ] Run full test suite (unit + integration)
-- [ ] Verify clipboard APPEND mode (critical test)
+- [x] Run full test suite (unit + integration)
+- [x] Verify clipboard APPEND mode (critical test)
 - [ ] Verify daemon auto-restart (crash recovery)
 - [ ] Verify all error messages are user-friendly
 - [ ] Document platform compatibility matrix in README (Wayland/X11, tested distros)
