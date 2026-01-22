@@ -119,8 +119,23 @@ Controls the core functionality and user interaction of the daemon.
 #### Hotkey Format
 The `hotkey` option supports both single keys and combinations using the `+` separator.
 - **Examples**: `"Right Control"`, `"Ctrl+Space"`, `"Alt+Shift+V"`, `"F10"`.
-- **Supported Modifiers**: `Ctrl`, `Control`, `Alt`, `Shift`, `Meta`, `Super`, `Win`, `Command`, `Cmd`, `Option`.
-- **Supported Keys**: `A-Z`, `0-9`, `F1-F24`, `Space`, `Enter`, `Tab`, `Esc`, `Backspace`, `Delete`, `Home`, `End`, `Page Up`, `Page Down`, Arrow keys, and Numpad keys.
+- **Supported Modifiers**:
+  - `Ctrl`, `Control` (maps to `LEFT CTRL` or `RIGHT CTRL`)
+  - `Alt` (maps to `LEFT ALT` or `RIGHT ALT`)
+  - `Shift` (maps to `LEFT SHIFT` or `RIGHT SHIFT`)
+  - `Meta`, `Super`, `Win` (maps to `LEFT META` or `RIGHT META`)
+  - `Command`, `Cmd`, `Option` (Mac-style aliases)
+- **Specific Modifiers**: `LEFT CTRL`, `RIGHT CTRL`, `LEFT ALT`, `RIGHT ALT`, `LEFT SHIFT`, `RIGHT SHIFT`, `LEFT META`, `RIGHT META`.
+- **Supported Keys**:
+  - **Alphanumeric**: `A-Z`, `0-9`
+  - **Function Keys**: `F1` through `F24`
+  - **Navigation**: `UP`, `DOWN`, `LEFT`, `RIGHT` (or `UP ARROW`, etc.), `HOME`, `END`, `PAGE UP`, `PAGE DOWN`
+  - **Editing**: `ENTER`, `RETURN`, `TAB`, `ESC`, `ESCAPE`, `BACKSPACE`, `DELETE`, `INSERT`, `SPACE`
+  - **System**: `PRINTSCREEN`, `SCROLL LOCK`, `PAUSE`, `BREAK`, `CAPS LOCK`, `NUM LOCK`
+  - **Symbols**: `MINUS`, `EQUAL`, `SEMICOLON`, `QUOTE`, `BACKQUOTE`, `BACKSLASH`, `COMMA`, `PERIOD`, `SLASH`, `GRAVE`, `TILDE`, `BACKTICK`, `DOT`
+  - **Numpad**: `NUMPAD 0`-`9`, `NUMPAD DIVIDE`, `NUMPAD MULTIPLY`, `NUMPAD SUBTRACT`, `NUMPAD ADD`, `NUMPAD ENTER`, `NUMPAD DECIMAL`, `NUMPAD DOT`
+
+> **Note**: On Linux, global hotkeys require XWayland support when running under Wayland compositors. ensure your user is in the `input` group.
 
 ---
 
