@@ -377,8 +377,8 @@ interface DaemonState {
 - [x] Write integration test for history storage
 
 ### Phase 21: Documentation - README (Priority: High)
-- [ ] Write project description and tagline
-- [ ] Document prerequisites (Node.js, Bun, Linux)
+- [x] Write project description and tagline
+- [x] Document prerequisites (Node.js, Bun, Linux)
 - [ ] Write installation instructions (npm/bun/npx)
 - [ ] Document API key setup (Groq, Deepgram)
 - [ ] Write usage guide (daemon start, hotkey, history, health)
