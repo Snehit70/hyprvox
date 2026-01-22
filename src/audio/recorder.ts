@@ -17,6 +17,7 @@ export class AudioRecorder extends EventEmitter {
 	private maxDuration: number = 300000;
 	private readonly WARNING_4M = 240000;
 	private readonly WARNING_430M = 270000;
+	private isStopping: boolean = false;
 
 	constructor() {
 		super();
@@ -77,15 +78,22 @@ export class AudioRecorder extends EventEmitter {
 						const stream = this.recording.stream();
 						let streamStarted = false;
 
-						stream.on("data", (chunk: Buffer) => {
+						stream.on("data", (chunk: Buffer | string) => {
 							if (!streamStarted) {
 								streamStarted = true;
 								resolve();
 							}
-							this.chunks.push(chunk);
+							const bufferChunk = Buffer.isBuffer(chunk)
+								? chunk
+								: Buffer.from(chunk, "binary");
+							this.chunks.push(bufferChunk);
 						});
 
 						stream.once("error", (err: unknown) => {
+							if (this.isStopping) {
+								return;
+							}
+
 							let errorMessage =
 								err instanceof Error ? err.message : String(err);
 							let errorCode: ErrorCode = "UNKNOWN_ERROR";
@@ -182,6 +190,7 @@ export class AudioRecorder extends EventEmitter {
 			return null;
 		}
 
+		this.isStopping = true;
 		const duration = Date.now() - this.startTime;
 		this.cleanupTimers();
 
@@ -195,6 +204,7 @@ export class AudioRecorder extends EventEmitter {
 					"error",
 					new AppError("RECORDING_TOO_SHORT", "Recording too short"),
 				);
+				this.isStopping = false;
 				return null;
 			}
 
@@ -208,6 +218,11 @@ export class AudioRecorder extends EventEmitter {
 			`Recording stopped. Duration: ${duration}ms. Size: ${audioBuffer.length} bytes`,
 		);
 		this.emit("stop", audioBuffer, duration);
+
+		setTimeout(() => {
+			this.isStopping = false;
+		}, 100);
+
 		return audioBuffer;
 	}
 
