@@ -12,7 +12,7 @@ import { writeFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
-type DaemonStatus = "idle" | "recording" | "processing" | "error";
+type DaemonStatus = "idle" | "starting" | "recording" | "stopping" | "processing" | "error";
 
 export class DaemonService {
   private status: DaemonStatus = "idle";
@@ -93,11 +93,13 @@ export class DaemonService {
   private async handleTrigger() {
     if (this.status === "idle") {
       try {
+        this.status = "starting";
         await this.recorder.start();
       } catch (error) {
-        
+        this.status = "idle";
       }
     } else if (this.status === "recording") {
+      this.status = "stopping";
       await this.recorder.stop();
     } else {
       logger.warn(`Hotkey ignored in state: ${this.status}`);

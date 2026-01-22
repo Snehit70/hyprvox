@@ -78,7 +78,7 @@ interface Config {
 ### Daemon State
 ```typescript
 interface DaemonState {
-  status: "idle" | "recording" | "processing" | "error";
+  status: "idle" | "starting" | "recording" | "stopping" | "processing" | "error";
   pid: number;
   uptime: number;           // Seconds since start
   lastTranscription?: Date;
@@ -196,15 +196,15 @@ interface DaemonState {
 - [x] Add maximum recording length limit (5 minutes)
 - [x] Implement recording duration tracking
 - [x] Add silent audio detection (warn if no audio)
-- [ ] Implement audio format conversion (to format required by STT APIs)
-- [ ] Add error handling for microphone permission denied
-- [ ] Add error handling for no microphone detected
+- [x] Implement audio format conversion (to format required by STT APIs)
+- [x] Add error handling for microphone permission denied
+- [x] Add error handling for no microphone detected
 
 ### Phase 4: Global Hotkey System (Priority: Critical)
-- [ ] Install and configure `node-global-key-listener`
-- [ ] Implement hotkey registration (default: Right Control)
-- [ ] Implement toggle mode (press to start, press to stop)
-- [ ] Add hotkey state management (idle/recording)
+- [x] Install and configure `node-global-key-listener`
+- [x] Implement hotkey registration (default: Right Control)
+- [x] Implement toggle mode (press to start, press to stop)
+- [x] Add hotkey state management (idle/recording)
 - [ ] Add hotkey configuration from config file
 - [ ] Document Wayland compatibility requirements in README
 - [ ] Document X11 compatibility requirements in README
