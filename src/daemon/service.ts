@@ -76,11 +76,14 @@ export class DaemonService {
     };
     try {
       writeFileSync(this.stateFile, JSON.stringify(state, null, 2));
+      logger.debug({ status: this.status }, "Daemon state updated");
     } catch (e) {
+      logError("Failed to update daemon state file", e, { stateFile: this.stateFile });
     }
   }
 
   private setStatus(status: DaemonStatus, error?: string) {
+    const oldStatus = this.status;
     this.status = status;
     if (status === "starting" || status === "recording") {
       this.lastError = undefined;
@@ -88,6 +91,11 @@ export class DaemonService {
     if (error) {
       this.lastError = error;
     }
+    
+    if (oldStatus !== status) {
+      logger.info({ from: oldStatus, to: status }, `Daemon status changed: ${status}`);
+    }
+    
     this.updateState();
   }
 
@@ -257,14 +265,14 @@ export class DaemonService {
       logger.info({ 
         duration, 
         processingTime,
-        groqText, 
-        deepgramText, 
-        finalText,
+        textLength: finalText.length,
+        groqTextLength: groqText.length,
+        deepgramTextLength: deepgramText.length,
         models: groqText && deepgramText ? "groq+deepgram+llama" : (groqText ? "groq" : "deepgram")
       }, "Transcription complete");
 
     } catch (error: any) {
-      logError("Processing failed", error);
+      logError("Processing failed", error, { duration });
       
       let message = "Transcription failed. Check logs.";
       if (error?.message?.includes("timed out")) {

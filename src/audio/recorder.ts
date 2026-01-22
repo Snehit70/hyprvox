@@ -71,28 +71,31 @@ export class AudioRecorder extends EventEmitter {
         }
 
         const enhancedError = new Error(errorMessage);
-        logError("Audio stream error", enhancedError);
+        logError("Audio stream error", enhancedError, { stderr: stderrOutput });
         this.emit("error", enhancedError);
         this.stop(true);
       });
 
       this.warningTimer4m = setTimeout(() => {
+        logger.warn("Recording limit approaching (4m)");
         this.emit("warning", "Recording limit approaching (4m)");
       }, this.WARNING_4M);
 
       this.warningTimer430m = setTimeout(() => {
+        logger.warn("Recording limit approaching (4m 30s)");
         this.emit("warning", "Recording limit approaching (4m 30s)");
       }, this.WARNING_430M);
 
       this.timer = setTimeout(() => {
+        logger.warn("Recording limit reached (5m). Auto-stopping.");
         this.emit("warning", "Recording limit reached (5m). Stopping...");
         this.stop();
       }, this.MAX_DURATION);
 
-      logger.info("Recording started");
+      logger.info({ device: config.behavior.audioDevice }, "Recording started");
       this.emit("start");
     } catch (error) {
-      logError("Failed to start recording", error);
+      logError("Failed to start recording", error, { device: config.behavior.audioDevice });
       this.cleanup();
       throw error;
     }

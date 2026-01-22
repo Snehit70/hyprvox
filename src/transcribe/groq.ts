@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
 import { loadConfig } from "../config/loader";
-import { logError } from "../utils/logger";
+import { logError, logger } from "../utils/logger";
 
 export class GroqClient {
   private client: Groq;
@@ -35,7 +35,7 @@ export class GroqClient {
       if (error?.status === 401) {
         throw new Error("Groq: Invalid API Key");
       }
-      logError("Groq connectivity check failed", error);
+      logError("Groq connectivity check failed", error, { operation: "checkConnection" });
       throw error;
     }
   }
@@ -63,7 +63,14 @@ export class GroqClient {
           maxRetries: 0
         });
 
-        return completion.text.trim();
+        const text = completion.text.trim();
+        logger.info({ 
+          model: "whisper-large-v3",
+          language,
+          boostWordsCount: boostWords.length,
+          textLength: text.length
+        }, "Groq transcription success");
+        return text;
       }, {
         operationName: "Groq Transcription",
         maxRetries: 2,
@@ -84,7 +91,10 @@ export class GroqClient {
       if (error?.message?.includes("timed out")) {
         throw new Error("Groq: Request timed out");
       }
-      logError("Groq transcription failed", error);
+      logError("Groq transcription failed", error, { 
+        language, 
+        boostWordsCount: boostWords.length 
+      });
       throw error;
     } finally {
       try {

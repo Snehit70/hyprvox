@@ -35,7 +35,7 @@ export class DeepgramTranscriber {
       if (error?.status === 401 || error?.message?.includes("401")) {
         throw new Error("Deepgram: Invalid API Key");
       }
-      logError("Deepgram connectivity check failed", error);
+      logError("Deepgram connectivity check failed", error, { operation: "checkConnection" });
       throw error;
     }
   }
@@ -59,10 +59,12 @@ export class DeepgramTranscriber {
         const text = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript;
         if (!text) return "";
 
-        logger.debug({ 
-          text: text.substring(0, 100) + (text.length > 100 ? "..." : ""), 
+        logger.info({ 
+          textLength: text.length,
           confidence: result?.results?.channels?.[0]?.alternatives?.[0]?.confidence,
-          model: "nova-3"
+          model: "nova-3",
+          language,
+          boostWordsCount: boostWords.length
         }, "Deepgram Nova-3 transcription success");
 
         return text.trim();
@@ -83,7 +85,10 @@ export class DeepgramTranscriber {
       if (error?.status === 429 || error?.message?.includes("429")) {
         throw new Error("Deepgram: Rate limit exceeded. Please wait a moment before trying again.");
       }
-      logError("Deepgram Nova-3 failed, trying fallback", error);
+      logError("Deepgram Nova-3 failed, trying fallback", error, { 
+        language, 
+        boostWordsCount: boostWords.length 
+      });
       
       try {
         return await withRetry(async (_signal) => {
@@ -101,9 +106,11 @@ export class DeepgramTranscriber {
           if (retryError) throw retryError;
           const text = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() || "";
           
-          logger.debug({ 
-            text: text.substring(0, 100) + (text.length > 100 ? "..." : ""),
-            model: "nova-2"
+          logger.info({ 
+            textLength: text.length,
+            model: "nova-2",
+            language,
+            boostWordsCount: boostWords.length
           }, "Deepgram Nova-2 fallback success");
           
           return text;
@@ -127,7 +134,10 @@ export class DeepgramTranscriber {
         if (retryError?.message?.includes("timed out")) {
           throw new Error("Deepgram: Request timed out");
         }
-        logError("Deepgram fallback failed", retryError);
+        logError("Deepgram fallback failed", retryError, { 
+          language, 
+          boostWordsCount: boostWords.length 
+        });
         throw retryError;
       }
     }
