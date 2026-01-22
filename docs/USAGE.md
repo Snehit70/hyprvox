@@ -147,4 +147,4 @@ To improve accuracy for specific names or technical terms:
 ```bash
 bun run index.ts boost add "Sisyphus" "voice-cli" "Hyprland"
 ```
-*(Limit: 450 words)*
+*(Limit: 450 words. See [Configuration Guide](CONFIGURATION.md#boost-words-custom-vocabulary) for details.)*

@@ -159,8 +159,23 @@ Settings related to the speech-to-text engine.
 | `language` | String | `"en"` | ISO 639-1 language code for transcription. | N/A |
 | `boostWords` | Array | `[]` | List of words to prioritize for better accuracy (e.g., names, jargon). | Max 450 words total. |
 
-#### Boost Words Limit
-The `boostWords` array is used to improve the detection of specific terms. To maintain performance and stay within API limits, the total number of words across all entries in the array must not exceed **450 words**.
+#### Boost Words (Custom Vocabulary)
+
+The `boostWords` array is used to improve the detection of specific terms like names, acronyms, or technical jargon.
+
+**Format and Limits:**
+- **Data Type**: Array of strings. Each entry can be a single word or a phrase.
+- **Word Limit**: The total number of words across all entries must not exceed **450 words**. 
+    - *Example*: `"Sisyphus tool"` counts as 2 words towards the limit.
+- **Token Constraints**: 
+    - **Groq (Whisper V3)**: Supports up to **224 tokens**. If your list is long, terms at the end may be truncated.
+    - **Deepgram (Nova-3)**: Supports up to **500 tokens**.
+- **Case Sensitivity**: 
+    - Use capitalization for proper nouns (e.g., `"Deepgram"`, `"Linux"`, `"Snehit"`).
+    - Use lowercase for generic terms unless they are typically capitalized.
+- **Weights**: Numerical weighting (e.g., `word:2`) is **not supported** by the current engines. The presence of the word in the list provides the necessary bias.
+
+**Pro-Tip**: Keep your list focused. Adding too many common words can actually decrease accuracy for those terms. Focus on unique terms that the models frequently miss.
 
 ---
 

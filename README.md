@@ -181,10 +181,11 @@ bun run index.ts health
 
 ### Boost Words (Custom Vocabulary)
 
-You can improve transcription accuracy for specific terms (names, technical jargon, acronyms) by adding them to the `boostWords` array in the `transcription` section.
+Improve transcription accuracy for specific terms (names, technical jargon, acronyms) by adding them to the `boostWords` array in the `transcription` section of your `config.json`.
 
-- **Limit**: Maximum 450 words total.
-- **Usage**:
+- **Limit**: Maximum **450 words** total (calculated by splitting each entry into individual words).
+- **Format**: A JSON array of strings. Phrases are supported.
+- **Example**:
   ```json
   "transcription": {
     "language": "en",
@@ -198,6 +199,8 @@ You can improve transcription accuracy for specific terms (names, technical jarg
     ]
   }
   ```
+
+For more details on formatting, token limits, and case sensitivity, see the **[Configuration Guide: Boost Words](docs/CONFIGURATION.md#boost-words-custom-vocabulary)**.
 
 ## Linux Compatibility
 
