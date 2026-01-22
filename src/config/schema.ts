@@ -92,7 +92,7 @@ const defaultPaths = {
 
 const defaultTranscription = {
   language: "en",
-};
+} as const;
 
 export const ApiKeysSchema = z.object({
   groq: z
@@ -142,7 +142,7 @@ export const TranscriptionSchema = z.object({
     .refine(boostWordsValidator, {
       message: "Boost words limit exceeded: Maximum 450 words allowed.",
     }),
-  language: z.string().default(defaultTranscription.language),
+  language: z.enum(["en"]).default(defaultTranscription.language as "en"),
 });
 
 export const ConfigSchema = z.object({

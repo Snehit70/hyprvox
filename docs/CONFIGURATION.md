@@ -156,7 +156,7 @@ Settings related to the speech-to-text engine.
 
 | Option | Type | Default | Description | Validation Rules |
 | :--- | :--- | :--- | :--- | :--- |
-| `language` | String | `"en"` | ISO 639-1 language code for transcription. | N/A |
+| `language` | String | `"en"` | ISO 639-1 language code for transcription. **Only English (`en`) is supported in v1.0.** | N/A |
 | `boostWords` | Array | `[]` | List of words to prioritize for better accuracy (e.g., names, jargon). | Max 450 words total. |
 
 #### Boost Words (Custom Vocabulary)
@@ -176,6 +176,14 @@ The `boostWords` array is used to improve the detection of specific terms like n
 - **Weights**: Numerical weighting (e.g., `word:2`) is **not supported** by the current engines. The presence of the word in the list provides the necessary bias.
 
 **Pro-Tip**: Keep your list focused. Adding too many common words can actually decrease accuracy for those terms. Focus on unique terms that the models frequently miss.
+
+#### Language Options
+
+For **v1.0**, `voice-cli` is optimized for and officially supports **English only**.
+
+- **Option**: `transcription.language`
+- **Supported Value**: `"en"` (default)
+- **Note**: While the underlying APIs (Groq and Deepgram) support multiple languages, the internal post-processing and LLM-based merging logic are currently tuned for English. Support for additional languages is planned for v2.0.
 
 ---
 

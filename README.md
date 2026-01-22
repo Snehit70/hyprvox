@@ -184,6 +184,8 @@ bun run index.ts health
 
 Improve transcription accuracy for specific terms (names, technical jargon, acronyms) by adding them to the `boostWords` array in the `transcription` section of your `config.json`.
 
+**Note: Only English (`en`) is supported for transcription in v1.0.**
+
 - **Limit**: Maximum **450 words** total (calculated by splitting each entry into individual words).
 - **Format**: A JSON array of strings. Phrases are supported.
 - **Example**:
@@ -200,6 +202,10 @@ Improve transcription accuracy for specific terms (names, technical jargon, acro
     ]
   }
   ```
+
+### Language Support
+
+For **v1.0**, `voice-cli` officially supports **English only**. While the configuration allows setting a language code, the internal processing is optimized for English (`en`).
 
 For more details on formatting, token limits, and case sensitivity, see the **[Configuration Guide: Boost Words](docs/CONFIGURATION.md#boost-words-custom-vocabulary)**.
 
