@@ -54,8 +54,29 @@ If hotkeys are not detected:
 
 ### X11 Support
 
-For pure X11 environments:
-1. Ensure `xclip` or `xsel` is installed for clipboard support.
-2. The global hotkey listener should work natively without XWayland.
+For pure X11 environments, this tool requires specific system libraries for clipboard access and global hotkey detection.
+
+#### 1. Clipboard Support
+You **must** have `xclip` or `xsel` installed.
+
+- **Ubuntu/Debian**: `sudo apt install xclip`
+- **Fedora**: `sudo dnf install xclip`
+- **Arch**: `sudo pacman -S xclip`
+
+#### 2. Global Hotkeys & Dependencies
+To detect global hotkeys, the following X11 development libraries are required:
+
+- **Ubuntu/Debian**:
+  ```bash
+  sudo apt install libx11-dev libxtst-dev libxi-dev
+  ```
+- **Fedora**:
+  ```bash
+  sudo dnf install libX11-devel libXtst-devel libXi-devel
+  ```
+- **Arch**:
+  ```bash
+  sudo pacman -S libx11 libxtst libxi
+  ```
 
 This project was created using `bun init` in bun v1.3.3. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.

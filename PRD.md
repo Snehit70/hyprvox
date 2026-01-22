@@ -205,9 +205,9 @@ interface DaemonState {
 - [x] Implement hotkey registration (default: Right Control)
 - [x] Implement toggle mode (press to start, press to stop)
 - [x] Add hotkey state management (idle/recording)
-- [ ] Add hotkey configuration from config file
-- [ ] Document Wayland compatibility requirements in README
-- [ ] Document X11 compatibility requirements in README
+- [x] Add hotkey configuration from config file
+- [x] Document Wayland compatibility requirements in README
+- [x] Document X11 compatibility requirements in README
 - [ ] Add error handling for hotkey registration failure
 - [ ] Add hotkey conflict detection (if key already in use)
 
