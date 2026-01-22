@@ -68,9 +68,9 @@ describe("DeepgramTranscriber", () => {
     const options = callArgs[1];
     
     expect(buffer).toBeDefined();
-    expect(options.model).toBe("nova-3");
-    expect(options.language).toBe("en");
-    expect(options.smart_format).toBe(true);
+    expect((options as any).model).toBe("nova-3");
+    expect((options as any).language).toBe("en");
+    expect((options as any).smart_format).toBe(true);
   });
 
   test("should use provided language and boost words", async () => {
@@ -79,8 +79,8 @@ describe("DeepgramTranscriber", () => {
     
     // @ts-ignore
     const options = mockTranscribeFile.mock.calls[0][1];
-    expect(options.language).toBe("es");
-    expect(options.keywords).toEqual(["keyword1"]);
+    expect((options as any).language).toBe("es");
+    expect((options as any).keywords).toEqual(["keyword1"]);
   });
 
   test("should fallback to Nova-2 on failure", async () => {
