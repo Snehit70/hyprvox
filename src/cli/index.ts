@@ -9,6 +9,7 @@ import { execSync } from "node:child_process";
 import { loadConfig } from "../config/loader";
 import { boostCommand } from "./boost";
 import { healthCommand } from "./health";
+import { errorsCommand } from "./errors";
 
 const program = new Command();
 const configDir = join(homedir(), ".config", "voice-cli");
@@ -269,5 +270,6 @@ program
 
 program.addCommand(boostCommand);
 program.addCommand(healthCommand);
+program.addCommand(errorsCommand);
 
 export { program };
