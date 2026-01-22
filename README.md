@@ -12,6 +12,21 @@ To run:
 bun run index.ts
 ```
 
+## Installation
+
+To install as a systemd user service:
+
+```bash
+bun run index.ts install
+```
+
+This will create a systemd service, enable it to start on boot, and start it immediately.
+
+To uninstall:
+
+```bash
+bun run index.ts uninstall
+```
 
 ## Configuration
 

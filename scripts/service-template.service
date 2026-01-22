@@ -1,0 +1,20 @@
+[Unit]
+Description=Voice CLI Daemon
+After=network.target sound.target
+
+[Service]
+Type=simple
+WorkingDirectory={{WORKING_DIR}}
+ExecStart={{BUN_PATH}} run {{ENTRY_POINT}} start --no-supervisor
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=3
+Environment=PATH={{PATH}}
+Environment=DISPLAY={{DISPLAY}}
+Environment=XAUTHORITY={{XAUTHORITY}}
+Environment=WAYLAND_DISPLAY={{WAYLAND_DISPLAY}}
+Environment=XDG_RUNTIME_DIR=/run/user/{{USER_ID}}
+
+[Install]
+WantedBy=default.target

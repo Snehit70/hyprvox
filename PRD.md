@@ -291,7 +291,7 @@ interface DaemonState {
 - [x] Log all crashes with stack traces
 
 ### Phase 13: systemd Integration (Priority: High)
-- [ ] Create systemd service file (`voice-cli.service`)
+- [x] Create systemd service file (`voice-cli.service`)
 - [ ] Add installation script for systemd service
 - [ ] Implement `voice-cli install` command (install systemd service)
 - [ ] Implement `voice-cli uninstall` command (remove systemd service)

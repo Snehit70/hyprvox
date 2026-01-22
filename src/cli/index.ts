@@ -5,6 +5,7 @@ import { AudioDeviceService } from "../audio/device-service";
 import { readFileSync, existsSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
+import { execSync } from "node:child_process";
 import { loadConfig } from "../config/loader";
 import { boostCommand } from "./boost";
 
@@ -128,41 +129,20 @@ program
   .command("install")
   .description("Install systemd service")
   .action(() => {
-    const user = process.env.USER;
-    const workingDir = process.cwd();
-    const bunPath = "bun";
-
-    const serviceFile = `[Unit]
-Description=Voice CLI Daemon
-After=network.target
-
-[Service]
-Type=simple
-User=${user}
-WorkingDirectory=${workingDir}
-ExecStart=${workingDir}/node_modules/.bin/bun run ${workingDir}/index.ts start --no-supervisor
-Restart=always
-RestartSec=5
-Environment=PATH=/usr/local/bin:/usr/bin:/bin:${process.env.PATH}
-Environment=DISPLAY=${process.env.DISPLAY}
-Environment=XAUTHORITY=${process.env.XAUTHORITY}
-Environment=WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY}
-
-[Install]
-WantedBy=default.target
-`;
-
-    const servicePath = join(homedir(), ".config", "systemd", "user", "voice-cli.service");
-    const systemdDir = join(homedir(), ".config", "systemd", "user");
+    const installScript = join(process.cwd(), "scripts", "install.sh");
     
-    if (!existsSync(systemdDir)) mkdirSync(systemdDir, { recursive: true });
-    
-    writeFileSync(servicePath, serviceFile);
-    console.log(`Service file created at: ${servicePath}`);
-    console.log("\nTo enable and start the service, run:");
-    console.log("systemctl --user daemon-reload");
-    console.log("systemctl --user enable voice-cli");
-    console.log("systemctl --user start voice-cli");
+    if (!existsSync(installScript)) {
+      console.error(`Installation script not found at: ${installScript}`);
+      process.exit(1);
+    }
+
+    try {
+      console.log("Running installation script...");
+      execSync(`bash ${installScript}`, { stdio: "inherit" });
+    } catch (error) {
+      console.error("Installation failed:", (error as Error).message);
+      process.exit(1);
+    }
   });
 
 program
@@ -172,9 +152,15 @@ program
     const servicePath = join(homedir(), ".config", "systemd", "user", "voice-cli.service");
     if (existsSync(servicePath)) {
       console.log("Stopping and disabling service...");
-      unlinkSync(servicePath);
-      console.log("Service file removed. Please run:");
-      console.log("systemctl --user daemon-reload");
+      try {
+        execSync("systemctl --user stop voice-cli", { stdio: "ignore" });
+        execSync("systemctl --user disable voice-cli", { stdio: "ignore" });
+        unlinkSync(servicePath);
+        execSync("systemctl --user daemon-reload", { stdio: "ignore" });
+        console.log("Service removed successfully.");
+      } catch (error) {
+        console.error("Failed to remove service:", (error as Error).message);
+      }
     } else {
       console.log("Service file not found.");
     }
