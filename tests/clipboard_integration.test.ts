@@ -1,4 +1,10 @@
-import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,10 +15,8 @@ const TEST_CONFIG_FILE = join(TEST_CONFIG_DIR, "config.json");
 
 vi.mock("../src/config/loader", () => ({
 	loadConfig: vi.fn(() => {
-		const fs = require("node:fs");
-		const configPath = TEST_CONFIG_FILE;
-		if (fs.existsSync(configPath)) {
-			return JSON.parse(fs.readFileSync(configPath, "utf-8"));
+		if (existsSync(TEST_CONFIG_FILE)) {
+			return JSON.parse(readFileSync(TEST_CONFIG_FILE, "utf-8"));
 		}
 		throw new Error("Config file not found");
 	}),
