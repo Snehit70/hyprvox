@@ -223,6 +223,10 @@ program
 			);
 		} catch (error) {
 			console.error(colors.red("Failed to send toggle signal:"), error);
+			console.log(colors.yellow("Cleaning up stale PID file..."));
+			if (existsSync(pidFile)) unlinkSync(pidFile);
+			if (existsSync(stateFile)) unlinkSync(stateFile);
+			console.log(`Start the daemon with: ${colors.cyan("voice-cli start")}`);
 			process.exit(1);
 		}
 	});
