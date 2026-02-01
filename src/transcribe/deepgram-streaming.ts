@@ -55,19 +55,19 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 
 				if (transcript && transcript.trim().length > 0) {
 					if (data.speech_final) {
-						// Finalized chunk (after silence detected)
 						this.transcriptChunks.push(transcript.trim());
 						logger.info(
 							{ transcript: transcript.trim(), isFinal: true },
-							"Deepgram chunk finalized",
+							"Deepgram chunk finalized (speech_final)",
 						);
 						this.emit("transcript", transcript.trim());
 					} else if (data.is_final) {
-						// Also capture is_final transcripts
-						logger.debug(
+						this.transcriptChunks.push(transcript.trim());
+						logger.info(
 							{ transcript: transcript.trim(), isFinal: data.is_final },
-							"Deepgram interim transcript",
+							"Deepgram chunk finalized (is_final)",
 						);
+						this.emit("transcript", transcript.trim());
 					}
 				}
 			});
@@ -128,7 +128,26 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	public async stop(): Promise<string> {
 		if (this.connection) {
 			try {
-				this.connection.finish();
+				// Flush any buffered audio before closing
+				this.connection.finalize();
+				logger.debug("Sent finalize signal to Deepgram");
+
+				// Wait for final transcript after finalize
+				await new Promise<void>((resolve) => {
+					const timeout = setTimeout(() => {
+						logger.debug("Finalize wait timeout, proceeding");
+						resolve();
+					}, 1000);
+
+					const transcriptHandler = () => {
+						clearTimeout(timeout);
+						resolve();
+					};
+					this.once("transcript", transcriptHandler);
+				});
+
+				// Now close the connection
+				this.connection.requestClose();
 
 				await new Promise<void>((resolve) => {
 					const timeout = setTimeout(() => {
