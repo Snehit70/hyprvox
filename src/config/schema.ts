@@ -232,7 +232,7 @@ export const TranscriptionSchema = z.object({
 		message: "Boost words limit exceeded: Maximum 450 words allowed.",
 	}),
 	language: z.enum(["en"]).default(defaultTranscription.language as "en"),
-	streaming: z.boolean().default(false),
+	streaming: z.boolean().default(defaultTranscription.streaming),
 });
 
 export const ConfigSchema = z.object({

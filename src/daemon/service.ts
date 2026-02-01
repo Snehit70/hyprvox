@@ -262,13 +262,13 @@ export class DaemonService {
 					let chunkCount = 0;
 					this.streamingDataHandler = (chunk: Buffer) => {
 						chunkCount++;
-						logger.info(
+						logger.debug(
 							{ chunkNumber: chunkCount, chunkSize: chunk.length },
 							"Handler called with audio chunk",
 						);
 						if (this.deepgramStreaming) {
 							this.deepgramStreaming.send(chunk);
-							logger.info(
+							logger.debug(
 								{ chunkNumber: chunkCount },
 								"Sent chunk to Deepgram",
 							);
@@ -286,6 +286,11 @@ export class DaemonService {
 
 				await this.recorder.start();
 			} catch (_error) {
+				if (this.streamingDataHandler) {
+					this.recorder.off("data", this.streamingDataHandler);
+					this.streamingDataHandler = undefined;
+				}
+				this.deepgramStreaming = undefined;
 				this.setStatus("idle");
 			}
 		} else if (this.status === "recording") {

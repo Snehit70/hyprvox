@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import {
 	createClient,
+	type DeepgramClient,
 	type LiveClient,
 	LiveTranscriptionEvents,
 } from "@deepgram/sdk";
@@ -8,7 +9,7 @@ import { loadConfig } from "../config/loader";
 import { logError, logger } from "../utils/logger";
 
 export class DeepgramStreamingTranscriber extends EventEmitter {
-	private client;
+	private client: DeepgramClient;
 	private connection: LiveClient | null = null;
 	private transcriptChunks: string[] = [];
 	private isConnected: boolean = false;
@@ -112,7 +113,11 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	public send(audioChunk: Buffer) {
 		if (this.connection && this.isConnected) {
 			try {
-				this.connection.send(audioChunk.buffer);
+				const arrayBuffer = audioChunk.buffer.slice(
+					audioChunk.byteOffset,
+					audioChunk.byteOffset + audioChunk.byteLength,
+				);
+				this.connection.send(arrayBuffer);
 			} catch (error) {
 				logError("Failed to send audio chunk to Deepgram", error);
 			}
@@ -122,17 +127,30 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	public async stop(): Promise<string> {
 		if (this.connection) {
 			try {
-				// Send finish signal to get final transcripts
+				this.connection.removeAllListeners();
 				this.connection.finish();
 
-				// Wait a bit for final transcripts to arrive
-				await new Promise((resolve) => setTimeout(resolve, 500));
+				await new Promise<void>((resolve) => {
+					const timeout = setTimeout(() => {
+						logger.warn(
+							"Deepgram close timeout, proceeding with available transcripts",
+						);
+						resolve();
+					}, 2000);
+
+					this.once("close", () => {
+						clearTimeout(timeout);
+						resolve();
+					});
+				});
 			} catch (error) {
 				logError("Error finishing Deepgram streaming", error);
+			} finally {
+				this.connection = null;
+				this.isConnected = false;
 			}
 		}
 
-		// Return concatenated transcript
 		const finalText = this.transcriptChunks.join(" ").trim();
 		logger.info(
 			{
