@@ -304,7 +304,14 @@ export class DaemonService {
 					this.recorder.off("data", this.streamingDataHandler);
 					this.streamingDataHandler = undefined;
 				}
-				this.deepgramStreaming = undefined;
+				if (this.deepgramStreaming) {
+					try {
+						await this.deepgramStreaming.stop();
+					} catch (e) {
+						logError("Failed to stop streaming after start failure", e);
+					}
+					this.deepgramStreaming = undefined;
+				}
 				this.setStatus("idle");
 			}
 		} else if (this.status === "recording") {
