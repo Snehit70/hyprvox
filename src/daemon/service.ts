@@ -273,14 +273,45 @@ export class DaemonService {
 					});
 
 					let chunkCount = 0;
+					let isFirstChunk = true;
 					this.streamingDataHandler = (chunk: Buffer) => {
 						chunkCount++;
+						let audioData = chunk;
+
+						// Strip WAV header from first chunk (44 bytes)
+						// Recorder outputs WAV format but Deepgram expects raw PCM (linear16)
+						if (isFirstChunk) {
+							isFirstChunk = false;
+							if (
+								chunk.length >= 44 &&
+								chunk.subarray(0, 4).toString("ascii") === "RIFF" &&
+								chunk.subarray(8, 12).toString("ascii") === "WAVE"
+							) {
+								audioData = chunk.subarray(44);
+								logger.debug(
+									{
+										originalSize: chunk.length,
+										strippedSize: audioData.length,
+									},
+									"Stripped WAV header from first chunk",
+								);
+							}
+						}
+
+						if (audioData.length === 0) {
+							logger.debug(
+								{ chunkNumber: chunkCount },
+								"Skipping empty chunk (header-only)",
+							);
+							return;
+						}
+
 						logger.debug(
-							{ chunkNumber: chunkCount, chunkSize: chunk.length },
+							{ chunkNumber: chunkCount, chunkSize: audioData.length },
 							"Handler called with audio chunk",
 						);
 						if (this.deepgramStreaming) {
-							this.deepgramStreaming.send(chunk);
+							this.deepgramStreaming.send(audioData);
 							logger.debug(
 								{ chunkNumber: chunkCount },
 								"Sent chunk to Deepgram",
