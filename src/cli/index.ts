@@ -124,6 +124,11 @@ program
 				await new Promise((resolve) => setTimeout(resolve, 1000));
 				if (existsSync(stateFile)) unlinkSync(stateFile);
 			} catch (error) {
+				const err = error as NodeJS.ErrnoException;
+				if (err.code !== "ESRCH") {
+					console.error(colors.red("Failed to stop daemon:"), err);
+					process.exit(1);
+				}
 				console.log(colors.yellow("Cleaning up stale PID file..."));
 				if (existsSync(pidFile)) unlinkSync(pidFile);
 				if (existsSync(stateFile)) unlinkSync(stateFile);
@@ -222,7 +227,11 @@ program
 				`${colors.green("✅")} Toggle signal sent to daemon (${colors.dim(`PID: ${pid}`)})`,
 			);
 		} catch (error) {
-			console.error(colors.red("Failed to send toggle signal:"), error);
+			const err = error as NodeJS.ErrnoException;
+			console.error(colors.red("Failed to send toggle signal:"), err);
+			if (err.code !== "ESRCH") {
+				process.exit(1);
+			}
 			console.log(colors.yellow("Cleaning up stale PID file..."));
 			if (existsSync(pidFile)) unlinkSync(pidFile);
 			if (existsSync(stateFile)) unlinkSync(stateFile);

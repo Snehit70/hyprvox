@@ -3,6 +3,7 @@ import {
 	createClient,
 	type DeepgramClient,
 	type LiveClient,
+	type LiveSchema,
 	LiveTranscriptionEvents,
 } from "@deepgram/sdk";
 import { loadConfig } from "../config/loader";
@@ -25,7 +26,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			this.transcriptChunks = [];
 			this.isConnected = false;
 
-			const options: any = {
+			const options: LiveSchema = {
 				model: "nova-3",
 				interim_results: true,
 				endpointing: 300,
@@ -127,7 +128,6 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	public async stop(): Promise<string> {
 		if (this.connection) {
 			try {
-				this.connection.removeAllListeners();
 				this.connection.finish();
 
 				await new Promise<void>((resolve) => {
@@ -146,6 +146,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			} catch (error) {
 				logError("Error finishing Deepgram streaming", error);
 			} finally {
+				this.connection.removeAllListeners();
 				this.connection = null;
 				this.isConnected = false;
 			}

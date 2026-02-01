@@ -150,6 +150,19 @@ export class DaemonService {
 			this.errorCount++;
 			this.setStatus("error", err.message);
 
+			if (this.streamingDataHandler) {
+				this.recorder.off("data", this.streamingDataHandler);
+				this.streamingDataHandler = undefined;
+			}
+			if (this.deepgramStreaming) {
+				this.deepgramStreaming
+					.stop()
+					.catch((e) =>
+						logError("Failed to stop streaming on recorder error", e),
+					);
+				this.deepgramStreaming = undefined;
+			}
+
 			let title = "Error";
 			let message = err.message;
 
@@ -285,7 +298,8 @@ export class DaemonService {
 				}
 
 				await this.recorder.start();
-			} catch (_error) {
+			} catch (error) {
+				logError("Failed to start recording", error);
 				if (this.streamingDataHandler) {
 					this.recorder.off("data", this.streamingDataHandler);
 					this.streamingDataHandler = undefined;
