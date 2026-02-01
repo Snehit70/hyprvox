@@ -117,10 +117,22 @@ program
 	.description("Restart the daemon")
 	.action(async () => {
 		if (existsSync(pidFile)) {
-			const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
-			process.kill(pid, "SIGTERM");
-			console.log(colors.yellow("Stopping daemon..."));
-			await new Promise((resolve) => setTimeout(resolve, 1000));
+			try {
+				const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+				process.kill(pid, "SIGTERM");
+				console.log(colors.yellow("Stopping daemon..."));
+				await new Promise((resolve) => setTimeout(resolve, 1000));
+				if (existsSync(stateFile)) unlinkSync(stateFile);
+			} catch (error) {
+				const err = error as NodeJS.ErrnoException;
+				if (err.code !== "ESRCH") {
+					console.error(colors.red("Failed to stop daemon:"), err);
+					process.exit(1);
+				}
+				console.log(colors.yellow("Cleaning up stale PID file..."));
+				if (existsSync(pidFile)) unlinkSync(pidFile);
+				if (existsSync(stateFile)) unlinkSync(stateFile);
+			}
 		}
 		console.log(colors.cyan("Starting daemon..."));
 		const supervisor = new DaemonSupervisor(join(process.cwd(), "index.ts"));
@@ -215,7 +227,15 @@ program
 				`${colors.green("✅")} Toggle signal sent to daemon (${colors.dim(`PID: ${pid}`)})`,
 			);
 		} catch (error) {
-			console.error(colors.red("Failed to send toggle signal:"), error);
+			const err = error as NodeJS.ErrnoException;
+			console.error(colors.red("Failed to send toggle signal:"), err);
+			if (err.code !== "ESRCH") {
+				process.exit(1);
+			}
+			console.log(colors.yellow("Cleaning up stale PID file..."));
+			if (existsSync(pidFile)) unlinkSync(pidFile);
+			if (existsSync(stateFile)) unlinkSync(stateFile);
+			console.log(`Start the daemon with: ${colors.cyan("voice-cli start")}`);
 			process.exit(1);
 		}
 	});

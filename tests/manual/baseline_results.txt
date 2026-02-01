@@ -1,0 +1,113 @@
+# Baseline Accuracy Results (Batch Mode)
+# Date: 2026-01-23
+# Branch: feat/improve_speed (before streaming implementation)
+# Mode: Batch (current implementation)
+# Deepgram Model: nova-3
+# Groq Model: whisper-large-v3
+
+================================================================================
+BASELINE TEST RESULTS - COMPLETED
+================================================================================
+
+Test 1: Hello, how are you today?
+Expected: Hello, how are you today?
+Result:   Hello. How are you today?
+Groq:     Hello, how are you today?
+Deepgram: Hello. How are you today?
+Latency:  1.8s
+Score:    [X]MINOR (period vs comma)
+
+Test 2: My phone number is 555-123-4567.
+Expected: My phone number is 555-123-4567.
+Result:   My phone number is (555) 123-4567
+Groq:     My phone number is 555-123-4567
+Deepgram: My phone number is (555) 123-4567
+Latency:  2.3s
+Score:    [X]MINOR (added parentheses formatting)
+
+Test 3: The API endpoint returns a JSON response.
+Expected: The API endpoint returns a JSON response.
+Result:   The API endpoint returns a JSON response.
+Groq:     The API endpoint returns a JSON response.
+Deepgram: The API endpoint returns a JSON response.
+Latency:  2.2s
+Score:    [X]EXACT ✅
+
+Test 4: We're using Deepgram and Groq for transcription.
+Expected: We're using Deepgram and Groq for transcription.
+Result:   We are using Deepgram and Groq for transcription.
+Groq:     We are using Deepgram and grok for transcription.
+Deepgram: We are using Deepgram and grok for transcription
+Latency:  2.0s
+Score:    [X]MINOR (contraction expanded, merger fixed "Groq" capitalization)
+
+Test 5: First, open the file; then, edit the configuration.
+Expected: First, open the file; then, edit the configuration.
+Result:   First, open the file, then edit the configuration.
+Groq:     First open the file then edit the configuration
+Deepgram: First, open the file, then edit edit the configuration.
+Latency:  2.0s
+Score:    [X]MINOR (semicolon→comma, merger fixed duplication)
+
+Test 6: I'm testing the voice transcription system. The current implementation sends the entire audio file after I stop recording.
+Expected: I'm testing the voice transcription system. The current implementation sends the entire audio file after I stop recording.
+Result:   I am testing the voice transcription system. The current implementation sends the entire order file after I stop recording.
+Groq:     I am testing the voice transcription system. The current implementation sends the entire order file after I stop recording.
+Deepgram: I am testing the voice transcription system. The current implementation sends the entire audio file after I stop recording.
+Latency:  2.2s
+Score:    [X]MAJOR ❌ (Groq misheard "audio"→"order", merger chose wrong version)
+
+Test 7: Their car is over there, and they're waiting.
+Expected: Their car is over there, and they're waiting.
+Result:   Their car is over there and they are waiting.
+Groq:     Their car is over there and they are waiting.
+Deepgram: Their car is over there and they are waiting.
+Latency:  2.2s
+Score:    [X]MINOR (missing comma, contraction expanded, homophones correct)
+
+Test 8: Peter Piper picked a peck of pickled peppers.
+Expected: Peter Piper picked a peck of pickled peppers.
+Result:   Peter Piper picked a peck of pickled peppers.
+Groq:     Peter Piper picked a peak of pickled peppers.
+Deepgram: Peter piper picked a peak of pickled peppers.
+Latency:  2.6s
+Score:    [X]EXACT ✅ (Merger fixed "peak"→"peck" and capitalization!)
+
+Test 9: Deploy the Docker container to Kubernetes using WebSocket streaming.
+Expected: Deploy the Docker container to Kubernetes using WebSocket streaming.
+Result:   Deploy the Docker container to Kubernetes using WebSocket streaming.
+Groq:     Deploy the docker container to kubernetes using websocket streaming
+Deepgram: Deploy the docker container to Kubernetes using WebSocket streaming.
+Latency:  2.3s
+Score:    [X]EXACT ✅ (Merger fixed all capitalization)
+
+Test 10: Hmm, let me think about that for a moment.
+Expected: Hmm, let me think about that for a moment.
+Result:   Let me think about that for a moment.
+Groq:     Let me think about that for a moment.
+Deepgram: Let me think about that for a moment.
+Latency:  1.9s
+Score:    [X]MINOR (dropped "Hmm" filler word)
+
+================================================================================
+
+## BASELINE SUMMARY
+
+Tested on: 2026-01-23
+Total Tests: 10
+
+EXACT:  3 / 10 (30%)
+MINOR:  6 / 10 (60%)
+MAJOR:  1 / 10 (10%)
+
+Average Latency (after stop): 2.15 seconds
+
+Key Findings:
+- LLM merger is very effective at fixing errors (Test 4, 8, 9)
+- One critical failure where merger chose wrong version (Test 6)
+- Consistent 2-2.6s latency regardless of recording length
+- Technical terms handled well
+- Homophones correctly identified
+- Filler words ("Hmm") dropped by both services
+
+================================================================================

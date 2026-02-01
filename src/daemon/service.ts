@@ -7,6 +7,7 @@ import { loadConfig } from "../config/loader";
 import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
 import { notify } from "../output/notification";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
+import { DeepgramStreamingTranscriber } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
 import { TranscriptMerger } from "../transcribe/merger";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
@@ -43,6 +44,8 @@ export class DaemonService {
 	private hotkeyListener: HotkeyListener;
 	private groq: GroqClient;
 	private deepgram: DeepgramTranscriber;
+	private deepgramStreaming?: DeepgramStreamingTranscriber;
+	private streamingDataHandler?: (chunk: Buffer) => void;
 	private merger: TranscriptMerger;
 	private clipboard: ClipboardManager;
 	private pidFile: string;
@@ -147,6 +150,19 @@ export class DaemonService {
 			this.errorCount++;
 			this.setStatus("error", err.message);
 
+			if (this.streamingDataHandler) {
+				this.recorder.off("data", this.streamingDataHandler);
+				this.streamingDataHandler = undefined;
+			}
+			if (this.deepgramStreaming) {
+				this.deepgramStreaming
+					.stop()
+					.catch((e) =>
+						logError("Failed to stop streaming on recorder error", e),
+					);
+				this.deepgramStreaming = undefined;
+			}
+
 			let title = "Error";
 			let message = err.message;
 
@@ -235,9 +251,67 @@ export class DaemonService {
 	private async handleTrigger() {
 		if (this.status === "idle" || this.status === "error") {
 			try {
+				const config = loadConfig();
 				this.setStatus("starting");
+
+				if (config.transcription.streaming) {
+					if (this.streamingDataHandler) {
+						this.recorder.off("data", this.streamingDataHandler);
+						logger.debug("Removed old streaming data handler");
+					}
+
+					logger.info("Starting Deepgram streaming connection...");
+					this.deepgramStreaming = new DeepgramStreamingTranscriber();
+					await this.deepgramStreaming.start(
+						config.transcription.language,
+						config.transcription.boostWords || [],
+					);
+					logger.info("Deepgram streaming connection established");
+
+					this.deepgramStreaming.on("transcript", (text) => {
+						logger.info({ text }, "Received streaming transcript chunk");
+					});
+
+					let chunkCount = 0;
+					this.streamingDataHandler = (chunk: Buffer) => {
+						chunkCount++;
+						logger.debug(
+							{ chunkNumber: chunkCount, chunkSize: chunk.length },
+							"Handler called with audio chunk",
+						);
+						if (this.deepgramStreaming) {
+							this.deepgramStreaming.send(chunk);
+							logger.debug(
+								{ chunkNumber: chunkCount },
+								"Sent chunk to Deepgram",
+							);
+						} else {
+							logger.error(
+								{ chunkNumber: chunkCount },
+								"No streaming connection when chunk received!",
+							);
+						}
+					};
+
+					this.recorder.on("data", this.streamingDataHandler);
+					logger.info("Streaming data handler attached to recorder");
+				}
+
 				await this.recorder.start();
-			} catch (_error) {
+			} catch (error) {
+				logError("Failed to start recording", error);
+				if (this.streamingDataHandler) {
+					this.recorder.off("data", this.streamingDataHandler);
+					this.streamingDataHandler = undefined;
+				}
+				if (this.deepgramStreaming) {
+					try {
+						await this.deepgramStreaming.stop();
+					} catch (e) {
+						logError("Failed to stop streaming after start failure", e);
+					}
+					this.deepgramStreaming = undefined;
+				}
 				this.setStatus("idle");
 			}
 		} else if (this.status === "recording") {
@@ -254,27 +328,44 @@ export class DaemonService {
 			const language = config.transcription.language;
 			const boostWords = config.transcription.boostWords || [];
 
-			// Convert audio to optimal format (16kHz WAV Mono)
 			const convertedBuffer = await convertAudio(audioBuffer);
 
 			let groqErr: any = null;
 			let deepgramErr: any = null;
 			const startTime = Date.now();
 
-			const [groqText, deepgramText] = await Promise.all([
-				this.groq
-					.transcribe(convertedBuffer, language, boostWords)
-					.catch((err) => {
-						groqErr = err;
-						return "";
-					}),
-				this.deepgram
-					.transcribe(convertedBuffer, language, boostWords)
-					.catch((err) => {
+			let groqText = "";
+			let deepgramText = "";
+
+			if (config.transcription.streaming && this.deepgramStreaming) {
+				[groqText, deepgramText] = await Promise.all([
+					this.groq
+						.transcribe(convertedBuffer, language, boostWords)
+						.catch((err) => {
+							groqErr = err;
+							return "";
+						}),
+					this.deepgramStreaming.stop().catch((err) => {
 						deepgramErr = err;
 						return "";
 					}),
-			]);
+				]);
+			} else {
+				[groqText, deepgramText] = await Promise.all([
+					this.groq
+						.transcribe(convertedBuffer, language, boostWords)
+						.catch((err) => {
+							groqErr = err;
+							return "";
+						}),
+					this.deepgram
+						.transcribe(convertedBuffer, language, boostWords)
+						.catch((err) => {
+							deepgramErr = err;
+							return "";
+						}),
+				]);
+			}
 
 			const processingTime = Date.now() - startTime;
 
@@ -406,6 +497,12 @@ export class DaemonService {
 			if (this.status !== "error") {
 				this.setStatus("idle");
 			}
+
+			if (this.streamingDataHandler) {
+				this.recorder.off("data", this.streamingDataHandler);
+				this.streamingDataHandler = undefined;
+			}
+			this.deepgramStreaming = undefined;
 		}
 	}
 }

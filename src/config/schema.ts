@@ -170,6 +170,7 @@ const defaultPaths = {
 
 const defaultTranscription = {
 	language: "en",
+	streaming: false,
 } as const;
 
 export const ApiKeysSchema = z.object({
@@ -231,6 +232,7 @@ export const TranscriptionSchema = z.object({
 		message: "Boost words limit exceeded: Maximum 450 words allowed.",
 	}),
 	language: z.enum(["en"]).default(defaultTranscription.language as "en"),
+	streaming: z.boolean().default(defaultTranscription.streaming),
 });
 
 export const ConfigSchema = z.object({

@@ -87,6 +87,7 @@ export class AudioRecorder extends EventEmitter {
 								? chunk
 								: Buffer.from(chunk, "binary");
 							this.chunks.push(bufferChunk);
+							this.emit("data", bufferChunk);
 						});
 
 						stream.once("error", (err: unknown) => {

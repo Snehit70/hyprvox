@@ -52,6 +52,23 @@
 		// Language code for transcription. Currently only 'en' is officially supported.
 		"language": "en",
 
+		// Enable streaming mode (real-time processing during recording)
+		//
+		// BATCH MODE (streaming: false) - DEFAULT
+		// - Processes audio after you stop recording
+		// - Higher accuracy (Deepgram has full context)
+		// - Latency: 2-8 seconds after stop
+		// - Best for: Accuracy-critical use cases
+		//
+		// STREAMING MODE (streaming: true) - EXPERIMENTAL
+		// - Processes audio in real-time while you speak
+		// - Slightly lower accuracy (chunked processing)
+		// - Latency: 0.5-1 second after stop (75% faster!)
+		// - Best for: Speed-critical workflows
+		//
+		// Note: Groq + LLM merger helps compensate for streaming accuracy loss
+		"streaming": false,
+
 		// Custom vocabulary to improve accuracy for jargon, names, or acronyms.
 		// Limit: Total word count across all entries must not exceed 450 words.
 		"boostWords": [

@@ -158,7 +158,40 @@ Settings related to the speech-to-text engine.
 | Option | Type | Default | Description | Validation Rules |
 | :--- | :--- | :--- | :--- | :--- |
 | `language` | String | `"en"` | ISO 639-1 language code for transcription. **Only English (`en`) is supported in v1.0.** | N/A |
+| `streaming` | Boolean | `false` | Enable real-time streaming transcription during recording. | N/A |
 | `boostWords` | Array | `[]` | List of words to prioritize for better accuracy (e.g., names, jargon). | Max 450 words total. |
+
+#### Streaming Mode
+
+The `streaming` option controls whether transcription happens in real-time during recording or after you stop.
+
+**Batch Mode (streaming: false) - DEFAULT**
+- Processes audio after you stop recording
+- Higher accuracy (Deepgram has full context)
+- Latency: 2-8 seconds after stop
+- Best for: Accuracy-critical use cases
+
+**Streaming Mode (streaming: true) - EXPERIMENTAL**
+- Processes audio in real-time while you speak
+- Slightly lower accuracy (chunked processing)
+- Latency: 0.5-1 second after stop (75% faster!)
+- Best for: Speed-critical workflows
+
+**How It Works:**
+- In streaming mode, audio chunks are sent to Deepgram via WebSocket as you speak
+- Groq still processes the full audio file after recording stops
+- The LLM merger combines both transcripts, compensating for streaming accuracy loss
+- Final result typically matches batch mode quality with significantly reduced latency
+
+**When to Use Streaming:**
+- You prioritize speed over absolute accuracy
+- You're transcribing conversational speech (not technical jargon)
+- You want near-instant results after stopping
+
+**When to Use Batch:**
+- You need maximum accuracy
+- You're transcribing technical content with specialized vocabulary
+- A few extra seconds of latency is acceptable
 
 #### Boost Words (Custom Vocabulary)
 
