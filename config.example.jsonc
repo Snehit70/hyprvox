@@ -79,5 +79,11 @@
 			"Wayland",
 			"Hyprland"
 		]
+	},
+	"visualization": {
+		// Enable real-time audio waveform overlay during recording
+		// Requires: Wayland compositor with layer-shell support (Hyprland, Sway, etc.)
+		// Build overlay first: bun run build:overlay
+		"enabled": false
 	}
 }
