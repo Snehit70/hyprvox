@@ -78,29 +78,13 @@ program
 			}
 
 			process.on("SIGINT", () => {
-				service
-					.stop()
-					.then(() => process.exit(0))
-					.catch((err) => {
-						console.error(
-							colors.red("Failed to stop daemon:"),
-							err?.message ?? err,
-						);
-						process.exit(1);
-					});
+				service.stop();
+				process.exit(0);
 			});
 
 			process.on("SIGTERM", () => {
-				service
-					.stop()
-					.then(() => process.exit(0))
-					.catch((err) => {
-						console.error(
-							colors.red("Failed to stop daemon:"),
-							err?.message ?? err,
-						);
-						process.exit(1);
-					});
+				service.stop();
+				process.exit(0);
 			});
 		}
 	});

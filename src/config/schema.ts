@@ -173,10 +173,6 @@ const defaultTranscription = {
 	streaming: false,
 } as const;
 
-const defaultVisualization = {
-	enabled: false,
-};
-
 export const ApiKeysSchema = z.object({
 	groq: z
 		.string()
@@ -239,16 +235,11 @@ export const TranscriptionSchema = z.object({
 	streaming: z.boolean().default(defaultTranscription.streaming),
 });
 
-export const VisualizationSchema = z.object({
-	enabled: z.boolean().default(defaultVisualization.enabled),
-});
-
 export const ConfigSchema = z.object({
 	apiKeys: ApiKeysSchema,
 	behavior: BehaviorSchema.default(defaultBehavior),
 	paths: PathsSchema.default(defaultPaths),
 	transcription: TranscriptionSchema.default(defaultTranscription),
-	visualization: VisualizationSchema.default(defaultVisualization),
 });
 
 export const ConfigFileSchema = z.object({
@@ -256,7 +247,6 @@ export const ConfigFileSchema = z.object({
 	behavior: BehaviorSchema.default(defaultBehavior),
 	paths: PathsSchema.default(defaultPaths),
 	transcription: TranscriptionSchema.default(defaultTranscription),
-	visualization: VisualizationSchema.default(defaultVisualization),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

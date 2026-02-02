@@ -133,8 +133,8 @@ describe("DaemonService State Management", () => {
 		service = new DaemonService();
 	});
 
-	afterEach(async () => {
-		await service.stop();
+	afterEach(() => {
+		service.stop();
 	});
 
 	test("Initial state should be idle", () => {
