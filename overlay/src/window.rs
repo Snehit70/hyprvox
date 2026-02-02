@@ -57,7 +57,14 @@ pub fn run(rx: mpsc::Receiver<AmplitudeMessage>) -> Result<()> {
             render_state.height = init_h.max(1);
             render_state.pixmap = Pixmap::new(render_state.width, render_state.height)
                 .unwrap_or_else(|| Pixmap::new(1, 1).unwrap());
-            render_state.file = Some(file.try_clone().unwrap());
+
+            match file.try_clone() {
+                Ok(cloned_file) => render_state.file = Some(cloned_file),
+                Err(e) => {
+                    eprintln!("[Window] Failed to clone file descriptor: {}", e);
+                    return ReturnData::None;
+                }
+            }
 
             render::draw_waveform(
                 &mut render_state.pixmap,
@@ -183,6 +190,8 @@ fn write_pixmap_to_file(pixmap: &Pixmap, file: &std::fs::File, width: u32, heigh
 
         std::ptr::copy_nonoverlapping(data.as_ptr(), ptr as *mut u8, size);
 
-        libc::munmap(ptr, size);
+        if libc::munmap(ptr, size) != 0 {
+            eprintln!("[Window] munmap failed");
+        }
     }
 }

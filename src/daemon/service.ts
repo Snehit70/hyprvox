@@ -231,7 +231,12 @@ export class DaemonService {
 					await this.overlayManager.start();
 					logger.info("Visualization overlay started");
 				} catch (error) {
-					logger.warn({ error }, "Failed to start visualization overlay");
+					logger.error({ error }, "Failed to start visualization overlay");
+					notify(
+						"Visualization Unavailable",
+						"Audio visualization overlay failed to start. Check logs for details.",
+						"warning",
+					);
 					this.overlayManager = undefined;
 				}
 			}
