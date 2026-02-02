@@ -1,18 +1,19 @@
 import { unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { AmplitudeCalculator } from "../audio/amplitude";
 import { convertAudio } from "../audio/converter";
 import { AudioRecorder } from "../audio/recorder";
 import { loadConfig } from "../config/loader";
 import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
 import { notify } from "../output/notification";
+import { OverlayManager } from "../overlay/manager";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
 import { DeepgramStreamingTranscriber } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
 import { TranscriptMerger } from "../transcribe/merger";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
-import type { ErrorCode } from "../utils/errors";
-import { AppError } from "../utils/errors";
+import { AppError, type ErrorCode } from "../utils/errors";
 import { appendHistory } from "../utils/history";
 import { logError, logger } from "../utils/logger";
 import { incrementTranscriptionCount, loadStats } from "../utils/stats";
@@ -48,6 +49,8 @@ export class DaemonService {
 	private streamingDataHandler?: (chunk: Buffer) => void;
 	private merger: TranscriptMerger;
 	private clipboard: ClipboardManager;
+	private overlayManager?: OverlayManager;
+	private amplitudeCalculator: AmplitudeCalculator;
 	private pidFile: string;
 	private stateFile: string;
 	private lastTranscription?: Date;
@@ -66,6 +69,7 @@ export class DaemonService {
 		this.deepgram = new DeepgramTranscriber();
 		this.merger = new TranscriptMerger();
 		this.clipboard = new ClipboardManager();
+		this.amplitudeCalculator = new AmplitudeCalculator(0.3);
 		const configDir = join(homedir(), ".config", "voice-cli");
 		this.pidFile = join(configDir, "daemon.pid");
 		this.stateFile = join(configDir, "daemon.state");
@@ -134,12 +138,28 @@ export class DaemonService {
 		this.recorder.on("start", () => {
 			this.setStatus("recording");
 			notify("Recording Started", "Listening...", "info");
+
+			if (this.overlayManager) {
+				this.overlayManager.setRecording(true);
+			}
 		});
 
 		this.recorder.on("stop", (audioBuffer: Buffer, duration: number) => {
 			this.setStatus("processing");
 			notify("Recording Stopped", "Processing transcription...", "info");
+
+			if (this.overlayManager) {
+				this.overlayManager.setRecording(false);
+			}
+
 			this.processAudio(audioBuffer, duration);
+		});
+
+		this.recorder.on("data", (chunk: Buffer) => {
+			if (this.overlayManager) {
+				const amplitude = this.amplitudeCalculator.calculate(chunk);
+				this.overlayManager.sendAmplitude(amplitude);
+			}
 		});
 
 		this.recorder.on("warning", (msg: string) => {
@@ -203,6 +223,24 @@ export class DaemonService {
 			this.updateState();
 
 			const config = loadConfig();
+
+			const visualizationEnabled = config.visualization?.enabled ?? false;
+			if (visualizationEnabled) {
+				try {
+					this.overlayManager = new OverlayManager();
+					await this.overlayManager.start();
+					logger.info("Visualization overlay started");
+				} catch (error) {
+					logger.error({ error }, "Failed to start visualization overlay");
+					notify(
+						"Visualization Unavailable",
+						"Audio visualization overlay failed to start. Check logs for details.",
+						"warning",
+					);
+					this.overlayManager = undefined;
+				}
+			}
+
 			const hotkeyDisabled =
 				config.behavior.hotkey.toLowerCase() === "disabled";
 
@@ -234,13 +272,20 @@ export class DaemonService {
 		}
 	}
 
-	public stop() {
+	public async stop() {
 		this.hotkeyListener.stop();
 		this.recorder.stop(true);
 		process.off("SIGUSR1", this.signalHandler);
 		if (this.keepAliveInterval) {
 			clearInterval(this.keepAliveInterval);
 		}
+
+		// Stop overlay
+		if (this.overlayManager) {
+			await this.overlayManager.stop();
+			this.overlayManager = undefined;
+		}
+
 		try {
 			unlinkSync(this.pidFile);
 			unlinkSync(this.stateFile);

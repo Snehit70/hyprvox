@@ -1,7 +1,8 @@
 import { execSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Command } from "commander";
 import * as colors from "yoctocolors";
 import { AudioDeviceService } from "../audio/device-service";
@@ -238,6 +239,31 @@ export const healthCommand = new Command("health")
 			console.log(
 				`${colors.blue("ℹ️")}  systemd service not active or not installed`,
 			);
+		}
+
+		console.log(`\n${colors.cyan("-------------------------")}`);
+
+		// 6. Visualization Check
+		if (config?.visualization?.enabled) {
+			console.log(`\n${colors.bold("--- Visualization ---")}`);
+			const projectRoot = join(
+				dirname(fileURLToPath(import.meta.url)),
+				"../..",
+			);
+			const overlayBinary = join(
+				projectRoot,
+				"overlay/target/release/voice-overlay",
+			);
+			if (existsSync(overlayBinary)) {
+				console.log(
+					`${colors.green("✅")} Overlay binary found at ${colors.dim(overlayBinary)}`,
+				);
+			} else {
+				console.log(
+					`${colors.red("❌")} Overlay binary not found. Run: ${colors.cyan("cd overlay && cargo build --release")}`,
+				);
+				allOk = false;
+			}
 		}
 
 		console.log(`\n${colors.cyan("-------------------------")}`);

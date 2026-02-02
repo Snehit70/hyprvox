@@ -10,7 +10,10 @@
 		"test:coverage": "vitest run --coverage",
 		"lint": "biome lint .",
 		"format": "biome format --write .",
-		"check": "biome check --write ."
+		"check": "biome check --write .",
+		"build:overlay": "cd overlay && cargo build --release",
+		"build:overlay:dev": "cd overlay && cargo build",
+		"build": "bun run build:overlay"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.3.11",

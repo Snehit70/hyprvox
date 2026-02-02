@@ -242,6 +242,35 @@ For **v1.0**, `voice-cli` officially supports **English only**. While the config
 
 For more details on formatting, token limits, and case sensitivity, see the **[Configuration Guide: Boost Words](docs/CONFIGURATION.md#boost-words-custom-vocabulary)**.
 
+### Audio Visualization (Optional)
+
+`voice-cli` includes an optional real-time audio visualization overlay that displays waveform animations during recording sessions.
+
+**Features:**
+- Real-time waveform rendering at 60 FPS
+- Wayland native using layer-shell protocol
+- Minimal overhead (~1.4MB binary, <5% CPU)
+- Automatic lifecycle management
+
+**Requirements:**
+- Wayland compositor with layer-shell support (Hyprland, Sway, KDE Plasma 5.27+, GNOME 45+)
+- Rust toolchain (1.70+) for building
+
+**Setup:**
+```bash
+# Build the overlay binary
+bun run build:overlay
+
+# Enable in config
+{
+  "visualization": {
+    "enabled": true
+  }
+}
+```
+
+**📖 For detailed setup and troubleshooting, see the [Visualization Guide](docs/VISUALIZATION.md).**
+
 ## Linux Compatibility
 
 ### Platform Compatibility Matrix
