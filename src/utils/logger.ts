@@ -31,14 +31,14 @@ const rotateLogs = (dir: string) => {
 		if (!existsSync(dir)) return;
 		const files = readdirSync(dir);
 		const now = Date.now();
-		const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
+		const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
 
 		for (const file of files) {
 			if (file.startsWith("voice-cli-") && file.endsWith(".log")) {
 				const filePath = join(dir, file);
 				try {
 					const stats = statSync(filePath);
-					if (now - stats.mtimeMs > sevenDaysMs) {
+					if (now - stats.mtimeMs > thirtyDaysMs) {
 						unlinkSync(filePath);
 					}
 				} catch (_e) {}
