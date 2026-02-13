@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import pino from "pino";
+import { createStream } from "rotating-file-stream";
 import { loadConfig } from "../config/loader";
 
 let logDir: string;
@@ -46,37 +47,36 @@ const rotateLogs = (dir: string) => {
 	} catch (_e) {}
 };
 
-const getLogFile = () => {
-	const dateStr = new Date().toISOString().split("T")[0];
-	return join(logDir, `voice-cli-${dateStr}.log`);
-};
-
-const logFile = getLogFile();
 rotateLogs(logDir);
 
-export const logger = pino({
-	level: process.env.LOG_LEVEL || "info",
-	base: {
-		pid: process.pid,
+const rotatingStream = createStream(
+	(time) => {
+		const date = time ? new Date(time) : new Date();
+		const dateStr = date.toISOString().split("T")[0];
+		return `voice-cli-${dateStr}.log`;
 	},
-	timestamp: pino.stdTimeFunctions.isoTime,
-	serializers: {
-		err: pino.stdSerializers.err,
-		error: pino.stdSerializers.err,
+	{
+		interval: "1d",
+		path: logDir,
 	},
-	transport: {
-		targets: [
-			{
-				target: "pino/file",
-				options: { destination: logFile, mkdir: true },
-			},
-			{
-				target: "pino-pretty",
-				options: { destination: 1, colorize: true },
-			},
-		],
+);
+
+const streams = [{ stream: rotatingStream }, { stream: pino.destination(1) }];
+
+export const logger = pino(
+	{
+		level: process.env.LOG_LEVEL || "info",
+		base: {
+			pid: process.pid,
+		},
+		timestamp: pino.stdTimeFunctions.isoTime,
+		serializers: {
+			err: pino.stdSerializers.err,
+			error: pino.stdSerializers.err,
+		},
 	},
-});
+	pino.multistream(streams),
+);
 
 export const logError = (
 	msg: string,
