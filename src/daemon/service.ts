@@ -19,6 +19,8 @@ import { incrementTranscriptionCount, loadStats } from "../utils/stats";
 import { checkHotkeyConflict } from "./conflict";
 import { HotkeyListener } from "./hotkey";
 
+const HALLUCINATION_MAX_CHARS = 20;
+
 type DaemonStatus =
 	| "idle"
 	| "starting"
@@ -380,7 +382,7 @@ export class DaemonService {
 						}),
 					this.deepgramStreaming.stop().catch((err) => {
 						deepgramErr = err;
-						return { text: "", chunkCount: 0 };
+						return { text: "", chunkCount: -1 };
 					}),
 				]);
 				groqText = groqResult;
@@ -457,7 +459,7 @@ export class DaemonService {
 				streamingChunkCount === 0 &&
 				!deepgramErr &&
 				groqText &&
-				groqText.length < 20
+				groqText.length < HALLUCINATION_MAX_CHARS
 			) {
 				logger.info(
 					{ groqText, streamingChunkCount },
