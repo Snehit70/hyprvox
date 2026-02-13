@@ -133,6 +133,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			this.emit("error", err);
 			if (this.connection) {
 				try {
+					this.connection.removeAllListeners();
 					this.connection.requestClose();
 				} catch (e) {
 					logger.error({ err: e }, "Failed to close timed out connection");
