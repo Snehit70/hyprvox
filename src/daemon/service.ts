@@ -60,6 +60,7 @@ export class DaemonService {
 	private startTime: number = Date.now();
 	private signalHandler: () => void;
 	private keepAliveInterval?: NodeJS.Timeout;
+	private cancelPending = false;
 
 	constructor() {
 		this.recorder = new AudioRecorder();
@@ -252,6 +253,7 @@ export class DaemonService {
 
 	private async handleTrigger() {
 		if (this.status === "idle" || this.status === "error") {
+			this.cancelPending = false;
 			try {
 				const config = loadConfig();
 				this.setStatus("starting");
@@ -269,6 +271,25 @@ export class DaemonService {
 						config.transcription.boostWords || [],
 					);
 					logger.info("Deepgram streaming connection established");
+
+					if (this.cancelPending) {
+						logger.info("Recording cancelled during setup, cleaning up");
+						this.cancelPending = false;
+						if (this.streamingDataHandler) {
+							this.recorder.off("data", this.streamingDataHandler);
+							this.streamingDataHandler = undefined;
+						}
+						if (this.deepgramStreaming) {
+							try {
+								await this.deepgramStreaming.stop();
+							} catch (e) {
+								logError("Failed to stop streaming after cancellation", e);
+							}
+							this.deepgramStreaming = undefined;
+						}
+						this.setStatus("idle");
+						return;
+					}
 
 					this.deepgramStreaming.on("transcript", (text) => {
 						logger.info({ text }, "Received streaming transcript chunk");
@@ -350,6 +371,10 @@ export class DaemonService {
 		} else if (this.status === "recording") {
 			this.setStatus("stopping");
 			await this.recorder.stop();
+		} else if (this.status === "starting") {
+			this.cancelPending = true;
+			logger.info("Recording start cancelled by user");
+			notify("Cancelled", "Recording start cancelled", "info");
 		} else {
 			logger.warn(`Hotkey ignored in state: ${this.status}`);
 		}
