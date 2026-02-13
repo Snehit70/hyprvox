@@ -19,6 +19,8 @@ import { incrementTranscriptionCount, loadStats } from "../utils/stats";
 import { checkHotkeyConflict } from "./conflict";
 import { HotkeyListener } from "./hotkey";
 
+const HALLUCINATION_MAX_CHARS = 20;
+
 type DaemonStatus =
 	| "idle"
 	| "starting"
@@ -368,8 +370,10 @@ export class DaemonService {
 			let groqText = "";
 			let deepgramText = "";
 
+			let streamingChunkCount = -1; // -1 = batch mode (not streaming)
+
 			if (config.transcription.streaming && this.deepgramStreaming) {
-				[groqText, deepgramText] = await Promise.all([
+				const [groqResult, streamingResult] = await Promise.all([
 					this.groq
 						.transcribe(convertedBuffer, language, boostWords)
 						.catch((err) => {
@@ -378,9 +382,12 @@ export class DaemonService {
 						}),
 					this.deepgramStreaming.stop().catch((err) => {
 						deepgramErr = err;
-						return "";
+						return { text: "", chunkCount: -1 };
 					}),
 				]);
+				groqText = groqResult;
+				deepgramText = streamingResult.text;
+				streamingChunkCount = streamingResult.chunkCount;
 			} else {
 				[groqText, deepgramText] = await Promise.all([
 					this.groq
@@ -448,6 +455,25 @@ export class DaemonService {
 				throw new Error("Both transcription services failed");
 			}
 
+			if (
+				streamingChunkCount === 0 &&
+				!deepgramErr &&
+				groqText &&
+				groqText.length < HALLUCINATION_MAX_CHARS
+			) {
+				logger.info(
+					{ groqText, streamingChunkCount },
+					"Filtered Groq hallucination on silent audio",
+				);
+				notify(
+					"No Speech Detected",
+					"Recording contained no audible speech.",
+					"warning",
+				);
+				this.setStatus("idle");
+				return;
+			}
+
 			let finalText = "";
 			if (groqText && deepgramText) {
 				finalText = await this.merger.merge(groqText, deepgramText);
@@ -459,9 +485,12 @@ export class DaemonService {
 
 				if (error) {
 					handleTranscriptionError(error, failedService);
+					notify(
+						"Warning",
+						`${failedService} failed, using fallback`,
+						"warning",
+					);
 				}
-
-				notify("Warning", `${failedService} failed, using fallback`, "warning");
 			}
 
 			if (!finalText) {

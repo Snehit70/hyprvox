@@ -9,6 +9,11 @@ import {
 import { loadConfig } from "../config/loader";
 import { logError, logger } from "../utils/logger";
 
+export interface StreamingResult {
+	text: string;
+	chunkCount: number;
+}
+
 export class DeepgramStreamingTranscriber extends EventEmitter {
 	private client: DeepgramClient;
 	private connection: LiveClient | null = null;
@@ -125,7 +130,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 		}
 	}
 
-	public async stop(): Promise<string> {
+	public async stop(): Promise<StreamingResult> {
 		if (this.connection) {
 			try {
 				// Flush any buffered audio before closing
@@ -180,6 +185,6 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			"Deepgram streaming transcription complete",
 		);
 
-		return finalText;
+		return { text: finalText, chunkCount: this.transcriptChunks.length };
 	}
 }
