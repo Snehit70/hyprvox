@@ -1,8 +1,20 @@
 # voice-cli
 
+[![Build Status](https://github.com/snehit/voice-cli/actions/workflows/test.yml/badge.svg)](https://github.com/snehit/voice-cli/actions)
+
 **Production-ready STT daemon for Linux with global hotkeys and clipboard history.**
 
-`voice-cli` is a high-performance speech-to-text daemon for Linux (Wayland/X11) that provides global transcription via Groq (Whisper V3) and Deepgram (Nova-3). It features low-latency parallel execution, automatic clipboard history appending, and systemd integration for a seamless "transcribe-anywhere" experience.
+`voice-cli` is a high-performance speech-to-text daemon for Linux (Wayland/X11) that provides global transcription via Groq (Whisper V3) and Deepgram (Nova-3). It features **real-time streaming transcription** (0.5s latency), automatic clipboard history appending, and systemd integration for a seamless "transcribe-anywhere" experience.
+
+## Features
+
+- **Global Hotkeys**: Trigger recording from anywhere (Wayland/X11 compatible).
+- **Dual-Engine Transcription**: Combines Groq (Whisper V3) speed with Deepgram (Nova-3) reliability.
+- **Real-time Streaming**: Instant transcription with <1s latency.
+- **Clipboard Integration**: Automatically appends transcripts to your clipboard history.
+- **Systemd Service**: Runs silently in the background on startup.
+- **Custom Vocabulary**: Boost accuracy for technical terms and names.
+
 
 ## Prerequisites
 
@@ -213,6 +225,15 @@ bun run index.ts config set apiKeys.deepgram 0000...
 bun run index.ts health
 ```
 
+### Streaming Mode
+
+**voice-cli** supports two transcription modes:
+
+1.  **Batch Mode (Default)**: Higher accuracy, 2-8s latency.
+2.  **Streaming Mode (`"streaming": true`)**: **0.5s latency**, optimized for speed.
+
+For a detailed comparison and configuration guide, see the **[Configuration Guide: Streaming Mode](docs/CONFIGURATION.md#streaming-mode)**.
+
 ### Boost Words (Custom Vocabulary)
 
 Improve transcription accuracy for specific terms (names, technical jargon, acronyms) by adding them to the `boostWords` array in the `transcription` section of your `config.json`.
@@ -225,6 +246,7 @@ Improve transcription accuracy for specific terms (names, technical jargon, acro
   ```json
   "transcription": {
     "language": "en",
+    "streaming": true,
     "boostWords": [
       "Sisyphus",
       "voice-cli",
