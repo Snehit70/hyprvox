@@ -6,6 +6,7 @@ import { withRetry } from "../utils/retry";
 
 export class DeepgramTranscriber {
 	private client: DeepgramClient;
+	private static readonly KEYWORD_BOOST_VALUE = 5;
 
 	constructor() {
 		const config = loadConfig();
@@ -66,7 +67,9 @@ export class DeepgramTranscriber {
 							smart_format: true,
 							punctuate: true,
 							language: language,
-							keywords: boostWords,
+							keywords: boostWords.map(
+								(word) => `${word}:${DeepgramTranscriber.KEYWORD_BOOST_VALUE}`,
+							),
 						});
 
 					if (error) throw error;
@@ -132,7 +135,10 @@ export class DeepgramTranscriber {
 								smart_format: true,
 								punctuate: true,
 								language: language,
-								keywords: boostWords,
+								keywords: boostWords.map(
+									(word) =>
+										`${word}:${DeepgramTranscriber.KEYWORD_BOOST_VALUE}`,
+								),
 							});
 
 						if (retryError) throw retryError;

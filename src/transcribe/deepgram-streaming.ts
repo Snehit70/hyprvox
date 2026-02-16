@@ -21,7 +21,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	private isConnected: boolean = false;
 	private isConnecting: boolean = false;
 	private audioBuffer: Buffer[] = [];
-	private static readonly MAX_BUFFER_CHUNKS = 100; // ~5 seconds of audio
+	private static readonly MAX_BUFFER_CHUNKS = 100;
+	private static readonly KEYWORD_BOOST_VALUE = 5;
 
 	constructor() {
 		super();
@@ -49,7 +50,10 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			};
 
 			if (boostWords.length > 0) {
-				options.search = boostWords;
+				options.keywords = boostWords.map(
+					(word) =>
+						`${word}:${DeepgramStreamingTranscriber.KEYWORD_BOOST_VALUE}`,
+				);
 			}
 
 			this.connection = this.client.listen.live(options);
