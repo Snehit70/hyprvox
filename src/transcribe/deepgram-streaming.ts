@@ -49,7 +49,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			};
 
 			if (boostWords.length > 0) {
-				options.keywords = boostWords;
+				options.search = boostWords;
 			}
 
 			this.connection = this.client.listen.live(options);
