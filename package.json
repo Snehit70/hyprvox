@@ -28,6 +28,7 @@
 		"@deepgram/sdk": "^4.11.3",
 		"clipboardy": "^5.0.2",
 		"commander": "^14.0.2",
+		"fastest-levenshtein": "^1.0.16",
 		"groq-sdk": "^0.37.0",
 		"node-global-key-listener": "^0.3.0",
 		"node-notifier": "^10.0.1",

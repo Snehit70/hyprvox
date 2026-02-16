@@ -9,7 +9,7 @@ import { notify } from "../output/notification";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
 import { DeepgramStreamingTranscriber } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
-import { TranscriptMerger } from "../transcribe/merger";
+import { type MergeResult, TranscriptMerger } from "../transcribe/merger";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import type { ErrorCode } from "../utils/errors";
 import { AppError } from "../utils/errors";
@@ -281,7 +281,6 @@ export class DaemonService {
 					// Start connection (non-blocking)
 					const startPromise = this.deepgramStreaming.start(
 						config.transcription.language,
-						config.transcription.boostWords || [],
 					);
 
 					// We catch synchronous errors from start(), but async connection errors go to 'error' event
@@ -457,12 +456,10 @@ export class DaemonService {
 							groqErr = err;
 							return "";
 						}),
-					this.deepgram
-						.transcribe(convertedBuffer, language, boostWords)
-						.catch((err) => {
-							deepgramErr = err;
-							return "";
-						}),
+					this.deepgram.transcribe(convertedBuffer, language).catch((err) => {
+						deepgramErr = err;
+						return "";
+					}),
 				]);
 			}
 
@@ -536,8 +533,12 @@ export class DaemonService {
 			}
 
 			let finalText = "";
+			let accuracy: MergeResult["accuracy"] | undefined;
+
 			if (groqText && deepgramText) {
-				finalText = await this.merger.merge(groqText, deepgramText);
+				const mergeResult = await this.merger.merge(groqText, deepgramText);
+				finalText = mergeResult.text;
+				accuracy = mergeResult.accuracy;
 			} else {
 				finalText = groqText || deepgramText;
 
@@ -596,6 +597,7 @@ export class DaemonService {
 							: groqText
 								? "groq"
 								: "deepgram",
+					accuracy,
 				},
 				"Transcription complete",
 			);

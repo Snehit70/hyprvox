@@ -55,7 +55,6 @@ export class DeepgramTranscriber {
 	public async transcribe(
 		audioBuffer: Buffer,
 		language: string = "en",
-		boostWords: string[] = [],
 	): Promise<string> {
 		try {
 			return await withRetry(
@@ -66,7 +65,6 @@ export class DeepgramTranscriber {
 							smart_format: true,
 							punctuate: true,
 							language: language,
-							keywords: boostWords,
 						});
 
 					if (error) throw error;
@@ -82,7 +80,6 @@ export class DeepgramTranscriber {
 								result?.results?.channels?.[0]?.alternatives?.[0]?.confidence,
 							model: "nova-3",
 							language,
-							boostWordsCount: boostWords.length,
 						},
 						"Deepgram Nova-3 transcription success",
 					);
@@ -120,7 +117,6 @@ export class DeepgramTranscriber {
 			}
 			logError("Deepgram Nova-3 failed, trying fallback", error, {
 				language,
-				boostWordsCount: boostWords.length,
 			});
 
 			try {
@@ -132,7 +128,6 @@ export class DeepgramTranscriber {
 								smart_format: true,
 								punctuate: true,
 								language: language,
-								keywords: boostWords,
 							});
 
 						if (retryError) throw retryError;
@@ -145,7 +140,6 @@ export class DeepgramTranscriber {
 								textLength: text.length,
 								model: "nova-2",
 								language,
-								boostWordsCount: boostWords.length,
 							},
 							"Deepgram Nova-2 fallback success",
 						);
@@ -196,7 +190,6 @@ export class DeepgramTranscriber {
 				}
 				logError("Deepgram fallback failed", retryError, {
 					language,
-					boostWordsCount: boostWords.length,
 				});
 				throw retryError;
 			}
