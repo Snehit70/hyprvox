@@ -5,7 +5,7 @@ import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
 
 const MODEL_A = "llama-3.3-70b-versatile";
-const MODEL_B = "openai/gpt-oss-120b";
+const MODEL_B = "llama-3.1-8b-instant";
 
 const SYSTEM_PROMPT = `You are an expert technical transcription editor.
 
@@ -160,12 +160,14 @@ ${deepgramText}`,
 					model: resultA.model,
 					timeMs: resultA.timeMs,
 					resultLength: resultA.result.length,
+					result: resultA.result,
 					error: resultA.error,
 				},
 				modelB: {
 					model: resultB.model,
 					timeMs: resultB.timeMs,
 					resultLength: resultB.result.length,
+					result: resultB.result,
 					error: resultB.error,
 				},
 				groqTextLength: groqText.length,
