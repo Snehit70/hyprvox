@@ -148,7 +148,7 @@ export class DaemonService {
 		if (config.overlay?.binaryPath) {
 			return config.overlay.binaryPath;
 		}
-		return join(process.cwd(), "mockup", "electron-overlay");
+		return join(process.cwd(), "overlay");
 	}
 
 	private startOverlay(): void {

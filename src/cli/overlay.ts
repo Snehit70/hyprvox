@@ -10,7 +10,7 @@ const configDir = join(homedir(), ".config", "voice-cli");
 const overlayPidFile = join(configDir, "overlay.pid");
 
 function getDefaultOverlayPath(): string {
-	return join(process.cwd(), "mockup", "electron-overlay");
+	return join(process.cwd(), "overlay");
 }
 
 function getOverlayBinaryPath(): string {
