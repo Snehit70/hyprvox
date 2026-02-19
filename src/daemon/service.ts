@@ -165,7 +165,7 @@ export class DaemonService {
 			this.overlayProcess = spawn("bun", ["run", "start"], {
 				cwd: overlayPath,
 				detached: true,
-				stdio: "ignore",
+				stdio: "inherit",
 			});
 
 			this.overlayProcess.unref();
