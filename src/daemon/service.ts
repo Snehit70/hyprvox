@@ -15,7 +15,7 @@ import { GroqClient } from "../transcribe/groq";
 import { type MergeResult, TranscriptMerger } from "../transcribe/merger";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import type { ErrorCode } from "../utils/errors";
-import { AppError } from "../utils/errors";
+import { AppError, errorIncludes, getErrorCode } from "../utils/errors";
 import { appendHistory } from "../utils/history";
 import { logError, logger } from "../utils/logger";
 import { incrementTranscriptionCount, loadStats } from "../utils/stats";
@@ -267,7 +267,7 @@ export class DaemonService {
 			let title = "Error";
 			let message = err.message;
 
-			const code = (err as any).code as ErrorCode;
+			const code = getErrorCode(err);
 
 			if (code === "NO_MICROPHONE") {
 				title = "Microphone Error";
@@ -570,13 +570,16 @@ export class DaemonService {
 
 			const processingTime = Date.now() - startTime;
 
-			const handleTranscriptionError = (err: any, failedService: string) => {
-				const code = err instanceof AppError ? err.code : undefined;
+			const handleTranscriptionError = (
+				err: unknown,
+				failedService: string,
+			) => {
+				const code = getErrorCode(err);
 
 				if (
 					code === "GROQ_INVALID_KEY" ||
 					code === "DEEPGRAM_INVALID_KEY" ||
-					err?.message?.includes("Invalid API Key")
+					errorIncludes(err, "Invalid API Key")
 				) {
 					const template =
 						failedService === "Groq"
@@ -585,12 +588,12 @@ export class DaemonService {
 					notify("Configuration Error", formatUserError(template), "error");
 				} else if (
 					code === "RATE_LIMIT_EXCEEDED" ||
-					err?.message?.includes("Rate limit exceeded")
+					errorIncludes(err, "Rate limit exceeded")
 				) {
 					const template =
 						ErrorTemplates.API.RATE_LIMIT_EXCEEDED(failedService);
 					notify("Rate Limit", formatUserError(template), "error");
-				} else if (code === "TIMEOUT" || err?.message?.includes("timed out")) {
+				} else if (code === "TIMEOUT" || errorIncludes(err, "timed out")) {
 					logger.warn(`${failedService} API timed out`);
 				} else {
 					logError(`${failedService} failed`, err);
@@ -710,17 +713,17 @@ export class DaemonService {
 				},
 				"Transcription complete",
 			);
-		} catch (error: any) {
+		} catch (error: unknown) {
 			logError("Processing failed", error, { duration });
 
 			let message = "Transcription failed. Check logs.";
-			const code = error instanceof AppError ? error.code : undefined;
+			const code = getErrorCode(error);
 
 			if (code === "ACCESS_DENIED" || error instanceof ClipboardAccessError) {
 				message = formatUserError(ErrorTemplates.CLIPBOARD.ACCESS_DENIED);
 			} else if (code === "APPEND_FAILED") {
 				message = formatUserError(ErrorTemplates.CLIPBOARD.APPEND_FAILED);
-			} else if (code === "TIMEOUT" || error?.message?.includes("timed out")) {
+			} else if (code === "TIMEOUT" || errorIncludes(error, "timed out")) {
 				message = formatUserError(ErrorTemplates.API.TIMEOUT("Both"));
 			} else if (code === "BOTH_SERVICES_FAILED") {
 				message = formatUserError(ErrorTemplates.API.BOTH_SERVICES_FAILED);

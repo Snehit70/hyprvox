@@ -2,7 +2,7 @@ import { execSync } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { type Recording, record } from "node-record-lpcm16";
 import { loadConfig } from "../config/loader";
-import { AppError, type ErrorCode } from "../utils/errors";
+import { AppError, type ErrorCode, hasErrorCode } from "../utils/errors";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
 
@@ -154,9 +154,7 @@ export class AudioRecorder extends EventEmitter {
 				operationName: "Start recording",
 				maxRetries: 2,
 				backoffs: [100, 200],
-				shouldRetry: (err) => {
-					return err instanceof AppError && err.code === "DEVICE_BUSY";
-				},
+				shouldRetry: (err) => hasErrorCode(err, "DEVICE_BUSY"),
 			},
 		);
 

@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { Command } from "commander";
 import * as colors from "yoctocolors";
 import { loadConfig } from "../config/loader";
+import { isErrorWithName } from "../utils/errors";
 
 function formatLogLine(line: string): string {
 	try {
@@ -97,7 +98,7 @@ async function tailFile(filePath: string, lines: number) {
 			}
 		}
 	} catch (err) {
-		if ((err as any).name === "AbortError") return;
+		if (isErrorWithName(err, "AbortError")) return;
 		throw err;
 	}
 }

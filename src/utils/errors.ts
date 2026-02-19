@@ -28,9 +28,13 @@ export type ErrorCode =
 
 export class AppError extends Error {
 	public readonly code: ErrorCode;
-	public readonly context?: Record<string, any>;
+	public readonly context?: Record<string, unknown>;
 
-	constructor(code: ErrorCode, message: string, context?: Record<string, any>) {
+	constructor(
+		code: ErrorCode,
+		message: string,
+		context?: Record<string, unknown>,
+	) {
 		super(message);
 		this.code = code;
 		this.context = context;
@@ -46,10 +50,35 @@ export class TranscriptionError extends AppError {
 		provider: string,
 		code: ErrorCode,
 		message: string,
-		context?: Record<string, any>,
+		context?: Record<string, unknown>,
 	) {
 		super(code, message, { ...context, provider });
 		this.provider = provider;
 		this.name = "TranscriptionError";
 	}
+}
+
+export function isAppError(error: unknown): error is AppError {
+	return error instanceof AppError;
+}
+
+export function hasErrorCode(error: unknown, code: ErrorCode): boolean {
+	return isAppError(error) && error.code === code;
+}
+
+export function getErrorCode(error: unknown): ErrorCode | undefined {
+	return isAppError(error) ? error.code : undefined;
+}
+
+export function isErrorWithName(error: unknown, name: string): boolean {
+	return error instanceof Error && error.name === name;
+}
+
+export function getErrorMessage(error: unknown): string {
+	if (error instanceof Error) return error.message;
+	return String(error);
+}
+
+export function errorIncludes(error: unknown, text: string): boolean {
+	return error instanceof Error && error.message.includes(text);
 }
