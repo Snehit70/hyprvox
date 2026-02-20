@@ -225,7 +225,7 @@ export const BehaviorSchema = z.object({
 
 export const PathsSchema = z.object({
 	logs: z.string().default(defaultPaths.logs),
-	history: z.string().default("~/.config/hypr/vox/history.json"),
+	history: z.string().default(defaultPaths.history),
 });
 
 export const TranscriptionSchema = z.object({

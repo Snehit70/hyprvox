@@ -1,6 +1,6 @@
 # hyprvox
 
-[![Build Status](https://github.com/snehit/hyprvox/actions/workflows/test.yml/badge.svg)](https://github.com/snehit/hyprvox/actions)
+[![Build Status](https://github.com/Snehit70/hyprvox/actions/workflows/test.yml/badge.svg)](https://github.com/Snehit70/hyprvox/actions)
 
 **Speech-to-text daemon for Hyprland — Speak, we will get it right.**
 
@@ -75,7 +75,7 @@ Since this is a private project, you can install and run it locally using the fo
 Clone the repository and install dependencies using [Bun](https://bun.sh):
 
 ```bash
-git clone https://github.com/snehit/hyprvox.git
+git clone https://github.com/Snehit70/hyprvox.git
 cd hyprvox
 bun install
 ```
@@ -91,7 +91,7 @@ bun run index.ts
 If you prefer using Node.js and NPM:
 
 ```bash
-git clone https://github.com/snehit/hyprvox.git
+git clone https://github.com/Snehit70/hyprvox.git
 cd hyprvox
 npm install
 ```
@@ -109,7 +109,7 @@ _Note: Using Bun is highly recommended for performance._
 You can run the project directly without cloning if the repository is accessible:
 
 ```bash
-npx git+https://github.com/snehit/hyprvox.git
+npx git+https://github.com/Snehit70/hyprvox.git
 ```
 
 ---

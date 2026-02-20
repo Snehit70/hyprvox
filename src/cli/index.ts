@@ -38,7 +38,7 @@ program
 	.option("--no-supervisor", "Run directly without supervisor")
 	.option("--daemon-worker", "Internal: Run as daemon worker process")
 	.action((options) => {
-		if (existsSync(pidFile) && !process.env.VOICE_CLI_DAEMON_WORKER) {
+		if (existsSync(pidFile) && !process.env.HYPRVOX_DAEMON_WORKER) {
 			try {
 				const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
 				try {
@@ -61,7 +61,7 @@ program
 			}
 		}
 
-		if (options.supervisor && !process.env.VOICE_CLI_DAEMON_WORKER) {
+		if (options.supervisor && !process.env.HYPRVOX_DAEMON_WORKER) {
 			console.log(`${colors.cyan("Starting daemon with supervisor...")}`);
 			const supervisor = new DaemonSupervisor(join(process.cwd(), "index.ts"));
 			supervisor.start();

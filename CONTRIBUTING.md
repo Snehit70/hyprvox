@@ -56,7 +56,7 @@ The core value of `hyprvox` is productivity. **NEVER overwrite the user's clipbo
 
 1. **Clone & Install**:
    ```bash
-   git clone https://github.com/snehit/hyprvox.git
+   git clone https://github.com/Snehit70/hyprvox.git
    cd hyprvox
    bun install
    ```

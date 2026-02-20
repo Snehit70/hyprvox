@@ -96,9 +96,9 @@ bun run index.ts logs --tail
 A unique feature of `hyprvox` is that it never overwrites your clipboard. It always appends.
 
 **Scenario:**
-1. You copy a URL: `https://github.com/snehit/hyprvox`
+1. You copy a URL: `https://github.com/Snehit70/hyprvox`
 2. You use `hyprvox` to transcribe: *"Check out this awesome project: "*
-3. Your clipboard now contains: `https://github.com/snehit/hyprvoxCheck out this awesome project: `
+3. Your clipboard now contains: `https://github.com/Snehit70/hyprvoxCheck out this awesome project: `
 
 **Correct Workflow for Links/Prefixes:**
 1. Transcribe the intro first: *"Check out this repo: "*

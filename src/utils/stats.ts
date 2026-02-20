@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { atomicWriteFile } from "./file-ops";
+import { logger } from "./logger";
 
 export interface TranscriptionStats {
 	today: number;
@@ -57,7 +58,7 @@ export function loadStats(): TranscriptionStats {
 }
 
 export async function saveStats(stats: TranscriptionStats): Promise<void> {
-	const dir = join(homedir(), ".config", "hypr", "vox");
+	const dir = dirname(STATS_FILE);
 	if (!existsSync(dir)) {
 		await mkdir(dir, { recursive: true });
 	}
@@ -67,7 +68,7 @@ export async function saveStats(stats: TranscriptionStats): Promise<void> {
 			mode: 0o600,
 		});
 	} catch (e) {
-		console.error("Failed to save stats file:", e);
+		logger.warn({ err: e, path: STATS_FILE }, "Failed to save stats file");
 	}
 }
 

@@ -40,7 +40,7 @@ export class DaemonSupervisor {
 			["run", this.scriptPath, "start", "--daemon-worker"],
 			{
 				stdio: "inherit",
-				env: { ...process.env, VOICE_CLI_DAEMON_WORKER: "true" },
+				env: { ...process.env, HYPRVOX_DAEMON_WORKER: "true" },
 			},
 		);
 

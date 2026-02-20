@@ -100,7 +100,7 @@ For details on using these modules programmatically, see the [Programmatic API R
 - **Keyboard Logic**: Uses `node-global-key-listener`.
 
 ### Getting Started
-1. Clone the repository: `git clone https://github.com/snehit/hyprvox.git`
+1. Clone the repository: `git clone https://github.com/Snehit70/hyprvox.git`
 2. Install dependencies: `bun install`
 3. Run in development mode: `bun run index.ts start`
 
