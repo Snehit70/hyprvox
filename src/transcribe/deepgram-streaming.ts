@@ -216,7 +216,6 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				{ chunks: this.audioBuffer.length },
 				"Flushing buffered audio to Deepgram",
 			);
-			// Use connection.send directly to avoid re-buffering check in this.send()
 			if (this.connection && this.isConnected) {
 				for (const chunk of this.audioBuffer) {
 					try {
@@ -225,6 +224,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 							chunk.byteOffset + chunk.byteLength,
 						);
 						this.connection.send(arrayBuffer);
+						this.chunksSent++;
 					} catch (error) {
 						logError("Failed to send buffered chunk to Deepgram", error);
 					}

@@ -41,19 +41,19 @@ export interface MergeResult {
 
 export class TranscriptMerger {
 	private _client: Groq | null = null;
+	private _cachedApiKey: string | null = null;
 
-	private get client(): Groq {
-		if (!this._client) {
-			const config = loadConfig();
-			this._client = new Groq({
-				apiKey: config.apiKeys.groq,
-			});
+	private getClient(apiKey: string): Groq {
+		if (!this._client || this._cachedApiKey !== apiKey) {
+			this._client = new Groq({ apiKey });
+			this._cachedApiKey = apiKey;
 		}
 		return this._client;
 	}
 
 	public reset(): void {
 		this._client = null;
+		this._cachedApiKey = null;
 	}
 
 	public async merge(
@@ -62,6 +62,7 @@ export class TranscriptMerger {
 	): Promise<MergeResult> {
 		const config = loadConfig();
 		const mergeModel = config.transcription.mergeModel;
+		const apiKey = config.apiKeys.groq;
 		const sourcesMatch = groqText === deepgramText;
 
 		if (!groqText && !deepgramText) {
@@ -96,7 +97,7 @@ export class TranscriptMerger {
 		try {
 			const completion = await withRetry(
 				async (signal) => {
-					return await this.client.chat.completions.create(
+					return await this.getClient(apiKey).chat.completions.create(
 						{
 							model: mergeModel,
 							messages: [

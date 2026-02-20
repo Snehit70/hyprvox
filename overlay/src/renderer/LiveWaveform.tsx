@@ -67,6 +67,10 @@ export const LiveWaveform = ({
 	const lastWidthRef = useRef(0);
 	const computedColorCacheRef = useRef<string>("");
 	const lastBarColorRef = useRef<string | undefined>(undefined);
+	const rectRef = useRef<{ width: number; height: number }>({
+		width: 0,
+		height: 0,
+	});
 	// Stable refs for callbacks to prevent re-initialization on every render
 	const onErrorRef = useRef(onError);
 	const onStreamReadyRef = useRef(onStreamReady);
@@ -93,6 +97,8 @@ export const LiveWaveform = ({
 		const resizeObserver = new ResizeObserver(() => {
 			const rect = container.getBoundingClientRect();
 			const dpr = window.devicePixelRatio || 1;
+
+			rectRef.current = { width: rect.width, height: rect.height };
 
 			canvas.width = rect.width * dpr;
 			canvas.height = rect.height * dpr;
@@ -358,7 +364,7 @@ export const LiveWaveform = ({
 		let rafId: number;
 
 		const animate = (currentTime: number) => {
-			const rect = canvas.getBoundingClientRect();
+			const rect = rectRef.current;
 
 			if (active && currentTime - lastUpdateRef.current > updateRate) {
 				lastUpdateRef.current = currentTime;
