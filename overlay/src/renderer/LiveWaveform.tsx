@@ -527,7 +527,6 @@ export const LiveWaveform = ({
 		};
 	}, [
 		active,
-		processing,
 		sensitivity,
 		noiseThreshold,
 		updateRate,

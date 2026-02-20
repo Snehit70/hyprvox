@@ -138,7 +138,7 @@ Fixed backoffs `[100, 200]ms` may be too aggressive for API rate limits. Conside
 this.chunks.push(bufferChunk);
 ```
 
-Chunks array grows unbounded during recording (up to 5 minutes max). At 16kHz mono 16-bit audio:
+Chunks array grows unbounded during recording (up to 5 minutes max). At 16 kHz mono 16-bit audio:
 - 5 minutes = ~9.6MB of audio data
 
 **Mitigation:** Max duration is enforced (5 min), and chunks are cleared on stop. This is acceptable but could benefit from a warning if approaching memory limits.
@@ -232,7 +232,7 @@ All remaining tests pass: `bun test` → 32 tests, 0 failures.
 2. **IPC latency logging** - `overlay/src/ipc-client.ts` logs `[TIMING] IPC state received, latency=Xms`
 3. **State change timing** - `overlay/src/main.ts` logs `[TIMING] State change: X, latency=Yms`
 4. **Window visibility timing** - Logs `[TIMING] Window shown (X), total=Yms`
-5. **Overlay stdout in daemon output** - Changed `stdio: "ignore"` → `stdio: "inherit"`
+5. **Overlay stdout in daemon output** - Temporarily changed to `stdio: "inherit"` for timing measurements; reverted to `stdio: "ignore"` in cleanup commit.
 
 ### Results
 

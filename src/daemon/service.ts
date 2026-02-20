@@ -171,52 +171,75 @@ export class DaemonService {
 		return join(process.cwd(), "overlay");
 	}
 
+	private async waitForProcessExit(
+		pid: number,
+		timeoutMs = 3000,
+	): Promise<void> {
+		const start = Date.now();
+		while (Date.now() - start < timeoutMs) {
+			try {
+				process.kill(pid, 0);
+				await new Promise((r) => setTimeout(r, 50));
+			} catch {
+				return;
+			}
+		}
+		logger.debug({ pid, timeoutMs }, "Timeout waiting for process exit");
+	}
+
 	private startOverlay(): void {
 		if (!this.config.overlay?.enabled || !this.config.overlay?.autoStart) {
 			return;
 		}
 
-		try {
-			const raw = readFileSync(this.overlayPidFile, "utf8").trim();
-			const oldPid = parseInt(raw, 10);
-			if (!Number.isNaN(oldPid)) {
-				process.kill(oldPid, "SIGTERM");
-				logger.debug({ oldPid }, "Terminated stale overlay process");
+		(async () => {
+			try {
+				const raw = readFileSync(this.overlayPidFile, "utf8").trim();
+				const oldPid = parseInt(raw, 10);
+				if (!Number.isNaN(oldPid)) {
+					process.kill(oldPid, "SIGTERM");
+					logger.debug({ oldPid }, "Terminated stale overlay process");
+					await this.waitForProcessExit(oldPid);
+				}
+			} catch {
+				// PID file absent or process already dead
 			}
-		} catch {
-			// PID file absent or process already dead
-		}
 
-		const overlayPath = this.getOverlayPath();
+			const overlayPath = this.getOverlayPath();
 
-		if (!existsSync(overlayPath)) {
-			logger.warn(
-				{ path: overlayPath },
-				"Overlay not found, skipping auto-start",
-			);
-			return;
-		}
+			if (!existsSync(overlayPath)) {
+				logger.warn(
+					{ path: overlayPath },
+					"Overlay not found, skipping auto-start",
+				);
+				return;
+			}
 
-		try {
-			this.overlayProcess = spawn("bun", ["run", "start"], {
-				cwd: overlayPath,
-				detached: true,
-				stdio: "ignore",
-			});
-
-			this.overlayProcess.unref();
-
-			const pid = this.overlayProcess.pid;
-			if (pid) {
-				writeFile(this.overlayPidFile, pid.toString()).catch((e) => {
-					logger.debug({ err: e }, "Failed to write overlay PID file");
+			try {
+				this.overlayProcess = spawn("bun", ["run", "start"], {
+					cwd: overlayPath,
+					detached: true,
+					stdio: "ignore",
 				});
-			}
 
-			logger.info({ pid }, "Overlay started");
-		} catch (error) {
-			logError("Failed to start overlay", error);
-		}
+				this.overlayProcess.on("error", (err) => {
+					logger.warn({ err }, "Overlay process error");
+				});
+
+				this.overlayProcess.unref();
+
+				const pid = this.overlayProcess.pid;
+				if (pid) {
+					writeFile(this.overlayPidFile, pid.toString()).catch((e) => {
+						logger.debug({ err: e }, "Failed to write overlay PID file");
+					});
+				}
+
+				logger.info({ pid }, "Overlay started");
+			} catch (error) {
+				logError("Failed to start overlay", error);
+			}
+		})();
 	}
 
 	private stopOverlay(): void {
@@ -224,16 +247,28 @@ export class DaemonService {
 			try {
 				this.overlayProcess.kill("SIGTERM");
 			} catch (e) {
-				// Process may already be dead
 				logger.debug({ err: e }, "Failed to kill overlay process");
 			}
 			this.overlayProcess = undefined;
 		}
 
 		try {
+			const raw = readFileSync(this.overlayPidFile, "utf8").trim();
+			const oldPid = parseInt(raw, 10);
+			if (!Number.isNaN(oldPid)) {
+				process.kill(oldPid, "SIGTERM");
+				logger.debug(
+					{ oldPid },
+					"Terminated stale overlay from previous session",
+				);
+			}
+		} catch {
+			// PID file absent or process already dead
+		}
+
+		try {
 			unlinkSync(this.overlayPidFile);
 		} catch (e) {
-			// PID file may not exist
 			logger.debug({ err: e }, "Failed to remove overlay PID file");
 		}
 	}
