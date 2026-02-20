@@ -104,7 +104,13 @@ export class DaemonSupervisor {
 		if (existsSync(pidFile)) {
 			try {
 				await unlink(pidFile);
-			} catch (_e) {}
+			} catch (e) {
+				// PID file may already be deleted
+				logger.debug(
+					{ err: e },
+					"Failed to remove PID file during fatal crash handling",
+				);
+			}
 		}
 
 		notify("Daemon Critical Failure", msg, "error");

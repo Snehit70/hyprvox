@@ -29,7 +29,13 @@ export class AudioRecorder extends EventEmitter {
 			const config = loadConfig();
 			this.minDuration = (config.behavior.clipboard.minDuration || 0.6) * 1000;
 			this.maxDuration = (config.behavior.clipboard.maxDuration || 300) * 1000;
-		} catch (_e) {}
+		} catch (e) {
+			// Use defaults if config load fails
+			logger.debug(
+				{ err: e },
+				"Failed to load recorder settings, using defaults",
+			);
+		}
 	}
 
 	public isRecording(): boolean {

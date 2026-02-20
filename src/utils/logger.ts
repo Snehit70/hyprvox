@@ -34,13 +34,22 @@ const rotateLogs = async (dir: string) => {
 					if (now - stats.mtimeMs > thirtyDaysMs) {
 						await unlink(filePath);
 					}
-				} catch {}
+				} catch (e) {
+					// Non-critical: file may have been deleted or permissions issue
+					console.debug(`Failed to process log file ${filePath}:`, e);
+				}
 			}
 		}
-	} catch {}
+	} catch (e) {
+		// Non-critical: log rotation is best-effort
+		console.debug("Log rotation failed:", e);
+	}
 };
 
-rotateLogs(logDir).catch(() => {});
+rotateLogs(logDir).catch((e) => {
+	// Non-critical: log rotation failure shouldn't block logger creation
+	console.debug("Log rotation failed:", e);
+});
 
 const rotatingStream = createStream(
 	(time) => {

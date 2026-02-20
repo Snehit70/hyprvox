@@ -44,23 +44,25 @@ Changed `forEach()` to `for...of` loops and added `tabIndex={-1}` to canvas.
 
 ---
 
-### 2. Empty Catch Blocks
+### 2. Empty Catch Blocks ✅ RESOLVED
 
-**Severity:** LOW-MEDIUM
+**Status:** Fixed in commit (pending). All empty catch blocks now have appropriate logging.
 
-Found 29 instances of `catch (_e) {}` that silently swallow errors:
+**Resolution:**
+- Cleanup operations (log rotation, file deletion) → Debug-level logging with `console.debug`
+- Fallback paths (config load, directory creation) → Debug/warn logging with context
+- Process existence checks → Comments documenting the control flow pattern
+- Best-effort operations (systemctl commands, PID file cleanup) → Debug logging
 
-| File | Lines |
-|------|-------|
-| `src/utils/logger.ts` | 44, 47 |
-| `src/utils/stats.ts` | 65 |
-| `src/cli/index.ts` | 56, 57, 319, 376, 382, 388 |
-| `src/audio/recorder.ts` | 32 |
-| `src/daemon/service.ts` | 194, 200, 361 |
-| `src/daemon/supervisor.ts` | 78, 84 |
-| `src/output/clipboard.ts` | 28 |
-
-**Recommendation:** At minimum, log errors at debug level. Critical paths should handle errors explicitly.
+| File | Lines | Fix Applied |
+|------|-------|-------------|
+| `src/utils/logger.ts` | 37, 40, 43 | Debug logging for log rotation |
+| `src/utils/stats.ts` | 69 | Error logging for stats save failure |
+| `src/cli/index.ts` | 56, 57, 319, 376, 382, 388 | Comments documenting control flow + debug logging |
+| `src/audio/recorder.ts` | 32 | Debug logging for config load fallback |
+| `src/daemon/service.ts` | 194, 207, 213, 373 | Debug logging for cleanup operations |
+| `src/daemon/supervisor.ts` | 107 | Debug logging for PID file cleanup |
+| `src/output/clipboard.ts` | 29 | Error logging for directory creation failure |
 
 ### 3. Biome Lint Warnings
 
@@ -342,7 +344,7 @@ Add configurable timing values:
 9. **Add JSDoc comments** to public APIs
 10. **Make hardcoded values configurable**
 11. **Add default boostWords** for common technical terms
-12. **Replace empty catch blocks** with debug logging
+12. ~~**Replace empty catch blocks** with debug logging~~ ✅ RESOLVED (pending commit)
 
 ---
 

@@ -66,7 +66,9 @@ export async function saveStats(stats: TranscriptionStats): Promise<void> {
 		await atomicWriteFile(STATS_FILE, JSON.stringify(stats, null, 2), {
 			mode: 0o600,
 		});
-	} catch {}
+	} catch (e) {
+		console.error("Failed to save stats file:", e);
+	}
 }
 
 export async function incrementTranscriptionCount(): Promise<TranscriptionStats> {

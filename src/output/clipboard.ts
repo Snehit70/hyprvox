@@ -26,7 +26,10 @@ export class ClipboardManager {
 		if (!existsSync(configDir)) {
 			try {
 				mkdirSync(configDir, { recursive: true });
-			} catch {}
+			} catch (e) {
+				// Non-critical: fallback file writes will fail but clipboard may still work
+				console.error("Failed to create config directory:", e);
+			}
 		}
 	}
 

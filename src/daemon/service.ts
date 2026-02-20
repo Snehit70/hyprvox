@@ -191,7 +191,9 @@ export class DaemonService {
 
 			const pid = this.overlayProcess.pid;
 			if (pid) {
-				writeFile(this.overlayPidFile, pid.toString()).catch(() => {});
+				writeFile(this.overlayPidFile, pid.toString()).catch((e) => {
+					logger.debug({ err: e }, "Failed to write overlay PID file");
+				});
 			}
 
 			logger.info({ pid }, "Overlay started");
@@ -204,13 +206,19 @@ export class DaemonService {
 		if (this.overlayProcess) {
 			try {
 				this.overlayProcess.kill("SIGTERM");
-			} catch (_e) {}
+			} catch (e) {
+				// Process may already be dead
+				logger.debug({ err: e }, "Failed to kill overlay process");
+			}
 			this.overlayProcess = undefined;
 		}
 
 		try {
 			unlinkSync(this.overlayPidFile);
-		} catch (_e) {}
+		} catch (e) {
+			// PID file may not exist
+			logger.debug({ err: e }, "Failed to remove overlay PID file");
+		}
 	}
 
 	private setStatus(status: DaemonStatus, error?: string) {
@@ -370,7 +378,13 @@ export class DaemonService {
 		try {
 			unlinkSync(this.pidFile);
 			unlinkSync(this.stateFile);
-		} catch (_e) {}
+		} catch (e) {
+			// Files may not exist or already be deleted
+			logger.debug(
+				{ err: e },
+				"Failed to remove PID/state files during shutdown",
+			);
+		}
 		logger.info("Daemon stopped");
 	}
 
