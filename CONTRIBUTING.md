@@ -1,6 +1,6 @@
-# Contributing to voice-cli
+# Contributing to hyprvox
 
-Welcome to the `voice-cli` project. We're glad you're here to help build a production-ready, low-latency STT daemon for Linux. This project follows high engineering standards to ensure reliability, performance, and a seamless developer experience.
+Welcome to the `hyprvox` project. We're glad you're here to help build a production-ready, low-latency STT daemon for Linux. This project follows high engineering standards to ensure reliability, performance, and a seamless developer experience.
 
 ## Tech Stack & Standards
 
@@ -48,7 +48,7 @@ Before pushing or opening a PR, you must run:
 - `bun run index.ts health`: Verify that the environment and API connectivity are stable.
 
 ### 3. Critical Rule: Clipboard APPEND Mode
-The core value of `voice-cli` is productivity. **NEVER overwrite the user's clipboard history.** 
+The core value of `hyprvox` is productivity. **NEVER overwrite the user's clipboard history.** 
 - All transcription results must be **appended** to the clipboard.
 - Use the `clipboardy` integration carefully to preserve existing content.
 
@@ -56,8 +56,8 @@ The core value of `voice-cli` is productivity. **NEVER overwrite the user's clip
 
 1. **Clone & Install**:
    ```bash
-   git clone https://github.com/snehit/voice-cli.git
-   cd voice-cli
+   git clone https://github.com/Snehit70/hyprvox.git
+   cd hyprvox
    bun install
    ```
 

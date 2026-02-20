@@ -113,11 +113,11 @@ export const logsCommand = new Command("logs")
 			const config = loadConfig();
 			logDir = config.paths.logs;
 		} catch (_e) {
-			logDir = join(homedir(), ".config", "voice-cli", "logs");
+			logDir = join(homedir(), ".config", "hypr", "vox", "logs");
 		}
 
 		const dateStr = new Date().toISOString().split("T")[0];
-		const logFile = join(logDir, `voice-cli-${dateStr}.log`);
+		const logFile = join(logDir, `hyprvox-${dateStr}.log`);
 
 		if (!existsSync(logFile)) {
 			console.log(colors.yellow(`No logs found for today (${dateStr}).`));

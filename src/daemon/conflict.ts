@@ -143,7 +143,7 @@ export async function checkHotkeyConflict(hotkey: string): Promise<boolean> {
 	}
 
 	const { keysym, modifiers } = parsed;
-	const scriptPath = join(tmpdir(), `voice-cli-conflict-${Date.now()}.py`);
+	const scriptPath = join(tmpdir(), `hyprvox-conflict-${Date.now()}.py`);
 
 	try {
 		writeFileSync(scriptPath, PYTHON_SCRIPT);

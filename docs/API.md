@@ -1,6 +1,6 @@
 # Programmatic API Reference
 
-`voice-cli` is designed primarily as a CLI tool and daemon, but its core modules are built to be highly reusable. If you are developing other tools in TypeScript/Node.js, you can import and use these components directly.
+`hyprvox` is designed primarily as a CLI tool and daemon, but its core modules are built to be highly reusable. If you are developing other tools in TypeScript/Node.js, you can import and use these components directly.
 
 > **Note**: This project is currently marked as private and uses Bun. Ensure your environment supports Bun or is configured to handle TypeScript files if importing from `src/`.
 

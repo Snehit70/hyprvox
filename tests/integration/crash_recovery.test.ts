@@ -13,8 +13,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 const isCI = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
 
 describe.skipIf(isCI)("Daemon Crash Recovery Integration", () => {
-	const testHome = join(tmpdir(), `voice-cli-crash-test-${Date.now()}`);
-	const configDir = join(testHome, ".config", "voice-cli");
+	const testHome = join(tmpdir(), `hyprvox-crash-test-${Date.now()}`);
+	const configDir = join(testHome, ".config", "hypr", "vox");
 	const pidFile = join(configDir, "daemon.pid");
 	const configFile = join(configDir, "config.json");
 	const stateFile = join(configDir, "daemon.state");
@@ -59,6 +59,17 @@ describe.skipIf(isCI)("Daemon Crash Recovery Integration", () => {
 			try {
 				const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
 				process.kill(pid, "SIGKILL");
+			} catch (_e) {}
+		}
+
+		const overlayPidFile = join(configDir, "overlay.pid");
+		if (existsSync(overlayPidFile)) {
+			try {
+				const overlayPid = parseInt(
+					readFileSync(overlayPidFile, "utf-8").trim(),
+					10,
+				);
+				process.kill(overlayPid, "SIGKILL");
 			} catch (_e) {}
 		}
 

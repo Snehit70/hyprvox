@@ -1,6 +1,6 @@
 # Exit Codes
 
-This document lists the exit codes used by the `voice-cli` tool. These codes can be used for scripting and automation to determine the outcome of a command.
+This document lists the exit codes used by the `hyprvox` tool. These codes can be used for scripting and automation to determine the outcome of a command.
 
 ## Summary Table
 
@@ -35,7 +35,7 @@ The command failed due to an error or environmental issue.
 
 ### Checking Status in a Script
 ```bash
-if voice-cli status > /dev/null 2>&1; then
+if hyprvox status > /dev/null 2>&1; then
     echo "Daemon is running"
 else
     echo "Daemon is stopped or dead"
@@ -44,9 +44,9 @@ fi
 
 ### Handling Start Failures
 ```bash
-voice-cli start
+hyprvox start
 if [ $? -ne 0 ]; then
-    echo "Failed to start voice-cli. Check logs for details."
+    echo "Failed to start hyprvox. Check logs for details."
     exit 1
 fi
 ```

@@ -1,7 +1,7 @@
 {
-	"name": "voice-cli-overlay",
+	"name": "hyprvox-overlay",
 	"version": "0.1.0",
-	"description": "Waveform overlay for voice-cli",
+	"description": "Waveform overlay for hyprvox",
 	"main": "dist/main.js",
 	"scripts": {
 		"build": "tsc && vite build",
@@ -11,8 +11,8 @@
 		"dist": "electron-builder"
 	},
 	"build": {
-		"appId": "com.voicecli.overlay",
-		"productName": "Voice CLI Overlay",
+		"appId": "com.hyprvox.overlay",
+		"productName": "Hyprvox Overlay",
 		"directories": {
 			"output": "release"
 		},

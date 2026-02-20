@@ -5,7 +5,7 @@ import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { AppError } from "../utils/errors";
 import { type Config, type ConfigFile, ConfigSchema } from "./schema";
 
-export const DEFAULT_CONFIG_DIR = join(homedir(), ".config", "voice-cli");
+export const DEFAULT_CONFIG_DIR = join(homedir(), ".config", "hypr", "vox");
 export const DEFAULT_CONFIG_FILE = join(DEFAULT_CONFIG_DIR, "config.json");
 
 /**

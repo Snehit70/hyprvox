@@ -8,7 +8,7 @@ import type {
 	IPCMessage,
 } from "./shared/ipc-types";
 
-const SOCKET_PATH = join(homedir(), ".config", "voice-cli", "daemon.sock");
+const SOCKET_PATH = join(homedir(), ".config", "hypr", "vox", "daemon.sock");
 const INITIAL_RECONNECT_DELAY = 100;
 const MAX_RECONNECT_DELAY = 5000;
 const MAX_RECONNECT_ATTEMPTS = 10;
@@ -119,7 +119,7 @@ export class IPCClient extends EventEmitter {
 		const receivedAt = Date.now();
 		const latency = msg.timestamp ? receivedAt - msg.timestamp : null;
 
-		if (latency !== null) {
+		if (latency !== null && process.env.HYPRVOX_DEBUG_TIMING) {
 			console.log(`[TIMING] IPC ${msg.type} received, latency=${latency}ms`);
 		}
 

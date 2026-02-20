@@ -15,13 +15,13 @@
 		"audioDevice": "default"
 	},
 	"paths": {
-		"logs": "~/.config/voice-cli/logs/",
-		"history": "~/.config/voice-cli/history.json"
+		"logs": "~/.config/hypr/vox/logs/",
+		"history": "~/.config/hypr/vox/history.json"
 	},
 	"transcription": {
 		"language": "en",
 		"boostWords": [
-			"voice-cli",
+			"hyprvox",
 			"Sisyphus",
 			"Groq",
 			"Deepgram",

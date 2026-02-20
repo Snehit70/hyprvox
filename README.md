@@ -1,10 +1,10 @@
-# voice-cli
+# hyprvox
 
-[![Build Status](https://github.com/snehit/voice-cli/actions/workflows/test.yml/badge.svg)](https://github.com/snehit/voice-cli/actions)
+[![Build Status](https://github.com/Snehit70/hyprvox/actions/workflows/test.yml/badge.svg)](https://github.com/Snehit70/hyprvox/actions)
 
-**Production-ready STT daemon for Linux with global hotkeys and clipboard history.**
+**Speech-to-text daemon for Hyprland — Speak, we will get it right.**
 
-`voice-cli` is a high-performance speech-to-text daemon for Linux (Wayland/X11) that provides global transcription via Groq (Whisper V3) and Deepgram (Nova-3). It features **real-time streaming transcription** (0.5s latency), automatic clipboard history appending, and systemd integration for a seamless "transcribe-anywhere" experience.
+`hyprvox` is a high-performance speech-to-text daemon for Linux (Wayland/X11) that provides global transcription via Groq (Whisper V3) and Deepgram (Nova-3). It features **dual-engine parallel transcription** with LLM merge, **real-time streaming** (0.5s latency), automatic clipboard history appending, and systemd integration for a seamless "transcribe-anywhere" experience.
 
 ## Features
 
@@ -18,7 +18,7 @@
 
 ## Prerequisites
 
-Before installing `voice-cli`, ensure your system meets the following requirements:
+Before installing `hyprvox`, ensure your system meets the following requirements:
 
 ### 1. Runtime Environment
 
@@ -75,8 +75,8 @@ Since this is a private project, you can install and run it locally using the fo
 Clone the repository and install dependencies using [Bun](https://bun.sh):
 
 ```bash
-git clone https://github.com/snehit/voice-cli.git
-cd voice-cli
+git clone https://github.com/Snehit70/hyprvox.git
+cd hyprvox
 bun install
 ```
 
@@ -91,8 +91,8 @@ bun run index.ts
 If you prefer using Node.js and NPM:
 
 ```bash
-git clone https://github.com/snehit/voice-cli.git
-cd voice-cli
+git clone https://github.com/Snehit70/hyprvox.git
+cd hyprvox
 npm install
 ```
 
@@ -109,7 +109,7 @@ _Note: Using Bun is highly recommended for performance._
 You can run the project directly without cloning if the repository is accessible:
 
 ```bash
-npx git+https://github.com/snehit/voice-cli.git
+npx git+https://github.com/Snehit70/hyprvox.git
 ```
 
 ---
@@ -151,7 +151,7 @@ For information on exit codes and scripting, see the **[Exit Codes Reference](do
 
 ## System-wide Installation (Daemon Setup)
 
-For a seamless "transcribe-anywhere" experience, you should install `voice-cli` as a systemd user service. This ensures the daemon starts automatically on login and runs in the background.
+For a seamless "transcribe-anywhere" experience, you should install `hyprvox` as a systemd user service. This ensures the daemon starts automatically on login and runs in the background.
 
 ```bash
 bun run index.ts install
@@ -159,7 +159,7 @@ bun run index.ts install
 
 This command will:
 
-1. Create a systemd user service file at `~/.config/systemd/user/voice-cli.service`.
+1. Create a systemd user service file at `~/.config/systemd/user/hyprvox.service`.
 2. Enable the service to start on boot.
 3. Start the service immediately.
 
@@ -171,11 +171,11 @@ bun run index.ts uninstall
 
 ## Configuration
 
-The configuration file is located at `~/.config/voice-cli/config.json`. For a complete reference of all available options, see the **[Configuration Guide](docs/CONFIGURATION.md)**.
+The configuration file is located at `~/.config/hypr/vox/config.json`. For a complete reference of all available options, see the **[Configuration Guide](docs/CONFIGURATION.md)**.
 
 ### API Key Setup
 
-`voice-cli` requires API keys from both **Groq** and **Deepgram** to function. These keys must be added to your configuration file.
+`hyprvox` requires API keys from both **Groq** and **Deepgram** to function. These keys must be added to your configuration file.
 
 #### 1. Groq API Key (Whisper V3)
 
@@ -204,7 +204,7 @@ Used in parallel with Groq for increased reliability and fallback support.
 
 ### Environment Variables
 
-If the configuration file is missing or keys are not provided in `config.json`, `voice-cli` will fall back to the following environment variables:
+If the configuration file is missing or keys are not provided in `config.json`, `hyprvox` will fall back to the following environment variables:
 
 - `GROQ_API_KEY`
 - `DEEPGRAM_API_KEY`
@@ -227,7 +227,7 @@ bun run index.ts health
 
 ### Streaming Mode
 
-**voice-cli** supports two transcription modes:
+**hyprvox** supports two transcription modes:
 
 1.  **Batch Mode (Default)**: Higher accuracy, 2-8s latency.
 2.  **Streaming Mode (`"streaming": true`)**: **0.5s latency**, optimized for speed.
@@ -249,7 +249,7 @@ Improve transcription accuracy for specific terms (names, technical jargon, acro
     "streaming": true,
     "boostWords": [
       "Sisyphus",
-      "voice-cli",
+      "hyprvox",
       "Groq",
       "Deepgram",
       "Wayland",
@@ -260,7 +260,7 @@ Improve transcription accuracy for specific terms (names, technical jargon, acro
 
 ### Language Support
 
-For **v1.0**, `voice-cli` officially supports **English only**. While the configuration allows setting a language code, the internal processing is optimized for English (`en`).
+For **v1.0**, `hyprvox` officially supports **English only**. While the configuration allows setting a language code, the internal processing is optimized for English (`en`).
 
 For more details on formatting, token limits, and case sensitivity, see the **[Configuration Guide: Boost Words](docs/CONFIGURATION.md#boost-words-custom-vocabulary)**.
 
@@ -285,7 +285,7 @@ The following distributions have been tested and verified:
 
 ### Wayland Support (Hyprland, GNOME, KDE)
 
-`voice-cli` prioritizes Wayland support (specifically Hyprland) but relies on specific system packages and XWayland for global hotkeys.
+`hyprvox` prioritizes Wayland support (specifically Hyprland) but relies on specific system packages and XWayland for global hotkeys.
 
 **Important for Wayland Users:**
 
@@ -306,13 +306,13 @@ For a comprehensive list of errors and solutions, see the **[Troubleshooting Gui
 | **No audio recorded**  | Ensure user is in `audio` group. See [Audio Device Selection](docs/AUDIO_DEVICES.md).                                                                         |
 | **API Errors**         | Verify API keys in `config.json` (Groq starts with `gsk_`, Deepgram is a UUID).                                                                               |
 | **Clipboard fail**     | Install `wl-clipboard` (Wayland) or `xclip` (X11).                                                                                                            |
-| **Service fails**      | Check logs: `journalctl --user -u voice-cli -f`.                                                                                                              |
+| **Service fails**      | Check logs: `journalctl --user -u hyprvox -f`.                                                                                                              |
 
 ---
 
 ## Transcription History
 
-All successful transcriptions are stored in `~/.config/voice-cli/history.json`. You can view or clear the history using the CLI:
+All successful transcriptions are stored in `~/.config/hypr/vox/history.json`. You can view or clear the history using the CLI:
 
 ```bash
 # List last 10 transcriptions

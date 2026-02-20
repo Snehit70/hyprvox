@@ -1,10 +1,10 @@
-# Voice CLI - Product Requirements Document
+# Hyprvox - Product Requirements Document
 
 **Tagline:** "Speak, we will get it right"
 
 ## Overview
 
-Voice CLI is a production-ready, system-wide speech-to-text daemon for Linux that runs in the background and transcribes voice to clipboard via a global hotkey. Built for developers and coders who need fast, accurate voice input for their workflows, agents, and tools.
+Hyprvox is a production-ready, system-wide speech-to-text daemon for Linux that runs in the background and transcribes voice to clipboard via a global hotkey. Built for developers and coders who need fast, accurate voice input for their workflows, agents, and tools.
 
 ## Tech Stack
 
@@ -23,7 +23,7 @@ Voice CLI is a production-ready, system-wide speech-to-text daemon for Linux tha
 
 - **Pattern**: Feature-based structure (`/daemon`, `/audio`, `/transcribe`, `/output`, `/cli`, `/config`)
 - **Code Style**: Mixed/pragmatic (use what fits best)
-- **Configuration**: `~/.config/voice-cli/config.json` + environment variables
+- **Configuration**: `~/.config/hyprvox/config.json` + environment variables
 - **Daemon Management**: systemd service + built-in commands (start/stop/status/health)
 - **Hotkey Behavior**: Toggle mode (press once to start, press again to stop)
 - **Default Hotkey**: Right Control key
@@ -146,14 +146,14 @@ interface DaemonState {
 ### 6. CLI History
 
 - Store unlimited text transcriptions
-- Command: `voice-cli history` to view past transcriptions
+- Command: `hyprvox history` to view past transcriptions
 - Format: timestamp + text
 - No audio files stored (privacy)
 - Logs stored separately with full details
 
 ### 7. Interactive CLI Setup
 
-- Command: `voice-cli config` to open configuration
+- Command: `hyprvox config` to open configuration
 - Interactive prompts for API keys (Groq, Deepgram)
 - Hotkey selection with validation
 - Boost words management (max 450 words)
@@ -161,7 +161,7 @@ interface DaemonState {
 
 ### 8. Health Monitoring
 
-- Command: `voice-cli health` to check system status
+- Command: `hyprvox health` to check system status
 - Check daemon status (running/stopped)
 - Check API connectivity (Groq, Deepgram)
 - Check microphone detection
@@ -199,14 +199,14 @@ interface DaemonState {
 ### Phase 2: Configuration Management (Priority: Critical)
 
 - [x] Create config schema with TypeScript interfaces
-- [x] Implement config file reader (`~/.config/voice-cli/config.json`)
+- [x] Implement config file reader (`~/.config/hyprvox/config.json`)
 - [x] Implement config file writer with validation
 - [x] Add API key format validation (Groq, Deepgram)
 - [x] Add hotkey validation (valid key combinations)
 - [x] Add boost words validation (max 450 words)
 - [x] Create default config template
 - [x] Add environment variable support (fallback to env vars)
-- [x] Create config directory on first run (`~/.config/voice-cli/`)
+- [x] Create config directory on first run (`~/.config/hyprvox/`)
 - [x] Set proper file permissions (chmod 600 for config file)
 
 ### Phase 3: Audio Capture (Priority: Critical)
@@ -308,7 +308,7 @@ interface DaemonState {
 - [x] Implement daemon stop command
 - [x] Implement daemon restart command
 - [x] Implement daemon status command
-- [x] Add PID file management (~/.config/voice-cli/daemon.pid)
+- [x] Add PID file management (~/.config/hyprvox/daemon.pid)
 - [x] Add daemon already running detection
 - [x] Implement graceful shutdown (cleanup resources)
 
@@ -323,10 +323,10 @@ interface DaemonState {
 
 ### Phase 13: systemd Integration (Priority: High)
 
-- [x] Create systemd service file (`voice-cli.service`)
+- [x] Create systemd service file (`hyprvox.service`)
 - [x] Add installation script for systemd service
-- [x] Implement `voice-cli install` command (install systemd service)
-- [x] Implement `voice-cli uninstall` command (remove systemd service)
+- [x] Implement `hyprvox install` command (install systemd service)
+- [x] Implement `hyprvox uninstall` command (remove systemd service)
 - [x] Add systemd service enable on install
 - [x] Add systemd service start on system boot
 - [x] Document systemd setup instructions in README
@@ -335,7 +335,7 @@ interface DaemonState {
 
 ### Phase 14: Health Monitoring (Priority: High)
 
-- [x] Implement `voice-cli health` command
+- [x] Implement `hyprvox health` command
 - [x] Check daemon status (running/stopped, PID, uptime)
 - [x] Check Groq API connectivity (ping with test request)
 - [x] Check Deepgram API connectivity (ping with test request)
@@ -347,28 +347,28 @@ interface DaemonState {
 
 ### Phase 15: History Management (Priority: High)
 
-- [x] Implement history storage (`~/.config/voice-cli/history.json`)
+- [x] Implement history storage (`~/.config/hyprvox/history.json`)
 - [x] Add history entry on each transcription (timestamp + text)
-- [x] Implement `voice-cli history` command (display past transcriptions)
+- [x] Implement `hyprvox history` command (display past transcriptions)
 - [x] Add history pagination (show last 20, option to show more)
 - [x] Add history search (filter by date, keyword)
-- [x] Add history clear command (`voice-cli history clear`)
+- [x] Add history clear command (`hyprvox history clear`)
 - [x] Format history output (readable timestamps, truncated text)
 
 ### Phase 16: Logging System (Priority: High)
 
 - [x] Implement structured logging (JSON format)
-- [x] Create log directory (`~/.config/voice-cli/logs/`)
+- [x] Create log directory (`~/.config/hyprvox/logs/`)
 - [x] Add log rotation (daily logs, keep last 7 days)
 - [x] Log all transcriptions with full details (groqText, deepgramText, duration, etc.)
 - [x] Log all errors with stack traces
 - [x] Log daemon lifecycle events (start, stop, restart, crash)
 - [x] Add log level configuration (debug, info, warn, error)
-- [x] Implement `voice-cli logs` command (tail recent logs)
+- [x] Implement `hyprvox logs` command (tail recent logs)
 
 ### Phase 17: CLI Interactive Setup (Priority: Medium)
 
-- [x] Implement `voice-cli config` command
+- [x] Implement `hyprvox config` command
 - [x] Create interactive prompts for API keys (Groq, Deepgram)
 - [x] Add API key validation (format check)
   - [x] Create interactive hotkey selection
@@ -515,7 +515,7 @@ interface DaemonState {
 
 ### Logging
 
-- [x] All errors logged to file (`~/.config/voice-cli/logs/voice-cli-YYYY-MM-DD.log`)
+- [x] All errors logged to file (`~/.config/hyprvox/logs/hyprvox-YYYY-MM-DD.log`)
 - [x] Structured format (JSON) for easy parsing
 - [x] Include timestamp, error type, stack trace, context
 
@@ -540,8 +540,8 @@ interface DaemonState {
 
 ### System Errors
 
-- Clipboard access denied: Fallback to file output (`~/.config/voice-cli/last-transcription.txt`)
-- Daemon already running: Show error, suggest `voice-cli stop` first
+- Clipboard access denied: Fallback to file output (`~/.config/hyprvox/last-transcription.txt`)
+- Daemon already running: Show error, suggest `hyprvox stop` first
 - Config file corrupted: Offer to reset to defaults
 
 ### Retry Logic

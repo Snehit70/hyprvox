@@ -1,6 +1,6 @@
 # CLI Command Reference
 
-This document provides a comprehensive list of all commands available in the `voice-cli` tool.
+This document provides a comprehensive list of all commands available in the `hyprvox` tool.
 
 ## General Usage
 
@@ -33,12 +33,12 @@ Display the current status of the daemon (PID, uptime, state, statistics).
   - `--help`: Display help for the status command.
 
 ### `install`
-Install `voice-cli` as a systemd user service for the current user.
+Install `hyprvox` as a systemd user service for the current user.
 - **Options:**
   - `--help`: Display help for the install command.
 
 ### `uninstall`
-Remove the `voice-cli` systemd user service.
+Remove the `hyprvox` systemd user service.
 - **Options:**
   - `--help`: Display help for the uninstall command.
 
@@ -57,7 +57,7 @@ Perform a comprehensive system health check.
 ## Subcommands
 
 ### `config`
-Manage `voice-cli` configuration.
+Manage `hyprvox` configuration.
 
 - **`config init`**
   - Interactively initialize a new configuration file.

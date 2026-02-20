@@ -223,7 +223,7 @@ configCommand
 				return;
 			}
 
-			console.log(colors.cyan("Initializing voice-cli configuration..."));
+			console.log(colors.cyan("Initializing hyprvox configuration..."));
 			console.log(
 				colors.dim(
 					"Follow the prompts to set up your API keys. Press Ctrl+C to cancel at any time.\n",

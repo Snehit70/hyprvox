@@ -1,6 +1,6 @@
 # Examples & Workflows
 
-This document provides typical workflows and practical examples of how to use `voice-cli` effectively in your daily tasks.
+This document provides typical workflows and practical examples of how to use `hyprvox` effectively in your daily tasks.
 
 ---
 
@@ -32,7 +32,7 @@ Draft long responses or Slack messages while you're away from the keyboard or ju
 5. Wait for the notification "Transcription Ready".
 6. Paste the result.
 
-**Note:** Because `voice-cli` **appends** to your clipboard, you can transcribe multiple sentences one by one, and they will all be waiting in your clipboard for a single paste.
+**Note:** Because `hyprvox` **appends** to your clipboard, you can transcribe multiple sentences one by one, and they will all be waiting in your clipboard for a single paste.
 
 ---
 
@@ -56,7 +56,7 @@ If you frequently use technical terms that the model might struggle with (e.g., 
 
 **Command:**
 ```bash
-bun run index.ts boost add "Sisyphus" "Hyprland" "voice-cli" "gsk_"
+bun run index.ts boost add "Sisyphus" "Hyprland" "hyprvox" "gsk_"
 ```
 
 **Result:**
@@ -66,7 +66,7 @@ The next time you say "Sisyphus", both Groq and Deepgram will be much more likel
 
 ## 5. System Management: Daemon Workflows
 
-Managing the `voice-cli` daemon using the CLI and systemd.
+Managing the `hyprvox` daemon using the CLI and systemd.
 
 ### Check if it's running
 ```bash
@@ -93,12 +93,12 @@ bun run index.ts logs --tail
 
 ## 6. Clipboard "Append" Workflow
 
-A unique feature of `voice-cli` is that it never overwrites your clipboard. It always appends.
+A unique feature of `hyprvox` is that it never overwrites your clipboard. It always appends.
 
 **Scenario:**
-1. You copy a URL: `https://github.com/snehit/voice-cli`
-2. You use `voice-cli` to transcribe: *"Check out this awesome project: "*
-3. Your clipboard now contains: `https://github.com/snehit/voice-cliCheck out this awesome project: `
+1. You copy a URL: `https://github.com/Snehit70/hyprvox`
+2. You use `hyprvox` to transcribe: *"Check out this awesome project: "*
+3. Your clipboard now contains: `https://github.com/Snehit70/hyprvoxCheck out this awesome project: `
 
 **Correct Workflow for Links/Prefixes:**
 1. Transcribe the intro first: *"Check out this repo: "*
@@ -109,7 +109,7 @@ A unique feature of `voice-cli` is that it never overwrites your clipboard. It a
 
 ## 7. Programmatic API Examples
 
-If you are a developer looking to integrate `voice-cli` core logic into your own tools, check out the dedicated [API Examples Reference](API.md#example-usage) and the runnable scripts in `scripts/examples/`:
+If you are a developer looking to integrate `hyprvox` core logic into your own tools, check out the dedicated [API Examples Reference](API.md#example-usage) and the runnable scripts in `scripts/examples/`:
 
 - `simple-transcription.ts`: Basic Groq transcription.
 - `parallel-transcription.ts`: Parallel Groq + Deepgram.

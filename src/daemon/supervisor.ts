@@ -40,7 +40,7 @@ export class DaemonSupervisor {
 			["run", this.scriptPath, "start", "--daemon-worker"],
 			{
 				stdio: "inherit",
-				env: { ...process.env, VOICE_CLI_DAEMON_WORKER: "true" },
+				env: { ...process.env, HYPRVOX_DAEMON_WORKER: "true" },
 			},
 		);
 
@@ -84,7 +84,7 @@ export class DaemonSupervisor {
 		const msg = `Daemon crashed ${this.MAX_RESTARTS} times in 5 minutes. Stopping.`;
 		logger.error(msg);
 
-		const configDir = join(homedir(), ".config", "voice-cli");
+		const configDir = join(homedir(), ".config", "hypr", "vox");
 		const stateFile = join(configDir, "daemon.state");
 		const pidFile = join(configDir, "daemon.pid");
 

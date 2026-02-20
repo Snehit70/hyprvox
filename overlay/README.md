@@ -1,6 +1,6 @@
 # Electron Waveform Overlay
 
-Transparent, always-on-top waveform overlay for voice-cli using Electron.
+Transparent, always-on-top waveform overlay for hyprvox using Electron.
 
 ## Features
 
@@ -28,17 +28,17 @@ For the overlay to work properly on Hyprland, add these window rules to your con
 **Edit `~/.config/hypr/hyprland.conf` or `~/.config/hypr/UserConfigs/WindowRules.conf`:**
 
 ```conf
-# Voice CLI Overlay - Electron
-windowrulev2 = float, class:^(voice-cli-overlay)$
-windowrulev2 = pin, class:^(voice-cli-overlay)$
-windowrulev2 = nofocus, class:^(voice-cli-overlay)$
-windowrulev2 = noborder, class:^(voice-cli-overlay)$
-windowrulev2 = noshadow, class:^(voice-cli-overlay)$
-windowrulev2 = noanim, class:^(voice-cli-overlay)$
-windowrulev2 = noinitialfocus, class:^(voice-cli-overlay)$
-windowrulev2 = move 50% 100%, class:^(voice-cli-overlay)$
-windowrulev2 = size 400 60, class:^(voice-cli-overlay)$
-windowrulev2 = opacity 0.95, class:^(voice-cli-overlay)$
+# Hyprvox Overlay - Electron
+windowrulev2 = float, class:^(hyprvox-overlay)$
+windowrulev2 = pin, class:^(hyprvox-overlay)$
+windowrulev2 = nofocus, class:^(hyprvox-overlay)$
+windowrulev2 = noborder, class:^(hyprvox-overlay)$
+windowrulev2 = noshadow, class:^(hyprvox-overlay)$
+windowrulev2 = noanim, class:^(hyprvox-overlay)$
+windowrulev2 = noinitialfocus, class:^(hyprvox-overlay)$
+windowrulev2 = move 50% 100%, class:^(hyprvox-overlay)$
+windowrulev2 = size 400 60, class:^(hyprvox-overlay)$
+windowrulev2 = opacity 0.95, class:^(hyprvox-overlay)$
 ```
 
 After adding the rules, reload Hyprland:
@@ -111,5 +111,5 @@ Edit `src/renderer/App.tsx` to change:
 ## Notes
 
 - Uses Web Audio API for real-time microphone visualization
-- IPC integration with voice-cli daemon is built-in (daemon broadcasts state via Unix socket)
+- IPC integration with hyprvox daemon is built-in (daemon broadcasts state via Unix socket)
 - Wayland support requires Hyprland window rules (see above)

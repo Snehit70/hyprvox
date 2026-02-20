@@ -1,6 +1,6 @@
 # Transcription Data Flow (STT Flow)
 
-This document details the complete path from a user's voice input to the final text in their clipboard. `voice-cli` optimizes for speed, accuracy, and reliability by using a multi-service parallel approach combined with an LLM-based merger.
+This document details the complete path from a user's voice input to the final text in their clipboard. `hyprvox` optimizes for speed, accuracy, and reliability by using a multi-service parallel approach combined with an LLM-based merger.
 
 ## Flow Diagram
 
@@ -66,7 +66,7 @@ sequenceDiagram
 - **Specs**: 16kHz, Mono, PCM 16-bit Little Endian.
 
 ### 4. Parallel Transcription
-To minimize latency and maximize accuracy, `voice-cli` executes requests to two separate providers simultaneously using `Promise.all`:
+To minimize latency and maximize accuracy, `hyprvox` executes requests to two separate providers simultaneously using `Promise.all`:
 
 1.  **Groq (Whisper Large V3)**:
     - **Strength**: Unrivaled technical accuracy and word recognition.
@@ -97,7 +97,7 @@ The final text follows three paths:
     - **Action**: Desktop notification via `libnotify` (`notify-send`).
     - **Content**: Summary of success or detailed error message.
 3.  **History**:
-    - **Location**: `~/.config/voice-cli/history.json`.
+    - **Location**: `~/.config/hypr/vox/history.json`.
     - **Metadata**: Stores timestamp, text, duration, engine used, and processing time.
 
 ## Performance Metrics

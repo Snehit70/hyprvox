@@ -1,16 +1,16 @@
 # Configuration Guide
 
-This document provides a detailed overview of the configuration options available for `voice-cli`.
+This document provides a detailed overview of the configuration options available for `hyprvox`.
 
 ## Configuration File
 
 The default configuration file is located at:
-`~/.config/voice-cli/config.json`
+`~/.config/hyprvox/config.json`
 
 ### Security Requirement
 Since the configuration file contains sensitive API keys, it **must** have restricted file permissions.
 ```bash
-chmod 600 ~/.config/voice-cli/config.json
+chmod 600 ~/.config/hyprvox/config.json
 ```
 
 ## Environment Variables
@@ -56,13 +56,13 @@ The configuration is a JSON file structured into several sections.
     "audioDevice": "default"
   },
   "paths": {
-    "logs": "~/.config/voice-cli/logs/",
-    "history": "~/.config/voice-cli/history.json"
+    "logs": "~/.config/hyprvox/logs/",
+    "history": "~/.config/hyprvox/history.json"
   },
   "transcription": {
     "language": "en",
     "boostWords": [
-      "voice-cli",
+      "hyprvox",
       "Groq",
       "Deepgram"
     ]
@@ -146,8 +146,8 @@ File system locations for logs and history. Supports `~` for home directory expa
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `logs` | String | `"~/.config/voice-cli/logs/"` | Directory where structured log files are stored. |
-| `history` | String | `"~/.config/voice-cli/history.json"` | Path to the transcription history JSON file. |
+| `logs` | String | `"~/.config/hyprvox/logs/"` | Directory where structured log files are stored. |
+| `history` | String | `"~/.config/hyprvox/history.json"` | Path to the transcription history JSON file. |
 
 ---
 
@@ -214,7 +214,7 @@ The `boostWords` array is used to improve the detection of specific terms like n
 
 #### Language Options
 
-For **v1.0**, `voice-cli` is optimized for and officially supports **English only**.
+For **v1.0**, `hyprvox` is optimized for and officially supports **English only**.
 
 - **Option**: `transcription.language`
 - **Supported Value**: `"en"` (default)
@@ -223,4 +223,4 @@ For **v1.0**, `voice-cli` is optimized for and officially supports **English onl
 ---
 
 ## Validation
-`voice-cli` uses **Zod** to validate the configuration file on startup. If the configuration is invalid, the daemon will log a detailed error message and fail to start. You can use `bun run index.ts health` to verify if your configuration and API keys are working correctly.
+`hyprvox` uses **Zod** to validate the configuration file on startup. If the configuration is invalid, the daemon will log a detailed error message and fail to start. You can use `bun run index.ts health` to verify if your configuration and API keys are working correctly.

@@ -9,12 +9,12 @@ export const ErrorTemplates = {
 		GROQ_INVALID_KEY: {
 			message: "Groq API key is invalid or missing.",
 			action:
-				"Please check your Groq API key in ~/.config/voice-cli/config.json. It should start with 'gsk_'.\n\nYou can get a key at: https://console.groq.com/keys",
+				"Please check your Groq API key in ~/.config/hypr/vox/config.json. It should start with 'gsk_'.\n\nYou can get a key at: https://console.groq.com/keys",
 		},
 		DEEPGRAM_INVALID_KEY: {
 			message: "Deepgram API key is invalid or missing.",
 			action:
-				"Please check your Deepgram API key in ~/.config/voice-cli/config.json. It should be a valid UUID.\n\nYou can get a key at: https://console.deepgram.com/signup",
+				"Please check your Deepgram API key in ~/.config/hypr/vox/config.json. It should be a valid UUID.\n\nYou can get a key at: https://console.deepgram.com/signup",
 		},
 		RATE_LIMIT_EXCEEDED: (provider: string) => ({
 			message: `${provider} rate limit exceeded.`,
@@ -29,7 +29,7 @@ export const ErrorTemplates = {
 		BOTH_SERVICES_FAILED: {
 			message: "Both Groq and Deepgram transcription services failed.",
 			action:
-				"1. Check your internet connection.\n2. Verify both API keys in ~/.config/voice-cli/config.json.\n3. Try again in a few seconds (retry instructions).",
+				"1. Check your internet connection.\n2. Verify both API keys in ~/.config/hypr/vox/config.json.\n3. Try again in a few seconds (retry instructions).",
 		},
 	},
 
@@ -73,7 +73,7 @@ export const ErrorTemplates = {
 		NO_MICROPHONE: {
 			message: "No microphone detected or could not be opened.",
 			action:
-				"1. Check if your microphone is physically connected.\n2. Ensure your user is in the 'audio' group: 'sudo usermod -aG audio $USER'.\n3. Verify the correct device is selected in ~/.config/voice-cli/config.json.\n4. Check if another application is using the microphone (e.g., 'Device busy').\n5. Run 'arecord -l' to list available hardware devices.",
+				"1. Check if your microphone is physically connected.\n2. Ensure your user is in the 'audio' group: 'sudo usermod -aG audio $USER'.\n3. Verify the correct device is selected in ~/.config/hypr/vox/config.json.\n4. Check if another application is using the microphone (e.g., 'Device busy').\n5. Run 'arecord -l' to list available hardware devices.",
 		},
 		PERMISSION_DENIED: {
 			message: "Microphone permission denied.",
@@ -112,7 +112,7 @@ export const ErrorTemplates = {
 		CRASH_LIMIT_REACHED: {
 			message: "Daemon has crashed too many times and will not auto-restart.",
 			action:
-				"Check the logs in ~/.config/voice-cli/logs/ to identify the root cause, then restart the daemon manually.",
+				"Check the logs in ~/.config/hypr/vox/logs/ to identify the root cause, then restart the daemon manually.",
 		},
 	},
 
@@ -126,7 +126,7 @@ export const ErrorTemplates = {
 		ACCESS_DENIED: {
 			message: "Clipboard access denied or tool missing.",
 			action:
-				"1. Ensure 'wl-clipboard' (Wayland) or 'xclip' (X11) is installed.\n2. Check if you have permissions to access the clipboard.\n3. The transcription has been saved to the fallback file: ~/.config/voice-cli/transcriptions.txt",
+				"1. Ensure 'wl-clipboard' (Wayland) or 'xclip' (X11) is installed.\n2. Check if you have permissions to access the clipboard.\n3. The transcription has been saved to the fallback file: ~/.config/hypr/vox/transcriptions.txt",
 		},
 	},
 
@@ -135,22 +135,22 @@ export const ErrorTemplates = {
 		VALIDATION_FAILED: {
 			message: "Configuration validation failed.",
 			action:
-				"Review the error details and fix the invalid fields in ~/.config/voice-cli/config.json.",
+				"Review the error details and fix the invalid fields in ~/.config/hypr/vox/config.json.",
 		},
 		FILE_PERMISSIONS: {
 			message: "Config file has insecure permissions.",
 			action:
-				"Run 'chmod 600 ~/.config/voice-cli/config.json' to restrict access to the current user only.",
+				"Run 'chmod 600 ~/.config/hypr/vox/config.json' to restrict access to the current user only.",
 		},
 		CORRUPTED: {
 			message: "Configuration file is corrupted (invalid JSON).",
 			action:
-				"To reset, delete the file: rm ~/.config/voice-cli/config.json or run 'voice-cli config init --force'",
+				"To reset, delete the file: rm ~/.config/hypr/vox/config.json or run 'hyprvox config init --force'",
 		},
 		WRITE_FAILED: {
 			message: "Failed to save configuration.",
 			action:
-				"Ensure the daemon has write permissions for ~/.config/voice-cli/.",
+				"Ensure the daemon has write permissions for ~/.config/hypr/vox/.",
 		},
 	},
 };

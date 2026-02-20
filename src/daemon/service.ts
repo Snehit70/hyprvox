@@ -77,7 +77,7 @@ export class DaemonService {
 		this.merger = new TranscriptMerger();
 		this.clipboard = new ClipboardManager();
 		this.ipcServer = getIPCServer();
-		const configDir = join(homedir(), ".config", "voice-cli");
+		const configDir = join(homedir(), ".config", "hypr", "vox");
 		this.pidFile = join(configDir, "daemon.pid");
 		this.stateFile = join(configDir, "daemon.state");
 		this.overlayPidFile = join(configDir, "overlay.pid");

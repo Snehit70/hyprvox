@@ -1,4 +1,4 @@
-# voice-cli Issues & Improvements
+# hyprvox Issues & Improvements
 
 > Comprehensive code review conducted Feb 19, 2026. This document catalogs all identified issues, bugs, and improvement opportunities for future development.
 >

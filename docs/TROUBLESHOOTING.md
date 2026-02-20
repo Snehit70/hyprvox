@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-This guide covers common issues and their solutions for `voice-cli`.
+This guide covers common issues and their solutions for `hyprvox`.
 
 ## Table of Contents
 - [Daemon Startup Issues](#daemon-startup-issues)
@@ -18,15 +18,15 @@ This guide covers common issues and their solutions for `voice-cli`.
 ### Daemon Already Running
 - **Symptom**: `Error: Daemon is already running (PID: XXXX)`
 - **Fix**: 
-  - Stop the existing daemon: `voice-cli stop`.
-  - If the PID file is stale (process is dead), delete it: `rm ~/.config/voice-cli/daemon.pid`.
+  - Stop the existing daemon: `hyprvox stop`.
+  - If the PID file is stale (process is dead), delete it: `rm ~/.config/hyprvox/daemon.pid`.
 
 ### Configuration Validation Failed
 - **Symptom**: `Config validation failed: ...`
 - **Fix**: 
   - Ensure API keys are present and correctly formatted (Groq starts with `gsk_`, Deepgram is a UUID).
-  - Check `~/.config/voice-cli/config.json` for syntax errors.
-  - Reset config if needed: `rm ~/.config/voice-cli/config.json && voice-cli config init`.
+  - Check `~/.config/hyprvox/config.json` for syntax errors.
+  - Reset config if needed: `rm ~/.config/hyprvox/config.json && hyprvox config init`.
 
 ### Permission Denied (Input/Hotkey)
 - **Symptom**: "Failed to bind global hotkey" or native errors related to `/dev/input/`.
@@ -38,7 +38,7 @@ This guide covers common issues and their solutions for `voice-cli`.
 - **Symptom**: `Daemon has crashed too many times and will not auto-restart.`
 - **Fix**: 
   - This happens if the daemon crashes 3 times in 5 minutes.
-  - Check logs for the root cause: `journalctl --user -u voice-cli -f` or `cat ~/.config/voice-cli/logs/daemon.log`.
+  - Check logs for the root cause: `journalctl --user -u hyprvox -f` or `cat ~/.config/hyprvox/logs/daemon.log`.
   - Fix the underlying issue and restart manually.
 
 ---
@@ -50,7 +50,7 @@ This guide covers common issues and their solutions for `voice-cli`.
 - **Fix**: 
   - Ensure your key starts with `gsk_`.
   - Obtain a new key at the [Groq Cloud Console](https://console.groq.com/keys).
-  - Verify it is correctly placed in `~/.config/voice-cli/config.json`.
+  - Verify it is correctly placed in `~/.config/hyprvox/config.json`.
 
 ### Deepgram API Key Invalid
 - **Symptom**: "Deepgram API key is invalid or missing" or "Deepgram: Invalid API Key" in logs.
@@ -102,14 +102,14 @@ This guide covers common issues and their solutions for `voice-cli`.
     ```
 
 ### Wayland vs X11 Issues
-`voice-cli` uses `node-global-key-listener`, which relies on the X11 XInput2 protocol. This has specific implications for Wayland users.
+`hyprvox` uses `node-global-key-listener`, which relies on the X11 XInput2 protocol. This has specific implications for Wayland users.
 
 #### Wayland (Hyprland, GNOME Wayland, KDE Wayland)
 - **Problem**: Global hotkeys may only work when an XWayland window is focused. They will **not** trigger while a native Wayland window is active.
 - **Workarounds**:
   - **Focus XWayland**: Click on an XWayland-compatible application (like Discord or older apps) before using the hotkey.
-  - **Native Keybinds**: If `voice-cli` hotkeys are unreliable on your compositor, you can bind a key natively in your WM/DE to trigger the daemon via CLI:
-    - **Hyprland**: Add `bind = , code:105, exec, bun run /path/to/voice-cli/index.ts toggle` to your config.
+  - **Native Keybinds**: If `hyprvox` hotkeys are unreliable on your compositor, you can bind a key natively in your WM/DE to trigger the daemon via CLI:
+    - **Hyprland**: Add `bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle` to your config.
     - **GNOME**: Use Settings -> Keyboard -> Keyboard Shortcuts -> Custom Shortcuts.
 - **XWayland Requirement**: Ensure XWayland is enabled in your compositor settings.
 
@@ -133,7 +133,7 @@ This guide covers common issues and their solutions for `voice-cli`.
 - **Fix**:
   - **Wayland**: Install `wl-clipboard`.
   - **X11**: Install `xclip` or `xsel`.
-  - Check the fallback file at `~/.config/voice-cli/transcriptions.txt` to see if the transcript was saved there.
+  - Check the fallback file at `~/.config/hyprvox/transcriptions.txt` to see if the transcript was saved there.
 
 ### Clipboard Access Denied
 - **Symptom**: "Clipboard access denied" notification.
@@ -145,12 +145,12 @@ This guide covers common issues and their solutions for `voice-cli`.
 
 ### Bun Not Found
 - **Symptom**: Service fails with "command not found: bun".
-- **Fix**: The installation script attempts to find `bun`. If it fails, manually edit `~/.config/systemd/user/voice-cli.service` and provide the absolute path to `bun` in `ExecStart`.
+- **Fix**: The installation script attempts to find `bun`. If it fails, manually edit `~/.config/systemd/user/hyprvox.service` and provide the absolute path to `bun` in `ExecStart`.
 
 ### Service Fails to Start
-- **Symptom**: `systemctl --user status voice-cli` shows "failed".
+- **Symptom**: `systemctl --user status hyprvox` shows "failed".
 - **Fix**:
-  - Check logs: `journalctl --user -u voice-cli -f`.
+  - Check logs: `journalctl --user -u hyprvox -f`.
   - Ensure `DISPLAY` or `WAYLAND_DISPLAY` environment variables are available to the service.
 
 ---
@@ -163,4 +163,4 @@ This guide covers common issues and their solutions for `voice-cli`.
 
 ### Accuracy is Poor
 - **Symptom**: Transcripts contain errors for specific names or terms.
-- **Fix**: Add those terms to the `boostWords` array in `~/.config/voice-cli/config.json`. Note the 450-word limit.
+- **Fix**: Add those terms to the `boostWords` array in `~/.config/hyprvox/config.json`. Note the 450-word limit.

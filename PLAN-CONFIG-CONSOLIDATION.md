@@ -43,10 +43,10 @@
 
 ```bash
 # Reload config while daemon is running
-kill -SIGUSR2 $(cat ~/.config/voice-cli/daemon.pid)
+kill -SIGUSR2 $(cat ~/.config/hyprvox/daemon.pid)
 
 # Or via CLI (future enhancement)
-voice-cli config reload
+hyprvox config reload
 ```
 
 ## Files Modified
@@ -98,7 +98,7 @@ export const loadConfig = (configPath = DEFAULT_CONFIG_FILE, forceReload = false
 
 ### 1. Config Changes Not Detected at Runtime
 
-**Scenario:** User runs `voice-cli config set behavior.hotkey f13` while daemon is running.
+**Scenario:** User runs `hyprvox config set behavior.hotkey f13` while daemon is running.
 
 **Current behavior:** Hotkey listener continues using old hotkey until daemon restart.
 
@@ -145,7 +145,7 @@ const config = loadConfig();
 
 ### Edge Case 1: Config Deleted While Daemon Running
 
-**Scenario:** User runs `rm ~/.config/voice-cli/config.json`
+**Scenario:** User runs `rm ~/.config/hyprvox/config.json`
 
 **Current behavior:**
 - `loadConfig()` returns cached config (no re-read)
@@ -183,7 +183,7 @@ const config = loadConfig();
 
 ### Edge Case 5: Multiple CLI Commands in Parallel
 
-**Scenario:** User runs `voice-cli config set ...` in two terminals simultaneously.
+**Scenario:** User runs `hyprvox config set ...` in two terminals simultaneously.
 
 **Current behavior:** Race condition. Last write wins.
 
@@ -191,7 +191,7 @@ const config = loadConfig();
 
 ### Edge Case 6: Custom Config Path
 
-**Scenario:** User runs `voice-cli --config /custom/path.json start`
+**Scenario:** User runs `hyprvox --config /custom/path.json start`
 
 **Current behavior:** Cache doesn't work for custom paths, every `loadConfig()` re-reads file.
 
@@ -419,7 +419,7 @@ kill -SIGUSR2 $DAEMON_PID
 # Verify hotkey changed in logs
 
 # Test 2: Config validation on reload
-echo "invalid json" > ~/.config/voice-cli/config.json
+echo "invalid json" > ~/.config/hyprvox/config.json
 kill -SIGUSR2 $DAEMON_PID
 # Verify daemon doesn't crash, logs error
 ```

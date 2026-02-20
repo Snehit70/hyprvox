@@ -12,7 +12,13 @@ import type { DaemonStatus, IPCMessage } from "../shared/ipc-types";
 import { logger } from "../utils/logger";
 
 const IPC_PROTOCOL_VERSION = 1;
-const SOCKET_PATH = join(homedir(), ".config", "voice-cli", "daemon.sock");
+export const SOCKET_PATH = join(
+	homedir(),
+	".config",
+	"hypr",
+	"vox",
+	"daemon.sock",
+);
 
 export type { DaemonStatus, IPCMessage } from "../shared/ipc-types";
 

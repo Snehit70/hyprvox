@@ -15,7 +15,7 @@ export const errorsCommand = new Command("errors")
 			logDir = config.paths.logs;
 		} catch (_e) {
 			const home = homedir();
-			logDir = join(home || ".", ".config", "voice-cli", "logs");
+			logDir = join(home || ".", ".config", "hypr", "vox", "logs");
 		}
 
 		if (!existsSync(logDir)) {
@@ -25,7 +25,7 @@ export const errorsCommand = new Command("errors")
 
 		try {
 			const files = readdirSync(logDir)
-				.filter((f) => f.startsWith("voice-cli-") && f.endsWith(".log"))
+				.filter((f) => f.startsWith("hyprvox-") && f.endsWith(".log"))
 				.sort((a, b) => b.localeCompare(a));
 
 			if (files.length === 0) {

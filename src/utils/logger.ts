@@ -10,7 +10,7 @@ try {
 	const config = loadConfig();
 	logDir = config.paths.logs;
 } catch {
-	logDir = join(process.env.HOME || ".", ".config", "voice-cli", "logs");
+	logDir = join(process.env.HOME || ".", ".config", "hypr", "vox", "logs");
 }
 
 if (!existsSync(logDir)) {
@@ -25,7 +25,7 @@ const rotateLogs = async (dir: string) => {
 		const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
 
 		for (const file of files) {
-			if (file.startsWith("voice-cli-") && file.endsWith(".log")) {
+			if (file.startsWith("hyprvox-") && file.endsWith(".log")) {
 				const filePath = join(dir, file);
 				try {
 					const stats = statSync(filePath);
@@ -53,7 +53,7 @@ const rotatingStream = createStream(
 	(time) => {
 		const date = time ? new Date(time) : new Date();
 		const dateStr = date.toISOString().split("T")[0];
-		return `voice-cli-${dateStr}.log`;
+		return `hyprvox-${dateStr}.log`;
 	},
 	{
 		interval: "1d",

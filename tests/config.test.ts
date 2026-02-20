@@ -6,7 +6,7 @@ import { loadConfig } from "../src/config/loader";
 
 const TEST_DIR = join(
 	tmpdir(),
-	`voice-cli-test-${Math.random().toString(36).slice(2)}`,
+	`hyprvox-test-${Math.random().toString(36).slice(2)}`,
 );
 const CONFIG_FILE = join(TEST_DIR, "config.json");
 

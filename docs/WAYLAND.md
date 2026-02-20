@@ -1,6 +1,6 @@
 # Wayland Support Guide
 
-This guide provides comprehensive information about using `voice-cli` on Wayland compositors, with special focus on Hyprland.
+This guide provides comprehensive information about using `hyprvox` on Wayland compositors, with special focus on Hyprland.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@ This guide provides comprehensive information about using `voice-cli` on Wayland
 
 ## Overview
 
-`voice-cli` is designed to work on both X11 and Wayland environments. However, due to Wayland's security model and the underlying hotkey library's X11 dependency, there are important considerations for Wayland users.
+`hyprvox` is designed to work on both X11 and Wayland environments. However, due to Wayland's security model and the underlying hotkey library's X11 dependency, there are important considerations for Wayland users.
 
 ### Key Points
 
@@ -30,7 +30,7 @@ This guide provides comprehensive information about using `voice-cli` on Wayland
 
 ### How Hotkeys Work on Wayland
 
-`voice-cli` uses the `node-global-key-listener` library, which relies on X11's XInput2 protocol for global hotkey detection. On Wayland, this has specific implications:
+`hyprvox` uses the `node-global-key-listener` library, which relies on X11's XInput2 protocol for global hotkey detection. On Wayland, this has specific implications:
 
 #### XWayland-Based Hotkeys
 
@@ -55,20 +55,20 @@ This guide provides comprehensive information about using `voice-cli` on Wayland
 
 ### Recommended Solution: Native Compositor Bindings
 
-For reliable, system-wide hotkey support on Wayland, we recommend binding the `voice-cli` toggle command directly in your compositor configuration. This bypasses the XWayland limitation entirely.
+For reliable, system-wide hotkey support on Wayland, we recommend binding the `hyprvox` toggle command directly in your compositor configuration. This bypasses the XWayland limitation entirely.
 
 ---
 
 ## Hyprland Setup
 
-Hyprland is a dynamic tiling Wayland compositor with excellent keybinding support. Here's how to set up `voice-cli` with native Hyprland bindings.
+Hyprland is a dynamic tiling Wayland compositor with excellent keybinding support. Here's how to set up `hyprvox` with native Hyprland bindings.
 
 ### Prerequisites
 
-1. **Install voice-cli** and ensure it works:
+1. **Install hyprvox** and ensure it works:
 
    ```bash
-   cd /path/to/voice-cli
+   cd /path/to/hyprvox
    bun install
    bun run index.ts health
    ```
@@ -105,11 +105,11 @@ Add the following to your `~/.config/hypr/hyprland.conf`:
 This method uses the built-in toggle command, which handles start/stop automatically:
 
 ```conf
-# Voice-CLI: Toggle recording with Right Control
-bind = , code:105, exec, bun run /path/to/voice-cli/index.ts toggle
+# Hyprvox: Toggle recording with Right Control
+bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle
 
 # Alternative: Use a different key (e.g., Super+V)
-bind = SUPER, V, exec, bun run /path/to/voice-cli/index.ts toggle
+bind = SUPER, V, exec, bun run /path/to/hyprvox/index.ts toggle
 ```
 
 **Key Code Reference:**
@@ -131,10 +131,10 @@ If you prefer separate keys for start and stop:
 
 ```conf
 # Start recording
-bind = , code:105, exec, bun run /path/to/voice-cli/index.ts start-recording
+bind = , code:105, exec, bun run /path/to/hyprvox/index.ts start-recording
 
 # Stop recording (same key, or different)
-bind = SHIFT, code:105, exec, bun run /path/to/voice-cli/index.ts stop-recording
+bind = SHIFT, code:105, exec, bun run /path/to/hyprvox/index.ts stop-recording
 ```
 
 #### Method 3: Using Absolute Paths
@@ -142,7 +142,7 @@ bind = SHIFT, code:105, exec, bun run /path/to/voice-cli/index.ts stop-recording
 For systemd service or if `bun` is not in PATH:
 
 ```conf
-bind = , code:105, exec, /home/yourusername/.bun/bin/bun run /home/yourusername/voice-cli/index.ts toggle
+bind = , code:105, exec, /home/yourusername/.bun/bin/bun run /home/yourusername/hyprvox/index.ts toggle
 ```
 
 ### Reload Hyprland Configuration
@@ -175,10 +175,10 @@ hyprctl reload
 
    ```bash
    # Daemon logs
-   journalctl --user -u voice-cli -f
+   journalctl --user -u hyprvox -f
 
    # Or direct log file
-   tail -f ~/.config/voice-cli/logs/daemon.log
+   tail -f ~/.config/hyprvox/logs/daemon.log
    ```
 
 ---
@@ -191,10 +191,10 @@ Sway uses a similar configuration syntax to i3. Add to `~/.config/sway/config`:
 
 ```conf
 # Toggle recording with Right Control
-bindsym --no-repeat Control_R exec bun run /path/to/voice-cli/index.ts toggle
+bindsym --no-repeat Control_R exec bun run /path/to/hyprvox/index.ts toggle
 
 # Alternative: Use Mod+V
-bindsym $mod+v exec bun run /path/to/voice-cli/index.ts toggle
+bindsym $mod+v exec bun run /path/to/hyprvox/index.ts toggle
 ```
 
 Reload configuration:
@@ -210,8 +210,8 @@ GNOME uses the Settings app for custom keyboard shortcuts:
 1. Open **Settings** → **Keyboard** → **Keyboard Shortcuts**
 2. Scroll to **Custom Shortcuts**
 3. Click **+** to add a new shortcut
-4. **Name**: Voice CLI Toggle
-5. **Command**: `bun run /path/to/voice-cli/index.ts toggle`
+4. **Name**: Hyprvox Toggle
+5. **Command**: `bun run /path/to/hyprvox/index.ts toggle`
 6. **Shortcut**: Press your desired key combination
 
 **Note**: GNOME may not support single-key bindings like "Right Control" alone. Use combinations like `Ctrl+Alt+V`.
@@ -221,14 +221,14 @@ GNOME uses the Settings app for custom keyboard shortcuts:
 1. Open **System Settings** → **Shortcuts** → **Custom Shortcuts**
 2. Right-click → **New** → **Global Shortcut** → **Command/URL**
 3. **Trigger**: Set your desired key
-4. **Action**: `bun run /path/to/voice-cli/index.ts toggle`
+4. **Action**: `bun run /path/to/hyprvox/index.ts toggle`
 
 ### River
 
 Add to `~/.config/river/init`:
 
 ```bash
-riverctl map normal None XF86AudioRecord spawn "bun run /path/to/voice-cli/index.ts toggle"
+riverctl map normal None XF86AudioRecord spawn "bun run /path/to/hyprvox/index.ts toggle"
 ```
 
 ---
@@ -257,7 +257,7 @@ riverctl map normal None XF86AudioRecord spawn "bun run /path/to/voice-cli/index
 
    ```bash
    # Hyprland
-   cat /tmp/hypr/$(ls -t /tmp/hypr/ | head -n 1)/hyprland.log | grep voice-cli
+   cat /tmp/hypr/$(ls -t /tmp/hypr/ | head -n 1)/hyprland.log | grep hyprvox
 
    # Sway
    journalctl --user -u sway -f
@@ -266,7 +266,7 @@ riverctl map normal None XF86AudioRecord spawn "bun run /path/to/voice-cli/index
 **Common Fixes**:
 
 - Ensure `bun` is in PATH or use absolute path
-- Verify the path to `voice-cli` is correct
+- Verify the path to `hyprvox` is correct
 - Check file permissions: `chmod +x index.ts`
 - Reload compositor configuration
 
@@ -316,11 +316,11 @@ sudo usermod -aG audio $USER
 bun run index.ts install
 
 # Enable and start
-systemctl --user enable voice-cli
-systemctl --user start voice-cli
+systemctl --user enable hyprvox
+systemctl --user start hyprvox
 
 # Check status
-systemctl --user status voice-cli
+systemctl --user status hyprvox
 ```
 
 ---
@@ -366,7 +366,7 @@ Keep logs open while testing:
 
 ```bash
 # Terminal 1: Watch daemon logs
-journalctl --user -u voice-cli -f
+journalctl --user -u hyprvox -f
 
 # Terminal 2: Test keybindings
 # Press your configured keys
@@ -376,7 +376,7 @@ journalctl --user -u voice-cli -f
 
 If you're using native compositor bindings exclusively, you can disable the built-in hotkey listener to avoid XWayland dependency:
 
-Edit `~/.config/voice-cli/config.json`:
+Edit `~/.config/hyprvox/config.json`:
 
 ```json
 {
@@ -394,11 +394,11 @@ Then use only compositor bindings for control.
 
 - [Hyprland Wiki: Binds](https://wiki.hyprland.org/Configuring/Binds/)
 - [Sway Wiki: Key Bindings](https://github.com/swaywm/sway/wiki)
-- [voice-cli Troubleshooting Guide](./TROUBLESHOOTING.md)
-- [voice-cli Configuration Guide](./CONFIGURATION.md)
+- [hyprvox Troubleshooting Guide](./TROUBLESHOOTING.md)
+- [hyprvox Configuration Guide](./CONFIGURATION.md)
 
 ---
 
 ## Contributing
 
-Found a better way to configure `voice-cli` on your Wayland compositor? Please contribute your configuration examples by opening a pull request!
+Found a better way to configure `hyprvox` on your Wayland compositor? Please contribute your configuration examples by opening a pull request!

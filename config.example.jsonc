@@ -43,10 +43,10 @@
 	},
 	"paths": {
 		// Directory for structured JSON logs. Supports '~' expansion.
-		"logs": "~/.config/voice-cli/logs/",
+		"logs": "~/.config/hypr/vox/logs/",
 
 		// Path to transcription history file. Supports '~' expansion.
-		"history": "~/.config/voice-cli/history.json"
+		"history": "~/.config/hypr/vox/history.json"
 	},
 	"transcription": {
 		// Language code for transcription. Currently only 'en' is officially supported.
@@ -72,7 +72,7 @@
 		// Custom vocabulary to improve accuracy for jargon, names, or acronyms.
 		// Limit: Total word count across all entries must not exceed 450 words.
 		"boostWords": [
-			"voice-cli",
+			"hyprvox",
 			"Sisyphus",
 			"Groq",
 			"Deepgram",

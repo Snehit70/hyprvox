@@ -13,8 +13,8 @@ import { GroqClient } from "../transcribe/groq";
 export const healthCommand = new Command("health")
 	.description("Check system health and configuration")
 	.action(async () => {
-		console.log(`\n${colors.bold(colors.cyan("🔍 Voice-CLI Health Check"))}`);
-		console.log(`${colors.cyan("=========================")}\n`);
+		console.log(`\n${colors.bold(colors.cyan("🔍 Hyprvox Health Check"))}`);
+		console.log(`${colors.cyan("=======================")}\n`);
 
 		let allOk = true;
 		let config: any;
@@ -179,7 +179,7 @@ export const healthCommand = new Command("health")
 
 		// 5. Daemon Check
 		console.log(`\n${colors.bold("--- Daemon Status ---")}`);
-		const configDir = join(homedir(), ".config", "voice-cli");
+		const configDir = join(homedir(), ".config", "hypr", "vox");
 		const pidFile = join(configDir, "daemon.pid");
 		const stateFile = join(configDir, "daemon.state");
 
@@ -220,7 +220,7 @@ export const healthCommand = new Command("health")
 		}
 
 		try {
-			const isServiceActive = execSync("systemctl --user is-active voice-cli", {
+			const isServiceActive = execSync("systemctl --user is-active hyprvox", {
 				stdio: "pipe",
 			})
 				.toString()

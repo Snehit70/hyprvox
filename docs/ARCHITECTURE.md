@@ -1,6 +1,6 @@
 # Project Architecture
 
-`voice-cli` follows a feature-based directory structure to ensure high cohesion and low coupling between different parts of the system.
+`hyprvox` follows a feature-based directory structure to ensure high cohesion and low coupling between different parts of the system.
 
 ## Directory Structure
 
@@ -19,7 +19,7 @@ src/
 ## Core Architecture
 
 ### 1. Daemon Lifecycle & Supervision
-`voice-cli` operates as a persistent background daemon on Linux. It follows a multi-process architecture where a **Supervisor** ensures high availability of a **Worker** process.
+`hyprvox` operates as a persistent background daemon on Linux. It follows a multi-process architecture where a **Supervisor** ensures high availability of a **Worker** process.
 
 - **Supervisor (`src/daemon/supervisor.ts`)**: The parent process that spawns and monitors the worker. It implements auto-restart logic with crash protection (max 3 crashes in 5 minutes).
 - **Service (`src/daemon/service.ts`)**: The main "Event Loop" and orchestrator for the worker process. It maintains system state and coordinates between hardware (audio/keyboard) and remote APIs.
@@ -48,7 +48,7 @@ The transcription cycle follows a strictly orchestrated path (see [STT Flow Deta
 5. **LLM Merge**: If both APIs return results, an LLM (`src/transcribe/merger.ts`) merges them to combine Groq's technical accuracy with Deepgram's formatting. Model is configurable via `transcription.mergeModel`.
 6. **Output**:
    - **Clipboard**: Final text is appended to the system clipboard (Wayland via `wl-copy`, X11 via `clipboardy`).
-   - **History**: Transcription is logged to `~/.config/voice-cli/history.json`.
+   - **History**: Transcription is logged to `~/.config/hyprvox/history.json`.
    - **Notification**: Desktop notification is sent via `notify-send`.
 
 ## Feature Modules
@@ -100,7 +100,7 @@ For details on using these modules programmatically, see the [Programmatic API R
 - **Keyboard Logic**: Uses `node-global-key-listener`.
 
 ### Getting Started
-1. Clone the repository: `git clone https://github.com/snehit/voice-cli.git`
+1. Clone the repository: `git clone https://github.com/Snehit70/hyprvox.git`
 2. Install dependencies: `bun install`
 3. Run in development mode: `bun run index.ts start`
 

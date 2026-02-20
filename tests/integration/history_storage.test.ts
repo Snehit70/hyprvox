@@ -13,7 +13,7 @@ import {
 describe("History Storage Integration", () => {
 	const TEST_DIR = join(
 		tmpdir(),
-		`voice-cli-history-integration-${Math.random().toString(36).slice(2)}`,
+		`hyprvox-history-integration-${Math.random().toString(36).slice(2)}`,
 	);
 	const HISTORY_FILE = join(TEST_DIR, "history.json");
 

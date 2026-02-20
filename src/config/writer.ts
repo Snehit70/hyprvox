@@ -12,7 +12,7 @@ import { type ConfigFile, ConfigFileSchema } from "./schema";
  * Sets file permissions to 600 (read/write only for owner).
  *
  * @param config The configuration object to save
- * @param path Optional path to save to (defaults to ~/.config/voice-cli/config.json)
+ * @param path Optional path to save to (defaults to ~/.config/hypr/vox/config.json)
  */
 export const saveConfig = (
 	config: ConfigFile,

@@ -1,15 +1,15 @@
 # Usage Guide
 
-This guide covers everything you need to know about using `voice-cli` effectively. For practical examples and typical workflows, see the **[Examples & Workflows](EXAMPLES.md)** document.
+This guide covers everything you need to know about using `hyprvox` effectively. For practical examples and typical workflows, see the **[Examples & Workflows](EXAMPLES.md)** document.
 
 ## 1. Daemon Management
 
-The `voice-cli` daemon runs in the background and listens for your hotkey to start recording.
+The `hyprvox` daemon runs in the background and listens for your hotkey to start recording.
 
 ### Starting the Daemon
 If you've installed it as a systemd service (recommended):
 ```bash
-systemctl --user start voice-cli
+systemctl --user start hyprvox
 ```
 
 To run it manually in the foreground:
@@ -20,7 +20,7 @@ bun run index.ts start
 ### Stopping the Daemon
 Systemd:
 ```bash
-systemctl --user stop voice-cli
+systemctl --user stop hyprvox
 ```
 
 Manual:
@@ -49,7 +49,7 @@ Last:   1/22/2026, 3:00:00 PM
 
 ## 2. Using the Hotkey
 
-`voice-cli` uses a global hotkey to trigger transcription.
+`hyprvox` uses a global hotkey to trigger transcription.
 
 ### Default Hotkey
 The default hotkey is **Right Control**.
@@ -70,7 +70,7 @@ The hotkey operates in **toggle mode**:
 
 ## 3. Clipboard Behavior
 
-**CRITICAL:** `voice-cli` never overwrites your clipboard. It always **appends** the transcribed text to your existing clipboard content.
+**CRITICAL:** `hyprvox` never overwrites your clipboard. It always **appends** the transcribed text to your existing clipboard content.
 
 - If your clipboard contains "Previous text ", and you transcribe "Hello world", your clipboard will now contain "Previous text Hello world".
 - This ensures you never lose important information when using the tool.
@@ -79,7 +79,7 @@ The hotkey operates in **toggle mode**:
 
 ## 4. History Management
 
-`voice-cli` keeps a local history of your transcriptions.
+`hyprvox` keeps a local history of your transcriptions.
 
 ### Viewing History
 List the last 10 transcriptions:
@@ -115,7 +115,7 @@ bun run index.ts list-mics
 For more information, see the **[Audio Device Selection Guide](AUDIO_DEVICES.md)**.
 
 ### Viewing Logs
-`voice-cli` stores logs in `~/.config/voice-cli/logs/`. You can view them via the CLI:
+`hyprvox` stores logs in `~/.config/hyprvox/logs/`. You can view them via the CLI:
 ```bash
 # See recent logs
 bun run index.ts logs
@@ -152,6 +152,6 @@ bun run index.ts config set apiKeys.groq gsk_your_key
 ### Boost Words
 To improve accuracy for specific names or technical terms:
 ```bash
-bun run index.ts boost add "Sisyphus" "voice-cli" "Hyprland"
+bun run index.ts boost add "Sisyphus" "hyprvox" "Hyprland"
 ```
 *(Limit: 450 words. See [Configuration Guide](CONFIGURATION.md#boost-words-custom-vocabulary) for details.)*

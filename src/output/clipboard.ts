@@ -20,7 +20,7 @@ export class ClipboardManager {
 
 	constructor() {
 		this.isWayland = !!process.env.WAYLAND_DISPLAY;
-		const configDir = join(homedir(), ".config", "voice-cli");
+		const configDir = join(homedir(), ".config", "hypr", "vox");
 		this.fallbackFile = join(configDir, "transcriptions.txt");
 
 		if (!existsSync(configDir)) {

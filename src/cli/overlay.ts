@@ -5,8 +5,9 @@ import { join } from "node:path";
 import { Command } from "commander";
 import * as colors from "yoctocolors";
 import { loadConfig } from "../config/loader";
+import { SOCKET_PATH } from "../daemon/ipc";
 
-const configDir = join(homedir(), ".config", "voice-cli");
+const configDir = join(homedir(), ".config", "hypr", "vox");
 const overlayPidFile = join(configDir, "overlay.pid");
 
 function getDefaultOverlayPath(): string {
@@ -157,8 +158,7 @@ function statusOverlay(): void {
 	);
 	console.log(`${colors.dim("Path:")}   ${colors.dim(getOverlayBinaryPath())}`);
 
-	const socketPath = join(configDir, "daemon.sock");
-	if (existsSync(socketPath)) {
+	if (existsSync(SOCKET_PATH)) {
 		console.log(`${colors.dim("IPC:")}    ${colors.green("Socket available")}`);
 	} else {
 		console.log(

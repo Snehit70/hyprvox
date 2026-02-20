@@ -3,7 +3,7 @@
 This file provides minimal, durable context for automated agents working in this repo. It intentionally avoids duplicating existing documentation; see referenced sources for details.
 
 ## Project Summary
-- `voice-cli` is a Linux speech-to-text daemon with a CLI, global hotkey trigger, and clipboard history output.
+- `hyprvox` is a Linux speech-to-text daemon with a CLI, global hotkey trigger, and clipboard history output.
 - Transcription uses parallel Groq (Whisper V3) + Deepgram (Nova-3) and merges results with an LLM.
 
 **Source of truth:**
@@ -34,12 +34,12 @@ This file provides minimal, durable context for automated agents working in this
 - Uses Groq LLM to merge transcripts from Groq Whisper and Deepgram Nova-3.
 - Model is configurable via `transcription.mergeModel` (default: `llama-3.3-70b-versatile`).
 
-**Log files:** `~/.config/voice-cli/logs/voice-cli-YYYY-MM-DD.log`
+**Log files:** `~/.config/hyprvox/logs/hyprvox-YYYY-MM-DD.log`
 
 ## Where to Find Operational Data
-- Logs: `~/.config/voice-cli/logs/`
-- History: `~/.config/voice-cli/history.json`
-- Config: `~/.config/voice-cli/config.json`
+- Logs: `~/.config/hyprvox/logs/`
+- History: `~/.config/hyprvox/history.json`
+- Config: `~/.config/hyprvox/config.json`
 
 ## Known Workflows
 - Hotkey toggle: Right Control (default). Recording starts on first press, stops on second.

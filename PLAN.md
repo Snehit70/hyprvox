@@ -9,7 +9,7 @@
 
 ## Overview
 
-Integrate the Electron waveform overlay with the voice-cli daemon for real-time state synchronization.
+Integrate the Electron waveform overlay with the hyprvox daemon for real-time state synchronization.
 
 ### Goals
 
@@ -31,7 +31,7 @@ Integrate the Electron waveform overlay with the voice-cli daemon for real-time 
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
 │   ┌─────────────────┐         ┌─────────────────────────────────┐  │
-│   │   voice-cli     │         │      voice-cli-overlay          │  │
+│   │   hyprvox     │         │      hyprvox-overlay          │  │
 │   │    daemon       │         │       (electron)                │  │
 │   │                 │         │                                 │  │
 │   │  ┌───────────┐  │  IPC    │  ┌───────────┐    ┌──────────┐ │  │
@@ -47,14 +47,14 @@ Integrate the Electron waveform overlay with the voice-cli daemon for real-time 
 │   │                 │         │                                 │  │
 │   └─────────────────┘         └─────────────────────────────────┘  │
 │                                                                     │
-│   Socket: ~/.config/voice-cli/daemon.sock                          │
+│   Socket: ~/.config/hyprvox/daemon.sock                          │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Why Unix Socket?
 
-- **Current state**: Daemon writes to `~/.config/voice-cli/daemon.state` (JSON file)
+- **Current state**: Daemon writes to `~/.config/hyprvox/daemon.state` (JSON file)
 - **Problem**: File polling has 100-500ms latency - too slow for smooth UI
 - **Known issue**: `updateState()` uses `writeFileSync` (blocking) on every state change
 - **Solution**: Unix Domain Socket provides <1ms latency for real-time updates
@@ -212,7 +212,7 @@ Overlay checks version and warns if mismatch (allows graceful degradation).
 
 - [x] Create `src/daemon/ipc.ts`
   - Unix socket server using Node.js `net.createServer()` (Bun-compatible)
-  - Socket path: `~/.config/voice-cli/daemon.sock`
+  - Socket path: `~/.config/hyprvox/daemon.sock`
   - Handle multiple client connections (track in Map)
   - Cleanup socket file on exit via `server.close()` callback
   - Send `hello` message with protocol version on client connect
@@ -339,10 +339,10 @@ Overlay checks version and warns if mismatch (allows graceful degradation).
   - Kill overlay on daemon stop
 
 - [ ] Add CLI commands for overlay control
-  - `voice-cli overlay status` - Show overlay running state
-  - `voice-cli overlay start` - Manually start overlay
-  - `voice-cli overlay stop` - Manually stop overlay
-  - `voice-cli overlay restart` - Restart overlay
+  - `hyprvox overlay status` - Show overlay running state
+  - `hyprvox overlay start` - Manually start overlay
+  - `hyprvox overlay stop` - Manually stop overlay
+  - `hyprvox overlay restart` - Restart overlay
 
 - [ ] Update `src/cli/health.ts`
   - Check overlay binary exists (if enabled)
@@ -371,7 +371,7 @@ Overlay checks version and warns if mismatch (allows graceful degradation).
 
 ### Phase 5: Build & Distribution
 
-**Goal**: Bundle overlay with voice-cli.
+**Goal**: Bundle overlay with hyprvox.
 
 #### Tasks
 
@@ -405,7 +405,7 @@ Overlay checks version and warns if mismatch (allows graceful degradation).
    - **Decision**: Option B with default `true`
 
 2. **Where should overlay binary live?**
-   - Option A: Bundled in voice-cli package
+   - Option A: Bundled in hyprvox package
    - Option B: Separate npm package
    - Option C: Build from source
    - **Decision**: Option A for now, Option B later
