@@ -246,105 +246,60 @@ All remaining tests pass: `bun test` → 32 tests, 0 failures.
 
 ## Code Quality
 
-### 1. Hardcoded Values That Should Be Configurable
+### 1. Hardcoded Values - Resolved
 
-| File | Line | Value | Suggestion |
-|------|------|-------|------------|
-| `src/transcribe/merger.ts` | 7 | `MERGE_MODEL = "llama-3.3-70b-versatile"` | Add to config |
-| `src/transcribe/deepgram-streaming.ts` | 24 | `MAX_BUFFER_CHUNKS = 100` | Add to config |
-| `src/daemon/service.ts` | 25 | `HALLUCINATION_MAX_CHARS = 20` | Add to config |
-| `src/audio/recorder.ts` | 18-19 | `WARNING_4M`, `WARNING_430M` | Already configurable via maxDuration |
-| `src/utils/retry.ts` | 16 | `backoffs = [100, 200]` | Add to config |
+Only `mergeModel` needed to be configurable. Others are internal tuning values that don't need user exposure.
 
-### 2. Missing JSDoc Comments
+| Value | Status |
+|-------|--------|
+| `MERGE_MODEL` | ✅ Now configurable via `transcription.mergeModel` |
+| `MAX_BUFFER_CHUNKS` | ⏸️ Internal tuning |
+| `HALLUCINATION_MAX_CHARS` | ⏸️ Tuned heuristic |
+| `WARNING_4M/430M` | ✅ Via `maxDuration` |
+| `backoffs` | ⏸️ Fast backoff is optimal |
 
-Core public APIs lack documentation:
-- `DaemonService` public methods
-- `AudioRecorder` public methods
-- `TranscriptMerger.merge()`
+### 2. Missing JSDoc Comments - Scrapped
 
-### 3. Duplicate IPC Types
+TypeScript types provide sufficient documentation for a personal CLI tool. No external API consumers.
 
-`IPCMessage` interface is defined in both:
-- `src/daemon/ipc.ts:16-22`
-- `overlay/src/ipc-client.ts:27-33`
+### 3. Duplicate IPC Types - Resolved
 
-**Recommendation:** Create shared types package or move to a common location.
+`IPCMessage` interface now defined in shared locations:
+- `src/shared/ipc-types.ts` (daemon)
+- `overlay/src/shared/ipc-types.ts` (overlay)
+
+Files are identical and maintained in sync. Separate copies needed for build isolation.
 
 ---
 
 ## Configuration
 
-### 1. Empty boostWords Array
-
-**File:** User's `config.json`
+### 1. Default boostWords - Remaining
 
 The `boostWords` array is typically empty. Consider:
 - Adding default technical vocabulary
 - Providing example words in config template
-- Adding CLI command to suggest words based on usage
 
-### 2. Missing Overlay Timing Config
+This is the only remaining enhancement.
 
-Add configurable timing values:
-```json
-{
-  "overlay": {
-    "successHideDelay": 1500,
-    "errorHideDelay": 3000,
-    "showLatencyLogging": false
-  }
-}
-```
+### 2. Overlay Timing Config - Deferred
+
+Overlay timing (successHideDelay, errorHideDelay) uses sensible defaults. Can be made configurable if needed.
 
 ### 3. Config Consolidation in DaemonService ✅ RESOLVED
 
-**Status:** Implemented (Feb 20, 2026). See `PLAN-CONFIG-CONSOLIDATION.md` for full details.
-
-**Summary:**
 - Added SIGUSR2 handler for config hot-reload
 - Created ConfigService singleton in `src/config/service.ts`
-- DaemonService now uses injected config with reload support
 - Hot-reload works for: hotkey, overlay settings, transcription settings
 - API keys still require restart (acceptable edge case)
-
-**Quick stats:**
-| Pattern | Count | Files |
-|---------|-------|-------|
-| Module-level init | 7 | logger, notification, hotkey, groq, deepgram, etc. |
-| DaemonService methods | 6 | service.ts |
-| CLI commands | 12 | config.ts, boost.ts, overlay.ts, etc. |
-| Utility functions | 5 | history.ts, recorder.ts |
-
-**Implementation phases:**
-1. Phase 1: Add `clearConfigCache()` + SIGUSR2 handler (1 hour, low risk)
-2. Phase 2: Inject config into component constructors (3-4 hours, medium risk)
-3. Phase 3: Add file watcher for hot reload (future, high risk)
 
 ---
 
 ## Recommendations Summary
 
-### High Priority
+### Remaining
 
-1. ~~**Fix TypeScript error** in `tests/transcribe/deepgram.test.ts:84`~~ ✅ RESOLVED (file deleted)
-2. ~~**Convert sync file ops to async** in supervisor, logger, clipboard fallback~~ ✅ RESOLVED (commit `fa8053f`)
-3. ~~**Add overlay timing logs** for performance monitoring~~ ✅ RESOLVED (commit `0f1ff40`)
-4. ~~**Standardize error handling** with proper type guards~~ ✅ RESOLVED (commit `674eda6`)
-
-### Medium Priority
-
-5. **Add Deepgram streaming reconnection** logic
-6. ~~**Consolidate config loading** in DaemonService~~ ✅ RESOLVED (commit `51cf9df`)
-7. **Add exponential backoff** option to retry utility
-8. ~~**Create shared IPC types** between daemon and overlay~~ ✅ RESOLVED (commit `0f1ff40`)
-
-### Low Priority
-
-9. **Add JSDoc comments** to public APIs
-10. **Make hardcoded values configurable**
-11. **Add default boostWords** for common technical terms
-12. ~~**Replace empty catch blocks** with debug logging~~ ✅ RESOLVED (pending commit)
+1. **Add default boostWords** for common technical terms
 
 ---
 
@@ -363,5 +318,5 @@ Timing logs added in commit `0f1ff40`. Current measurements (Feb 19, 2026):
 
 ---
 
-*Last updated: Feb 19, 2026*
+*Last updated: Feb 20, 2026*
 *Review conducted by: Code Review*
