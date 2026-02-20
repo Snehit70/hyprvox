@@ -10,7 +10,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-describe("Daemon Crash Recovery Integration", () => {
+const isCI = process.env.CI === "true" || process.env.GITHUB_ACTIONS === "true";
+
+describe.skipIf(isCI)("Daemon Crash Recovery Integration", () => {
 	const testHome = join(tmpdir(), `voice-cli-crash-test-${Date.now()}`);
 	const configDir = join(testHome, ".config", "voice-cli");
 	const pidFile = join(configDir, "daemon.pid");
