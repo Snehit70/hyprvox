@@ -1,5 +1,5 @@
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { mkdir, unlink } from "node:fs/promises";
+import { existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { unlink } from "node:fs/promises";
 import { join } from "node:path";
 import pino from "pino";
 import { createStream } from "rotating-file-stream";
@@ -14,9 +14,7 @@ try {
 }
 
 if (!existsSync(logDir)) {
-	mkdir(logDir, { recursive: true, mode: 0o700 }).catch((e) => {
-		console.error(`Failed to create log directory: ${logDir}`, e);
-	});
+	mkdirSync(logDir, { recursive: true, mode: 0o700 });
 }
 
 const rotateLogs = async (dir: string) => {
@@ -60,7 +58,6 @@ const rotatingStream = createStream(
 	{
 		interval: "1d",
 		path: logDir,
-		mkdir: true,
 	},
 );
 
