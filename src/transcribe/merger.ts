@@ -4,8 +4,6 @@ import { loadConfig } from "../config/loader";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
 
-const MERGE_MODEL = "llama-3.3-70b-versatile";
-
 const SYSTEM_PROMPT = `You are an expert technical transcription editor.
 
 CONTEXT: This is audio from a software developer discussing programming, Linux systems, development tools, and AI systems. Expect technical jargon, project names, and command-line references.
@@ -43,12 +41,14 @@ export interface MergeResult {
 
 export class TranscriptMerger {
 	private client: Groq;
+	private mergeModel: string;
 
 	constructor() {
 		const config = loadConfig();
 		this.client = new Groq({
 			apiKey: config.apiKeys.groq,
 		});
+		this.mergeModel = config.transcription.mergeModel;
 	}
 
 	public async merge(
@@ -91,7 +91,7 @@ export class TranscriptMerger {
 				async (signal) => {
 					return await this.client.chat.completions.create(
 						{
-							model: MERGE_MODEL,
+							model: this.mergeModel,
 							messages: [
 								{ role: "system", content: SYSTEM_PROMPT },
 								{
@@ -120,7 +120,7 @@ export class TranscriptMerger {
 
 			logger.info(
 				{
-					model: MERGE_MODEL,
+					model: this.mergeModel,
 					timeMs,
 					resultLength: finalText.length,
 					groqTextLength: groqText.length,

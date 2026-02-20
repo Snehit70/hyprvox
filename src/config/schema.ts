@@ -171,6 +171,7 @@ const defaultPaths = {
 const defaultTranscription = {
 	language: "en",
 	streaming: false,
+	mergeModel: "llama-3.3-70b-versatile",
 } as const;
 
 export const ApiKeysSchema = z.object({
@@ -233,6 +234,7 @@ export const TranscriptionSchema = z.object({
 	}),
 	language: z.enum(["en"]).default(defaultTranscription.language as "en"),
 	streaming: z.boolean().default(defaultTranscription.streaming),
+	mergeModel: z.string().default(defaultTranscription.mergeModel),
 });
 
 export const OverlaySchema = z

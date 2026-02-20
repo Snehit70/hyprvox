@@ -160,6 +160,7 @@ Settings related to the speech-to-text engine.
 | `language` | String | `"en"` | ISO 639-1 language code for transcription. **Only English (`en`) is supported in v1.0.** | N/A |
 | `streaming` | Boolean | `false` | Enable real-time streaming transcription during recording. | N/A |
 | `boostWords` | Array | `[]` | List of words to prioritize for better accuracy (e.g., names, jargon). | Max 450 words total. |
+| `mergeModel` | String | `"llama-3.3-70b-versatile"` | Groq model used to merge transcripts from Groq Whisper and Deepgram. | Must be a valid Groq model ID. |
 
 #### Streaming Mode
 

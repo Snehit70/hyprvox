@@ -45,7 +45,7 @@ The transcription cycle follows a strictly orchestrated path (see [STT Flow Deta
 2. **Record**: `AudioRecorder` starts `arecord` via `node-record-lpcm16`. Audio chunks are streamed into a buffer.
 3. **Conversion**: Audio is converted to optimal format (16kHz WAV Mono) for API consumption.
 4. **Parallel Execution**: Audio is sent simultaneously to **Groq (Whisper V3)** and **Deepgram (Nova-3)**.
-5. **LLM Merge**: If both APIs return results, **Llama 3.3 70B** (`src/transcribe/merger.ts`) merges them to combine Groq's technical accuracy with Deepgram's formatting.
+5. **LLM Merge**: If both APIs return results, an LLM (`src/transcribe/merger.ts`) merges them to combine Groq's technical accuracy with Deepgram's formatting. Model is configurable via `transcription.mergeModel`.
 6. **Output**:
    - **Clipboard**: Final text is appended to the system clipboard (Wayland via `wl-copy`, X11 via `clipboardy`).
    - **History**: Transcription is logged to `~/.config/voice-cli/history.json`.
@@ -68,6 +68,7 @@ For details on using these modules programmatically, see the [Programmatic API R
 ### ⚙️ Configuration Engine (`src/config/`)
 - **`schema.ts`**: Zod-based validation schema for configuration.
 - **`loader.ts`**: Handles reading from disk and merging with environment variables.
+- **`service.ts`**: Singleton for config access with hot-reload support (SIGUSR2).
 - **`writer.ts`**: Safely writes updates back to the configuration file with correct permissions (600).
 
 ### 📤 Output Systems (`src/output/`)
