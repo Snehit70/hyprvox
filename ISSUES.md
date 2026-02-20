@@ -295,15 +295,16 @@ Add configurable timing values:
 }
 ```
 
-### 3. Config Consolidation in DaemonService
+### 3. Config Consolidation in DaemonService ✅ RESOLVED
 
-**Status:** Plan created (Feb 20, 2026). See `PLAN-CONFIG-CONSOLIDATION.md` for full details.
+**Status:** Implemented (Feb 20, 2026). See `PLAN-CONFIG-CONSOLIDATION.md` for full details.
 
 **Summary:**
-- `loadConfig()` has caching (line 22-23 in loader.ts)
-- 31 calls across 16 files, but all return cached config (no perf issue)
-- Real problem: config changes not detected at runtime
-- Recommended: Add SIGUSR2 signal for config reload + inject config into components
+- Added SIGUSR2 handler for config hot-reload
+- Created ConfigService singleton in `src/config/service.ts`
+- DaemonService now uses injected config with reload support
+- Hot-reload works for: hotkey, overlay settings, transcription settings
+- API keys still require restart (acceptable edge case)
 
 **Quick stats:**
 | Pattern | Count | Files |
@@ -332,7 +333,7 @@ Add configurable timing values:
 ### Medium Priority
 
 5. **Add Deepgram streaming reconnection** logic
-6. **Consolidate config loading** in DaemonService
+6. ~~**Consolidate config loading** in DaemonService~~ ✅ RESOLVED (commit `51cf9df`)
 7. **Add exponential backoff** option to retry utility
 8. ~~**Create shared IPC types** between daemon and overlay~~ ✅ RESOLVED (commit `0f1ff40`)
 
