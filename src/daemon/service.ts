@@ -98,6 +98,7 @@ export class DaemonService {
 				this.config = result.config;
 				this.groq.reset();
 				this.deepgram.reset();
+				this.merger.reset();
 				logger.info("Config reloaded successfully");
 				notify("Config Reloaded", "Configuration updated", "info");
 			} else {
@@ -189,7 +190,7 @@ export class DaemonService {
 			this.overlayProcess = spawn("bun", ["run", "start"], {
 				cwd: overlayPath,
 				detached: true,
-				stdio: "inherit",
+				stdio: "ignore",
 			});
 
 			this.overlayProcess.unref();
@@ -380,22 +381,12 @@ export class DaemonService {
 			clearTimeout(this.stateWriteDebounceTimer);
 		}
 		await this.ipcServer.stop();
-		try {
-			for (const file of [this.pidFile, this.stateFile]) {
-				try {
-					unlinkSync(file);
-				} catch (e) {
-					logger.debug(
-						{ err: e, file },
-						"Failed to remove file during shutdown",
-					);
-				}
+		for (const file of [this.pidFile, this.stateFile]) {
+			try {
+				unlinkSync(file);
+			} catch (e) {
+				logger.debug({ err: e, file }, "Failed to remove file during shutdown");
 			}
-		} catch (e) {
-			logger.debug(
-				{ err: e },
-				"Failed to remove PID/state files during shutdown",
-			);
 		}
 		logger.info("Daemon stopped");
 	}

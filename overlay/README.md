@@ -47,6 +47,7 @@ hyprctl reload
 ```
 
 **Rule explanations:**
+
 | Rule | Purpose |
 |------|---------|
 | `float` | Make it a floating window |

@@ -1,4 +1,4 @@
-import { type ChildProcess, execSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";

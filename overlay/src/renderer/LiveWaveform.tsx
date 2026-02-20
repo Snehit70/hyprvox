@@ -244,6 +244,8 @@ export const LiveWaveform = ({
 	}, [processing, active, barWidth, barGap, mode]);
 
 	useEffect(() => {
+		let cancelled = false;
+
 		if (!active) {
 			if (streamRef.current) {
 				for (const track of streamRef.current.getTracks()) {
@@ -282,6 +284,14 @@ export const LiveWaveform = ({
 								autoGainControl: true,
 							},
 				});
+
+				if (cancelled) {
+					for (const track of stream.getTracks()) {
+						track.stop();
+					}
+					return;
+				}
+
 				streamRef.current = stream;
 				onStreamReadyRef.current?.(stream);
 
@@ -304,13 +314,16 @@ export const LiveWaveform = ({
 
 				historyRef.current = [];
 			} catch (error) {
-				onErrorRef.current?.(error as Error);
+				if (!cancelled) {
+					onErrorRef.current?.(error as Error);
+				}
 			}
 		};
 
 		setupMicrophone();
 
 		return () => {
+			cancelled = true;
 			if (streamRef.current) {
 				for (const track of streamRef.current.getTracks()) {
 					track.stop();
@@ -436,13 +449,7 @@ export const LiveWaveform = ({
 			const centerY = rect.height / 2;
 
 			if (mode === "static") {
-				const dataToRender = processing
-					? staticBarsRef.current
-					: active
-						? staticBarsRef.current
-						: staticBarsRef.current.length > 0
-							? staticBarsRef.current
-							: [];
+				const dataToRender = staticBarsRef.current;
 
 				for (let i = 0; i < barCount && i < dataToRender.length; i++) {
 					const value = dataToRender[i] || 0.1;
@@ -496,6 +503,7 @@ export const LiveWaveform = ({
 					lastWidthRef.current = rect.width;
 				}
 
+				ctx.globalAlpha = 1;
 				ctx.globalCompositeOperation = "destination-out";
 				ctx.fillStyle = gradientCacheRef.current;
 				ctx.fillRect(0, 0, rect.width, rect.height);
@@ -535,7 +543,7 @@ export const LiveWaveform = ({
 		<div
 			className={className}
 			ref={containerRef}
-			style={{ height: heightStyle }}
+			style={{ height: heightStyle, position: "relative" }}
 			aria-label={
 				active
 					? "Live audio waveform"
