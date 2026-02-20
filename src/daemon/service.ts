@@ -1,5 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -176,6 +176,17 @@ export class DaemonService {
 			return;
 		}
 
+		try {
+			const raw = readFileSync(this.overlayPidFile, "utf8").trim();
+			const oldPid = parseInt(raw, 10);
+			if (!Number.isNaN(oldPid)) {
+				process.kill(oldPid, "SIGTERM");
+				logger.debug({ oldPid }, "Terminated stale overlay process");
+			}
+		} catch {
+			// PID file absent or process already dead
+		}
+
 		const overlayPath = this.getOverlayPath();
 
 		if (!existsSync(overlayPath)) {
@@ -250,7 +261,7 @@ export class DaemonService {
 	private notifyStateChange(
 		title: string,
 		message: string,
-		type: "info" | "success" = "info",
+		type: "info" | "success" | "warning" = "info",
 	): void {
 		if (this.config.overlay?.enabled) {
 			return;
@@ -370,7 +381,7 @@ export class DaemonService {
 
 	public async stop() {
 		this.hotkeyListener.stop();
-		this.recorder.stop(true);
+		await this.recorder.stop(true);
 		this.stopOverlay();
 		process.off("SIGUSR1", this.signalHandler);
 		process.off("SIGUSR2", this.reloadSignalHandler);
@@ -424,7 +435,7 @@ export class DaemonService {
 								},
 								"Streaming connection lost, will use batch transcription",
 							);
-							notify(
+							this.notifyStateChange(
 								"Streaming Interrupted",
 								"Using batch transcription",
 								"warning",

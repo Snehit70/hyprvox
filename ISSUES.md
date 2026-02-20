@@ -284,7 +284,7 @@ This is the only remaining enhancement.
 
 ### 2. Overlay Timing Config - Deferred
 
-Overlay timing (successHideDelay, errorHideDelay) uses sensible defaults. Can be made configurable if needed.
+Overlay timing (successHideDelay, errorHideDelay) uses sensible defaults. They can be made configurable if needed.
 
 ### 3. Config Consolidation in DaemonService ✅ RESOLVED
 

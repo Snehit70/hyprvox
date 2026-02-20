@@ -47,6 +47,7 @@ export const LiveWaveform = ({
 	onStreamReady,
 	onStreamEnd,
 	className,
+	style: callerStyle,
 	...props
 }: LiveWaveformProps) => {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -215,6 +216,7 @@ export const LiveWaveform = ({
 
 			if (hasData) {
 				let fadeProgress = 0;
+				let fadeRafId: number;
 				const fadeToIdle = (): void => {
 					fadeProgress += 0.03;
 					if (fadeProgress < 1) {
@@ -228,7 +230,7 @@ export const LiveWaveform = ({
 							);
 						}
 						needsRedrawRef.current = true;
-						requestAnimationFrame(fadeToIdle);
+						fadeRafId = requestAnimationFrame(fadeToIdle);
 					} else {
 						if (mode === "static") {
 							staticBarsRef.current = [];
@@ -237,7 +239,8 @@ export const LiveWaveform = ({
 						}
 					}
 				};
-				fadeToIdle();
+				fadeRafId = requestAnimationFrame(fadeToIdle);
+				return () => cancelAnimationFrame(fadeRafId);
 			}
 		}
 		return undefined;
@@ -543,7 +546,11 @@ export const LiveWaveform = ({
 		<div
 			className={className}
 			ref={containerRef}
-			style={{ height: heightStyle, position: "relative" }}
+			style={{
+				...callerStyle,
+				height: heightStyle,
+				position: "relative",
+			}}
 			aria-label={
 				active
 					? "Live audio waveform"

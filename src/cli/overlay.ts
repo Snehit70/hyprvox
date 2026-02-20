@@ -94,20 +94,47 @@ function stopOverlay(): void {
 
 	try {
 		process.kill(pid!, "SIGTERM");
-		console.log(
-			`${colors.green("✅")} Stopped overlay (${colors.dim(`PID: ${pid}`)})`,
-		);
-		unlinkSync(overlayPidFile);
 	} catch (error) {
 		console.error(`${colors.red("Error:")} Failed to stop overlay:`, error);
+		return;
+	}
+
+	console.log(
+		`${colors.green("✅")} Stopped overlay (${colors.dim(`PID: ${pid}`)})`,
+	);
+	try {
+		unlinkSync(overlayPidFile);
+	} catch {
+		// PID file may have already been removed
 	}
 }
 
-function restartOverlay(): void {
+function waitForProcessExit(pid: number, timeoutMs = 3000): Promise<void> {
+	return new Promise((resolve) => {
+		const start = Date.now();
+		const interval = setInterval(() => {
+			try {
+				process.kill(pid, 0);
+			} catch {
+				clearInterval(interval);
+				resolve();
+				return;
+			}
+			if (Date.now() - start >= timeoutMs) {
+				clearInterval(interval);
+				resolve();
+			}
+		}, 50);
+	});
+}
+
+async function restartOverlay(): Promise<void> {
+	const { pid } = isOverlayRunning();
 	stopOverlay();
-	setTimeout(() => {
-		startOverlay();
-	}, 500);
+	if (pid) {
+		await waitForProcessExit(pid);
+	}
+	startOverlay();
 }
 
 function statusOverlay(): void {
