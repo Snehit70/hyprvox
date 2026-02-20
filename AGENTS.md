@@ -29,12 +29,10 @@ This file provides minimal, durable context for automated agents working in this
 
 **Details:** `docs/ARCHITECTURE.md`
 
-## LLM Merge (A/B models)
+## LLM Merge
 - Merge logic is in `src/transcribe/merger.ts`.
-- Two models are called in parallel for A/B testing:
-  - Model A: `llama-3.3-70b-versatile`
-  - Model B: `openai/gpt-oss-120b`
-- Selection is randomized per merge; logs record timing and selection.
+- Uses Groq LLM to merge transcripts from Groq Whisper and Deepgram Nova-3.
+- Model is configurable via `transcription.mergeModel` (default: `llama-3.3-70b-versatile`).
 
 **Log files:** `~/.config/voice-cli/logs/voice-cli-YYYY-MM-DD.log`
 
