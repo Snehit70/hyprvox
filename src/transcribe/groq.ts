@@ -61,8 +61,8 @@ export class GroqClient {
 		try {
 			return await withRetry(
 				async (signal) => {
-					const file = new File([audioBuffer], "audio.wav", {
-						type: "audio/wav",
+					const file = new File([audioBuffer], "audio.opus", {
+						type: "audio/opus",
 					});
 					const prompt =
 						boostWords.length > 0

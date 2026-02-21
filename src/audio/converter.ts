@@ -1,9 +1,12 @@
 import { spawn } from "node:child_process";
 import { AppError } from "../utils/errors";
-import { logError } from "../utils/logger";
+import { logError, logger } from "../utils/logger";
 
 export async function convertAudio(inputBuffer: Buffer): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
+		const inputSize = inputBuffer.length;
+		const startTime = Date.now();
+
 		const ffmpeg = spawn("ffmpeg", [
 			"-y",
 			"-i",
@@ -13,9 +16,15 @@ export async function convertAudio(inputBuffer: Buffer): Promise<Buffer> {
 			"-ac",
 			"1",
 			"-c:a",
-			"pcm_s16le",
+			"libopus",
+			"-b:a",
+			"32k",
+			"-compression_level",
+			"0",
+			"-frame_duration",
+			"60",
 			"-f",
-			"wav",
+			"opus",
 			"pipe:1",
 		]);
 
@@ -45,7 +54,20 @@ export async function convertAudio(inputBuffer: Buffer): Promise<Buffer> {
 
 		ffmpeg.on("close", (code) => {
 			if (code === 0) {
-				resolve(Buffer.concat(chunks));
+				const outputBuffer = Buffer.concat(chunks);
+				const outputSize = outputBuffer.length;
+				const duration = Date.now() - startTime;
+				logger.info(
+					{
+						inputSize,
+						outputSize,
+						compressionRatio: `${((1 - outputSize / inputSize) * 100).toFixed(1)}%`,
+						durationMs: duration,
+						format: "opus",
+					},
+					"Audio conversion complete",
+				);
+				resolve(outputBuffer);
 			} else {
 				logError("Audio conversion failed", new Error(stderr));
 				reject(

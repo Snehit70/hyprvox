@@ -619,11 +619,11 @@ export class DaemonService {
 			const language = this.config.transcription.language;
 			const boostWords = this.config.transcription.boostWords || [];
 
+			const startTime = Date.now();
 			const convertedBuffer = await convertAudio(audioBuffer);
 
 			let groqErr: any = null;
 			let deepgramErr: any = null;
-			const startTime = Date.now();
 
 			let groqText = "";
 			let deepgramText = "";
