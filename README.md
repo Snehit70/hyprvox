@@ -2,327 +2,193 @@
 
 [![Build Status](https://github.com/Snehit70/hyprvox/actions/workflows/test.yml/badge.svg)](https://github.com/Snehit70/hyprvox/actions)
 
-**Speech-to-text daemon for Hyprland — Speak, we will get it right.**
+Voice input for AI workflows on Linux.
 
-`hyprvox` is a high-performance speech-to-text daemon for Linux (Wayland/X11) that provides global transcription via Groq (Whisper V3) and Deepgram (Nova-3). It features **dual-engine parallel transcription** with LLM merge, **real-time streaming** (0.5s latency), automatic clipboard history appending, and systemd integration for a seamless "transcribe-anywhere" experience.
+<!-- DEMO PLACEHOLDER: Add a GIF showing the full workflow -->
 
-## Features
+## The Problem
 
-- **Global Hotkeys**: Trigger recording from anywhere (Wayland/X11 compatible).
-- **Dual-Engine Transcription**: Combines Groq (Whisper V3) speed with Deepgram (Nova-3) reliability.
-- **Real-time Streaming**: Instant transcription with <1s latency.
-- **Clipboard Integration**: Automatically appends transcripts to your clipboard history.
-- **Systemd Service**: Runs silently in the background on startup.
-- **Custom Vocabulary**: Boost accuracy for technical terms and names.
+You're deep in a session with a coding agent. You know exactly what you want to ask — a complex refactor, a debugging question, a feature request. But now you have to type it all out.
 
+By the time you're done, you've lost the thread.
 
-## Prerequisites
+Context switching kills flow. And typing at 40 WPM when you can speak at 150 WPM is a bottleneck you don't need.
 
-Before installing `hyprvox`, ensure your system meets the following requirements:
+## The Solution
 
-### 1. Runtime Environment
+Press a key. Speak. Press again. Paste.
 
-- **Node.js**: >= 20.0.0 (LTS recommended)
-- **Bun**: Latest version (used for package management and as the runtime)
+hyprvox is a voice-to-text daemon for Linux. It runs in the background, transcribes when you need it, and puts the result on your clipboard — ready to paste into Claude, Copilot, or whatever agent you're working with.
 
-### 2. Linux System Dependencies
+Built for Hyprland/Wayland first. Works on X11 too.
 
-The tool requires several system-level packages to handle audio recording, global hotkeys, and clipboard operations.
+## Quick Start
 
-#### **Audio Recording**
-
-- `alsa-utils` (specifically `arecord`)
-  - **Arch**: `sudo pacman -S alsa-utils`
-  - **Ubuntu/Debian**: `sudo apt install alsa-utils`
-  - **Fedora**: `sudo dnf install alsa-utils`
-
-#### **Clipboard Support**
-
-- **Wayland**: `wl-clipboard`
-- **X11**: `xclip` or `xsel`
-
-#### **Global Hotkey Support**
-
-Requires X11 development libraries (even on Wayland via XWayland):
-
-- **Ubuntu/Debian**: `sudo apt install libx11-dev libxtst-dev libxi-dev`
-- **Fedora**: `sudo dnf install libX11-devel libXtst-devel libXi-devel`
-- **Arch**: `sudo pacman -S libx11 libxtst libxi`
-
-#### **Notifications**
-
-- `libnotify`
-  - **Arch**: `sudo pacman -S libnotify`
-  - **Ubuntu/Debian**: `sudo apt install libnotify-bin`
-  - **Fedora**: `sudo dnf install libnotify`
-
-### 3. User Permissions
-
-Your user must have permission to access audio devices and input events. Add your user to the `audio` and `input` groups:
-
-```bash
-sudo usermod -aG audio,input $USER
-```
-
-_Note: You must log out and back in for these changes to take effect._
-
-## Installation
-
-Since this is a private project, you can install and run it locally using the following methods.
-
-### 1. Using Bun (Recommended)
-
-Clone the repository and install dependencies using [Bun](https://bun.sh):
+### For Humans
 
 ```bash
 git clone https://github.com/Snehit70/hyprvox.git
 cd hyprvox
 bun install
+
+bun run index.ts config init   # Set up API keys (Groq + Deepgram)
+bun run index.ts install       # Install as systemd service
 ```
 
-To run the daemon:
+Press Right Ctrl to record. Press again to stop. Paste anywhere.
 
+### For AI Agents
+
+<details>
+<summary>Click to expand setup prompt</summary>
+
+Copy this prompt to your coding agent:
+
+```
+Install and configure hyprvox on this Linux system:
+
+1. Clone: git clone https://github.com/Snehit70/hyprvox.git
+2. Install: cd hyprvox && bun install
+3. Run `bun run index.ts config init` — I'll provide API keys when prompted:
+   - Groq API key (get from console.groq.com)
+   - Deepgram API key (get from console.deepgram.com)
+4. Install service: bun run index.ts install
+5. For Hyprland, add keybind to ~/.config/hypr/hyprland.conf:
+    bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle
+    # code:105 = Right Control (use `wev` to find other key codes)
+6. For Hyprland overlay, add to ~/.config/hypr/UserConfigs/WindowRules.conf:
+    windowrule = match:class hyprvox-overlay, float on
+    windowrule = match:class hyprvox-overlay, pin on
+    windowrule = match:class hyprvox-overlay, no_focus on
+    windowrule = match:class hyprvox-overlay, no_shadow on
+    windowrule = match:class hyprvox-overlay, no_anim on
+7. Reload: hyprctl reload
+8. Verify: bun run index.ts health
+```
+
+</details>
+
+## How It Works
+
+**Dual-engine transcription.** Audio goes to both Groq (Whisper V3) and Deepgram (Nova-3) in parallel. Results are merged with an LLM for better accuracy. If one fails, the other continues.
+
+**Streaming or batch.** ~500ms latency in streaming mode. Higher accuracy in batch mode. Your choice.
+
+**Runs as a daemon.** Systemd service starts on login. Always ready when you need it.
+
+## The Overlay
+
+A small waveform appears at the bottom of your screen while recording — visual feedback that it's listening.
+
+![Overlay showing waveform during recording](assets/overlay.png)
+
+For Hyprland, add these window rules:
+
+```conf
+# ~/.config/hypr/UserConfigs/WindowRules.conf
+windowrule = match:class hyprvox-overlay, float on
+windowrule = match:class hyprvox-overlay, pin on
+windowrule = match:class hyprvox-overlay, no_focus on
+windowrule = match:class hyprvox-overlay, no_shadow on
+windowrule = match:class hyprvox-overlay, no_anim on
+```
+
+## Installation
+
+### Dependencies
+
+<details>
+<summary>Click to expand</summary>
+
+**Audio** — `alsa-utils`
+- Arch: `sudo pacman -S alsa-utils`
+- Ubuntu: `sudo apt install alsa-utils`
+- Fedora: `sudo dnf install alsa-utils`
+
+**Clipboard**
+- Wayland: `wl-clipboard`
+- X11: `xclip` or `xsel`
+
+**Permissions**
 ```bash
-bun run index.ts
+sudo usermod -aG audio,input $USER
+# Log out and back in
 ```
 
-### 2. Using NPM
+</details>
 
-If you prefer using Node.js and NPM:
+### API Keys
 
-```bash
-git clone https://github.com/Snehit70/hyprvox.git
-cd hyprvox
-npm install
-```
+| Provider | Purpose | Link |
+|----------|---------|------|
+| Groq | Whisper V3 (fast) | [console.groq.com](https://console.groq.com/keys) |
+| Deepgram | Nova-3 (accurate) | [console.deepgram.com](https://console.deepgram.com/) |
 
-To run the daemon:
-
-```bash
-npm start # or node index.ts (requires ts-node/esm or similar)
-```
-
-_Note: Using Bun is highly recommended for performance._
-
-### 3. Using NPX
-
-You can run the project directly without cloning if the repository is accessible:
-
-```bash
-npx git+https://github.com/Snehit70/hyprvox.git
-```
-
----
+Run `bun run index.ts config init` to set them up.
 
 ## Usage
 
-For a detailed guide, see [Usage Guide](docs/USAGE.md).
-For typical workflows and examples, see [Examples & Workflows](docs/EXAMPLES.md).
-For project structure and data flow, see [Architecture](docs/ARCHITECTURE.md).
-For programmatic use, see [Programmatic API](docs/API.md).
-For contributing guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-### Quick Start
-
-1. **Start the daemon**: `bun run index.ts start` (or use the systemd service).
-2. **Trigger Recording**: Press the **Right Control** key once to start recording.
-3. **Stop & Transcribe**: Press the **Right Control** key again to stop.
-4. **Result**: The transcript will be **appended** to your clipboard.
-
-For a deep dive into the underlying data flow, see [STT Flow Documentation](docs/STT_FLOW.md).
-
-### Essential Commands
-
-For a complete list of commands and options, see the **[CLI Command Reference](docs/CLI_COMMANDS.md)**.
-
-- `bun run index.ts status`: Check if the daemon is running and see stats.
-- `bun run index.ts health`: Verify API keys and microphone setup.
-- `bun run index.ts list-mics`: List available audio input devices.
-- `bun run index.ts history list`: View recent transcriptions.
-- `bun run index.ts config bind`: Change the global hotkey.
-
----
-
-## Exit Codes
-
-For information on exit codes and scripting, see the **[Exit Codes Reference](docs/EXIT_CODES.md)**.
-
----
-
-## System-wide Installation (Daemon Setup)
-
-For a seamless "transcribe-anywhere" experience, you should install `hyprvox` as a systemd user service. This ensures the daemon starts automatically on login and runs in the background.
-
 ```bash
-bun run index.ts install
-```
-
-This command will:
-
-1. Create a systemd user service file at `~/.config/systemd/user/hyprvox.service`.
-2. Enable the service to start on boot.
-3. Start the service immediately.
-
-To uninstall the service:
-
-```bash
-bun run index.ts uninstall
+bun run index.ts status      # Check daemon
+bun run index.ts health      # Test setup  
+bun run index.ts history     # View past transcriptions
+bun run index.ts config bind # Change hotkey
 ```
 
 ## Configuration
 
-The configuration file is located at `~/.config/hypr/vox/config.json`. For a complete reference of all available options, see the **[Configuration Guide](docs/CONFIGURATION.md)**.
-
-### API Key Setup
-
-`hyprvox` requires API keys from both **Groq** and **Deepgram** to function. These keys must be added to your configuration file.
-
-#### 1. Groq API Key (Whisper V3)
-
-Used for high-speed Whisper-based transcription.
-
-- **Obtain Key**: [Groq Cloud Console](https://console.groq.com/keys)
-- **Validation**: Must start with `gsk_`.
-
-#### 2. Deepgram API Key (Nova-3)
-
-Used in parallel with Groq for increased reliability and fallback support.
-
-- **Obtain Key**: [Deepgram Console](https://console.deepgram.com/)
-- **Validation**: 40-character hex string (standard) or UUID.
-
-#### Example Configuration
+Config file: `~/.config/hypr/vox/config.json`
 
 ```json
 {
-  "apiKeys": {
-    "groq": "gsk_...",
-    "deepgram": "00000000-0000-0000-0000-000000000000"
+  "apiKeys": { "groq": "...", "deepgram": "..." },
+  "transcription": {
+    "streaming": true,
+    "boostWords": ["Hyprland", "WebSocket", "refactor"]
   }
 }
 ```
 
-### Environment Variables
+**Streaming mode** — ~500ms latency, slightly lower accuracy.
+**Batch mode** — 2-8 seconds, higher accuracy.
+**Boost words** — Improve recognition for technical terms.
 
-If the configuration file is missing or keys are not provided in `config.json`, `hyprvox` will fall back to the following environment variables:
+Full options: [Configuration Guide](docs/CONFIGURATION.md)
 
-- `GROQ_API_KEY`
-- `DEEPGRAM_API_KEY`
+## Hyprland Setup
 
-### Setup Commands
+Add keybind for global hotkey:
 
-You can use the CLI to initialize or update your configuration:
-
-```bash
-# Interactive setup (prompts for keys)
-bun run index.ts config init
-
-# Set keys directly
-bun run index.ts config set apiKeys.groq gsk_...
-bun run index.ts config set apiKeys.deepgram 0000...
-
-# Verify connectivity
-bun run index.ts health
+```conf
+# ~/.config/hypr/hyprland.conf
+bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle
+# code:105 = Right Control
 ```
 
-### Streaming Mode
+Use `wev | grep -A5 "key event"` to find key codes.
 
-**hyprvox** supports two transcription modes:
+This bypasses XWayland limitations.
 
-1.  **Batch Mode (Default)**: Higher accuracy, 2-8s latency.
-2.  **Streaming Mode (`"streaming": true`)**: **0.5s latency**, optimized for speed.
-
-For a detailed comparison and configuration guide, see the **[Configuration Guide: Streaming Mode](docs/CONFIGURATION.md#streaming-mode)**.
-
-### Boost Words (Custom Vocabulary)
-
-Improve transcription accuracy for specific terms (names, technical jargon, acronyms) by adding them to the `boostWords` array in the `transcription` section of your `config.json`.
-
-**Note: Only English (`en`) is supported for transcription in v1.0.**
-
-- **Limit**: Maximum **450 words** total (calculated by splitting each entry into individual words).
-- **Format**: A JSON array of strings. Phrases are supported.
-- **Example**:
-  ```json
-  "transcription": {
-    "language": "en",
-    "streaming": true,
-    "boostWords": [
-      "Sisyphus",
-      "hyprvox",
-      "Groq",
-      "Deepgram",
-      "Wayland",
-      "Hyprland"
-    ]
-  }
-  ```
-
-### Language Support
-
-For **v1.0**, `hyprvox` officially supports **English only**. While the configuration allows setting a language code, the internal processing is optimized for English (`en`).
-
-For more details on formatting, token limits, and case sensitivity, see the **[Configuration Guide: Boost Words](docs/CONFIGURATION.md#boost-words-custom-vocabulary)**.
-
-## Linux Compatibility
-
-### Platform Compatibility Matrix
-
-| Feature           | Wayland (Hyprland/GNOME/KDE) | X11 (GNOME/KDE/XFCE) | Required Packages / Notes                             |
-| :---------------- | :--------------------------- | :------------------- | :---------------------------------------------------- |
-| **Global Hotkey** | ⚠️ Partial (via XWayland)    | ✅ Native            | Wayland requires XWayland or native compositor binds. |
-| **Clipboard**     | ✅ Native                    | ✅ Native            | `wl-clipboard` (Wayland) or `xclip/xsel` (X11).       |
-| **Notifications** | ✅ Supported                 | ✅ Supported         | Requires `libnotify` / `notify-send`.                 |
-| **Audio (ALSA)**  | ✅ Supported                 | ✅ Supported         | Works with PulseAudio and PipeWire via ALSA layer.    |
-
-### Tested Distributions
-
-The following distributions have been tested and verified:
-
-- **Ubuntu 22.04+** (GNOME)
-- **Fedora 39+** (GNOME, KDE)
-- **Arch Linux** (Hyprland, Sway, GNOME)
-
-### Wayland Support (Hyprland, GNOME, KDE)
-
-`hyprvox` prioritizes Wayland support (specifically Hyprland) but relies on specific system packages and XWayland for global hotkeys.
-
-**Important for Wayland Users:**
-
-- **Global Hotkeys**: Since `node-global-key-listener` uses X11 XInput2, hotkeys may only trigger when an XWayland window has focus. For 100% reliability on Wayland, we recommend binding the `toggle` command directly in your compositor config (e.g., Hyprland `bind`).
-- **Clipboard**: Ensure `wl-clipboard` is installed to allow the daemon to interact with the Wayland clipboard buffer.
-
-**📖 For detailed Wayland setup instructions, see the [Wayland Support Guide](docs/WAYLAND.md).**
+Full guide: [Wayland Support](docs/WAYLAND.md)
 
 ## Troubleshooting
 
-For a comprehensive list of errors and solutions, see the **[Troubleshooting Guide](docs/TROUBLESHOOTING.md)**.
+| Problem | Fix |
+|---------|-----|
+| Hotkey not working | Add user to `input` group; use compositor binds on Wayland |
+| No audio | Add user to `audio` group |
+| Clipboard issues | Install `wl-clipboard` (Wayland) or `xclip` (X11) |
+| Service won't start | Check logs: `journalctl --user -u hyprvox -f` |
 
-### Common Issues Quick-Fix
+Full guide: [Troubleshooting](docs/TROUBLESHOOTING.md)
 
-| Issue                  | Resolution                                                                                                                                                    |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hotkey not working** | Ensure user is in `input` group and check Wayland/XWayland status. See [Troubleshooting: Global Hotkey Issues](docs/TROUBLESHOOTING.md#global-hotkey-issues). |
-| **No audio recorded**  | Ensure user is in `audio` group. See [Audio Device Selection](docs/AUDIO_DEVICES.md).                                                                         |
-| **API Errors**         | Verify API keys in `config.json` (Groq starts with `gsk_`, Deepgram is a UUID).                                                                               |
-| **Clipboard fail**     | Install `wl-clipboard` (Wayland) or `xclip` (X11).                                                                                                            |
-| **Service fails**      | Check logs: `journalctl --user -u hyprvox -f`.                                                                                                              |
+## Documentation
 
----
+- [Architecture](docs/ARCHITECTURE.md) — How it works under the hood
+- [Configuration](docs/CONFIGURATION.md) — All options explained
+- [CLI Commands](docs/CLI_COMMANDS.md) — Every command and flag
+- [Wayland Support](docs/WAYLAND.md) — Platform-specific setup
 
-## Transcription History
+## License
 
-All successful transcriptions are stored in `~/.config/hypr/vox/history.json`. You can view or clear the history using the CLI:
-
-```bash
-# List last 10 transcriptions
-bun run index.ts history list
-
-# List last 20 transcriptions
-bun run index.ts history list -n 20
-
-# Clear history
-bun run index.ts history clear
-```
-
-This project was created using `bun init` in bun v1.3.3. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+MIT

@@ -23,22 +23,17 @@ bun install
 
 ## Hyprland Configuration (REQUIRED for Wayland)
 
-For the overlay to work properly on Hyprland, add these window rules to your config:
+For the overlay to work properly on Hyprland, add these window rules to your config.
 
-**Edit `~/.config/hypr/hyprland.conf` or `~/.config/hypr/UserConfigs/WindowRules.conf`:**
+**Edit `~/.config/hypr/UserConfigs/WindowRules.conf`:**
 
 ```conf
-# Hyprvox Overlay - Electron
-windowrulev2 = float, class:^(hyprvox-overlay)$
-windowrulev2 = pin, class:^(hyprvox-overlay)$
-windowrulev2 = nofocus, class:^(hyprvox-overlay)$
-windowrulev2 = noborder, class:^(hyprvox-overlay)$
-windowrulev2 = noshadow, class:^(hyprvox-overlay)$
-windowrulev2 = noanim, class:^(hyprvox-overlay)$
-windowrulev2 = noinitialfocus, class:^(hyprvox-overlay)$
-windowrulev2 = move 50% 100%, class:^(hyprvox-overlay)$
-windowrulev2 = size 400 60, class:^(hyprvox-overlay)$
-windowrulev2 = opacity 0.95, class:^(hyprvox-overlay)$
+# Hyprvox Overlay
+windowrule = match:class hyprvox-overlay, float on
+windowrule = match:class hyprvox-overlay, pin on
+windowrule = match:class hyprvox-overlay, no_focus on
+windowrule = match:class hyprvox-overlay, no_shadow on
+windowrule = match:class hyprvox-overlay, no_anim on
 ```
 
 After adding the rules, reload Hyprland:
@@ -46,19 +41,32 @@ After adding the rules, reload Hyprland:
 hyprctl reload
 ```
 
+### Syntax Notes (Hyprland 0.53+)
+
+**Syntax:** `windowrule = match:<criteria>, <effect> <value>`
+
+Both orders work (match-first or effect-first). We use match-first for readability.
+
+```conf
+# Current syntax (match-first)
+windowrule = match:class hyprvox-overlay, pin on
+
+# Alternative syntax (effect-first) - also valid
+windowrule = pin on, match:class hyprvox-overlay
+
+# Deprecated syntax (windowrulev2) - DO NOT USE
+windowrulev2 = pin, class:^(hyprvox-overlay)$
+```
+
 **Rule explanations:**
 
 | Rule | Purpose |
 |------|---------|
-| `float` | Make it a floating window |
-| `pin` | Show on all workspaces |
-| `nofocus` | Prevent overlay from receiving focus |
-| `noborder` | Remove window borders |
-| `noshadow` | Remove drop shadow |
-| `noanim` | Disable open/close animations |
-| `noinitialfocus` | Don't steal focus on launch |
-| `move 50% 100%` | Center-bottom position |
-| `size 400 60` | Fixed window size |
+| `float on` | Make it a floating window |
+| `pin on` | Show on all workspaces |
+| `no_focus on` | Prevent overlay from receiving focus |
+| `no_shadow on` | Remove drop shadow |
+| `no_anim on` | Disable open/close animations |
 
 ## Build & Run
 

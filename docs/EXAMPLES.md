@@ -86,7 +86,7 @@ If transcription feels sluggish or fails:
 bun run index.ts health
 
 # Monitor logs in real-time while you record
-bun run index.ts logs --tail
+bun run index.ts logs --follow
 ```
 
 ---

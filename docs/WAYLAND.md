@@ -96,7 +96,45 @@ Hyprland is a dynamic tiling Wayland compositor with excellent keybinding suppor
    bun run index.ts install
    ```
 
-### Hyprland Configuration
+### Hyprland Window Rules (for Overlay)
+
+Add these to your Hyprland config (e.g., `~/.config/hypr/hyprland.conf`). If you use the ML4W framework, you may place them in `~/.config/hypr/UserConfigs/WindowRules.conf`:
+
+```conf
+# Hyprvox Overlay
+windowrule = match:class hyprvox-overlay, float on
+windowrule = match:class hyprvox-overlay, pin on
+windowrule = match:class hyprvox-overlay, no_focus on
+windowrule = match:class hyprvox-overlay, no_shadow on
+windowrule = match:class hyprvox-overlay, no_anim on
+```
+
+**Syntax Notes:**
+
+```conf
+# Current syntax (match-first) - used in this guide
+windowrule = match:class hyprvox-overlay, pin on
+
+# Alternative syntax (effect-first) - also valid
+windowrule = pin on, match:class hyprvox-overlay
+
+# Deprecated syntax - DO NOT USE
+windowrulev2 = pin, class:^(hyprvox-overlay)$
+```
+
+**What each rule does:**
+
+| Rule | Purpose |
+|------|---------|
+| `float on` | Make overlay a floating window |
+| `pin on` | Show on all workspaces |
+| `no_focus on` | Don't steal keyboard focus |
+| `no_shadow on` | No drop shadow (cleaner look) |
+| `no_anim on` | No open/close animation (faster) |
+
+After adding rules, reload: `hyprctl reload`
+
+### Hyprland Keybindings
 
 Add the following to your `~/.config/hypr/hyprland.conf`:
 
@@ -178,7 +216,7 @@ hyprctl reload
    journalctl --user -u hyprvox -f
 
    # Or direct log file
-   tail -f ~/.config/hyprvox/logs/daemon.log
+   tail -f ~/.config/hypr/vox/logs/hyprvox-$(date +%Y-%m-%d).log
    ```
 
 ---
@@ -376,7 +414,7 @@ journalctl --user -u hyprvox -f
 
 If you're using native compositor bindings exclusively, you can disable the built-in hotkey listener to avoid XWayland dependency:
 
-Edit `~/.config/hyprvox/config.json`:
+Edit `~/.config/hypr/vox/config.json`:
 
 ```json
 {
