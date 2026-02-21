@@ -98,7 +98,7 @@ Hyprland is a dynamic tiling Wayland compositor with excellent keybinding suppor
 
 ### Hyprland Window Rules (for Overlay)
 
-Add these to `~/.config/hypr/UserConfigs/WindowRules.conf` (or `hyprland.conf`):
+Add these to your Hyprland config (e.g., `~/.config/hypr/hyprland.conf`). If you use the ML4W framework, you may place them in `~/.config/hypr/UserConfigs/WindowRules.conf`:
 
 ```conf
 # Hyprvox Overlay
@@ -215,8 +215,8 @@ hyprctl reload
    # Daemon logs
    journalctl --user -u hyprvox -f
 
-    # Or direct log file
-    tail -f ~/.config/hypr/vox/logs/hyprvox-$(date +%Y-%m-%d).log
+   # Or direct log file
+   tail -f ~/.config/hypr/vox/logs/hyprvox-$(date +%Y-%m-%d).log
    ```
 
 ---
