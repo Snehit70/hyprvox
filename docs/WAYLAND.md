@@ -109,20 +109,17 @@ windowrule = match:class hyprvox-overlay, no_shadow on
 windowrule = match:class hyprvox-overlay, no_anim on
 ```
 
-**Important:** Hyprland 0.53+ uses `windowrule` (not `windowrulev2`). The syntax is:
+**Syntax Notes:**
 
 ```conf
-windowrule = match:class <class>, <effect> <value>
-```
+# Current syntax (match-first) - used in this guide
+windowrule = match:class hyprvox-overlay, pin on
 
-**NOT:**
-
-```conf
-# WRONG - old syntax
-windowrulev2 = pin, class:^(hyprvox-overlay)$
-
-# WRONG - effect before match
+# Alternative syntax (effect-first) - also valid
 windowrule = pin on, match:class hyprvox-overlay
+
+# Deprecated syntax - DO NOT USE
+windowrulev2 = pin, class:^(hyprvox-overlay)$
 ```
 
 **What each rule does:**
