@@ -216,10 +216,30 @@ export class DaemonService {
 			}
 
 			try {
+				// Explicitly pass display environment for Wayland/X11 compatibility
+				const uid = process.getuid?.() ?? 1000;
+				const overlayEnv = {
+					...process.env,
+					// Ensure display vars are set (fallback to common defaults)
+					WAYLAND_DISPLAY: process.env.WAYLAND_DISPLAY || "wayland-1",
+					XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || `/run/user/${uid}`,
+					DISPLAY: process.env.DISPLAY || ":0",
+				};
+
+				logger.debug(
+					{
+						WAYLAND_DISPLAY: overlayEnv.WAYLAND_DISPLAY,
+						DISPLAY: overlayEnv.DISPLAY,
+						XDG_RUNTIME_DIR: overlayEnv.XDG_RUNTIME_DIR,
+					},
+					"Starting overlay with display environment",
+				);
+
 				this.overlayProcess = spawn("bun", ["run", "start"], {
 					cwd: overlayPath,
 					detached: true,
 					stdio: "ignore",
+					env: overlayEnv,
 				});
 
 				this.overlayProcess.on("error", (err) => {

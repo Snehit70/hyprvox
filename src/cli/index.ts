@@ -54,7 +54,17 @@ program
 					);
 					process.exit(1);
 				} catch {
-					// Process doesn't exist, stale PID file
+					// Process doesn't exist, clean up stale PID file
+					console.log(
+						colors.yellow(
+							"Cleaning up stale PID file from previous session...",
+						),
+					);
+					try {
+						unlinkSync(pidFile);
+					} catch {
+						// PID file may have already been removed
+					}
 				}
 			} catch {
 				// Failed to read PID file, assume not running
