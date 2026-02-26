@@ -115,11 +115,28 @@ program
 
 		try {
 			const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
-			process.kill(pid, "SIGTERM");
-			console.log(
-				`${colors.green("✅")} Stopped daemon (${colors.dim(`PID: ${pid}`)})`,
-			);
+			try {
+				process.kill(pid, "SIGTERM");
+				console.log(
+					`${colors.green("✅")} Stopped daemon (${colors.dim(`PID: ${pid}`)})`,
+				);
+			} catch (killError: unknown) {
+				// Process doesn't exist (ESRCH) - clean up stale PID file
+				if (
+					killError instanceof Error &&
+					"code" in killError &&
+					killError.code === "ESRCH"
+				) {
+					console.log(
+						colors.yellow("Daemon was not running (stale PID file cleaned up)"),
+					);
+				} else {
+					throw killError;
+				}
+			}
 
+			// Clean up PID and state files
+			if (existsSync(pidFile)) unlinkSync(pidFile);
 			if (existsSync(stateFile)) unlinkSync(stateFile);
 		} catch (error) {
 			console.error(colors.red("Failed to stop daemon:"), error);
