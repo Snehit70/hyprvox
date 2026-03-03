@@ -24,7 +24,14 @@ Built for Hyprland/Wayland first. Works on X11 too.
 
 ## Quick Start
 
-### For Humans
+### Prerequisites
+
+```bash
+# Install Bun (if not already installed)
+curl -fsSL https://bun.sh/install | bash
+```
+
+### Installation
 
 ```bash
 git clone https://github.com/Snehit70/hyprvox.git
@@ -36,6 +43,8 @@ bun run index.ts install       # Install as systemd service
 ```
 
 Press Right Ctrl to record. Press again to stop. Paste anywhere.
+
+> **Works on both Wayland and X11.** On X11/GNOME/KDE, the built-in hotkey works out of the box. On Wayland (Hyprland, Sway), see [compositor keybind setup](#hyprland-setup) for reliable system-wide hotkeys.
 
 ### For AI Agents
 
@@ -75,6 +84,18 @@ Install and configure hyprvox on this Linux system:
 **Streaming or batch.** ~500ms latency in streaming mode. Higher accuracy in batch mode. Your choice.
 
 **Runs as a daemon.** Systemd service starts on login. Always ready when you need it.
+
+## Performance
+
+| Metric | Value |
+|--------|-------|
+| **Median latency** | 882ms |
+| **Real-time factor** | 39x faster than real-time |
+| **Dual-engine success** | 93.5% |
+| **Filler words removed** | 12.3% (by LLM cleanup) |
+| **LLM merge overhead** | ~280ms |
+
+The LLM doesn't just merge — it removes filler words ("um", "uh"), false starts, and self-corrections automatically.
 
 ## The Overlay
 
@@ -129,10 +150,14 @@ Run `bun run index.ts config init` to set them up.
 ## Usage
 
 ```bash
-bun run index.ts status      # Check daemon
-bun run index.ts health      # Test setup  
+bun run index.ts status      # Check daemon status
+bun run index.ts health      # Test system setup
+bun run index.ts toggle      # Start/stop recording
 bun run index.ts history     # View past transcriptions
-bun run index.ts config bind # Change hotkey
+bun run index.ts logs        # Tail daemon logs
+bun run index.ts errors      # Show last error
+bun run index.ts config init # Set up API keys
+bun run index.ts boost add   # Add custom vocabulary
 ```
 
 ## Configuration
