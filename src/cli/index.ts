@@ -53,17 +53,25 @@ program
 						`Or if using systemd: ${colors.cyan("systemctl --user stop hyprvox")}`,
 					);
 					process.exit(1);
-				} catch {
-					// Process doesn't exist, clean up stale PID file
-					console.log(
-						colors.yellow(
-							"Cleaning up stale PID file from previous session...",
-						),
-					);
-					try {
-						unlinkSync(pidFile);
-					} catch {
-						// PID file may have already been removed
+				} catch (killError: unknown) {
+					if (
+						killError instanceof Error &&
+						"code" in killError &&
+						(killError as NodeJS.ErrnoException).code === "ESRCH"
+					) {
+						// Process doesn't exist, clean up stale PID file
+						console.log(
+							colors.yellow(
+								"Cleaning up stale PID file from previous session...",
+							),
+						);
+						try {
+							unlinkSync(pidFile);
+						} catch {
+							// PID file may have already been removed
+						}
+					} else {
+						throw killError;
 					}
 				}
 			} catch {
