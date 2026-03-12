@@ -61,7 +61,10 @@ export async function convertAudio(inputBuffer: Buffer): Promise<Buffer> {
 					{
 						inputSize,
 						outputSize,
-						compressionRatio: `${((1 - outputSize / inputSize) * 100).toFixed(1)}%`,
+						compressionRatio:
+							inputSize > 0
+								? `${((1 - outputSize / inputSize) * 100).toFixed(1)}%`
+								: "N/A",
 						durationMs: duration,
 						format: "opus",
 					},

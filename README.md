@@ -29,6 +29,11 @@ Built for Hyprland/Wayland first. Works on X11 too.
 ```bash
 # Install Bun (if not already installed)
 curl -fsSL https://bun.sh/install | bash
+
+# Install ffmpeg (required for Opus audio conversion)
+# Arch:   sudo pacman -S ffmpeg
+# Ubuntu: sudo apt install ffmpeg
+# Fedora: sudo dnf install ffmpeg
 ```
 
 ### Installation
@@ -71,6 +76,7 @@ Install and configure hyprvox on this Linux system:
     windowrule = match:class hyprvox-overlay, no_focus on
     windowrule = match:class hyprvox-overlay, no_shadow on
     windowrule = match:class hyprvox-overlay, no_anim on
+    windowrule = match:class hyprvox-overlay, move ((monitor_w-window_w)*0.5) (monitor_h-window_h-50)
 7. Reload: hyprctl reload
 8. Verify: bun run index.ts health
 ```
@@ -112,6 +118,7 @@ windowrule = match:class hyprvox-overlay, pin on
 windowrule = match:class hyprvox-overlay, no_focus on
 windowrule = match:class hyprvox-overlay, no_shadow on
 windowrule = match:class hyprvox-overlay, no_anim on
+windowrule = match:class hyprvox-overlay, move ((monitor_w-window_w)*0.5) (monitor_h-window_h-50)
 ```
 
 ## Installation
