@@ -26,6 +26,9 @@ const program = new Command();
 const configDir = join(homedir(), ".config", "hypr", "vox");
 const pidFile = join(configDir, "daemon.pid");
 const stateFile = join(configDir, "daemon.state");
+// Resolve project root relative to this file so the CLI works when invoked
+// as a global binary from any working directory (not just the project root).
+const projectRoot = join(import.meta.dir, "..", "..");
 
 program
 	.name("hyprvox")
@@ -53,8 +56,26 @@ program
 						`Or if using systemd: ${colors.cyan("systemctl --user stop hyprvox")}`,
 					);
 					process.exit(1);
-				} catch {
-					// Process doesn't exist, stale PID file
+				} catch (killError: unknown) {
+					if (
+						killError instanceof Error &&
+						"code" in killError &&
+						(killError as NodeJS.ErrnoException).code === "ESRCH"
+					) {
+						// Process doesn't exist, clean up stale PID file
+						console.log(
+							colors.yellow(
+								"Cleaning up stale PID file from previous session...",
+							),
+						);
+						try {
+							unlinkSync(pidFile);
+						} catch {
+							// PID file may have already been removed
+						}
+					} else {
+						throw killError;
+					}
 				}
 			} catch {
 				// Failed to read PID file, assume not running
@@ -63,7 +84,7 @@ program
 
 		if (options.supervisor && !process.env.HYPRVOX_DAEMON_WORKER) {
 			console.log(`${colors.cyan("Starting daemon with supervisor...")}`);
-			const supervisor = new DaemonSupervisor(join(process.cwd(), "index.ts"));
+			const supervisor = new DaemonSupervisor(join(projectRoot, "index.ts"));
 			supervisor.start();
 		} else {
 			console.log(`${colors.cyan("Starting daemon worker...")}`);
@@ -105,15 +126,32 @@ program
 
 		try {
 			const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
-			process.kill(pid, "SIGTERM");
-			console.log(
-				`${colors.green("✅")} Stopped daemon (${colors.dim(`PID: ${pid}`)})`,
-			);
-
-			if (existsSync(stateFile)) unlinkSync(stateFile);
+			try {
+				process.kill(pid, "SIGTERM");
+				console.log(
+					`${colors.green("✅")} Stopped daemon (${colors.dim(`PID: ${pid}`)})`,
+				);
+				// Do NOT unlink pidFile/stateFile here — DaemonService.stop() already
+				// deletes them after recorder and IPC teardown. Unlinking early creates
+				// a race where a new `hyprvox start` can launch a duplicate daemon.
+			} catch (killError: unknown) {
+				// Process doesn't exist (ESRCH) - clean up stale PID file
+				if (
+					killError instanceof Error &&
+					"code" in killError &&
+					killError.code === "ESRCH"
+				) {
+					console.log(
+						colors.yellow("Daemon was not running (stale PID file cleaned up)"),
+					);
+					if (existsSync(pidFile)) unlinkSync(pidFile);
+					if (existsSync(stateFile)) unlinkSync(stateFile);
+				} else {
+					throw killError;
+				}
+			}
 		} catch (error) {
 			console.error(colors.red("Failed to stop daemon:"), error);
-			if (existsSync(pidFile)) unlinkSync(pidFile);
 		}
 	});
 
@@ -254,9 +292,9 @@ program
 			const serviceDir = join(homedir(), ".config", "systemd", "user");
 			const logsDir = join(configDir, "logs");
 			const servicePath = join(serviceDir, `${serviceName}.service`);
-			const workingDir = process.cwd();
+			const workingDir = projectRoot;
 			const bunPath = process.argv[0];
-			const entryPoint = join(workingDir, "index.ts");
+			const entryPoint = join(projectRoot, "index.ts");
 			const userId = process.getuid?.() ?? 1000;
 
 			if (!existsSync(serviceDir)) {

@@ -216,10 +216,37 @@ export class DaemonService {
 			}
 
 			try {
+				// Explicitly pass display environment for Wayland/X11 compatibility
+				const uid = process.getuid?.() ?? 1000;
+				const overlayEnv: NodeJS.ProcessEnv = { ...process.env };
+
+				// Only set display vars if already present in parent env — injecting
+				// WAYLAND_DISPLAY on a pure X11 system (or DISPLAY on Wayland-only)
+				// causes GTK/Electron to attempt a non-existent compositor socket.
+				if (!overlayEnv.WAYLAND_DISPLAY && !overlayEnv.DISPLAY) {
+					// No display detected at all — fall back to Wayland-first defaults
+					overlayEnv.WAYLAND_DISPLAY = "wayland-1";
+					overlayEnv.DISPLAY = ":0";
+				}
+
+				if (!overlayEnv.XDG_RUNTIME_DIR) {
+					overlayEnv.XDG_RUNTIME_DIR = `/run/user/${uid}`;
+				}
+
+				logger.debug(
+					{
+						WAYLAND_DISPLAY: overlayEnv.WAYLAND_DISPLAY,
+						DISPLAY: overlayEnv.DISPLAY,
+						XDG_RUNTIME_DIR: overlayEnv.XDG_RUNTIME_DIR,
+					},
+					"Starting overlay with display environment",
+				);
+
 				this.overlayProcess = spawn("bun", ["run", "start"], {
 					cwd: overlayPath,
 					detached: true,
 					stdio: "ignore",
+					env: overlayEnv,
 				});
 
 				this.overlayProcess.on("error", (err) => {
@@ -619,11 +646,11 @@ export class DaemonService {
 			const language = this.config.transcription.language;
 			const boostWords = this.config.transcription.boostWords || [];
 
+			const startTime = Date.now();
 			const convertedBuffer = await convertAudio(audioBuffer);
 
 			let groqErr: any = null;
 			let deepgramErr: any = null;
-			const startTime = Date.now();
 
 			let groqText = "";
 			let deepgramText = "";
