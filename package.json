@@ -1,6 +1,6 @@
 {
 	"name": "hyprvox",
-	"version": "1.0.0",
+	"version": "0.8.0",
 	"description": "Production-ready STT daemon for Linux with global hotkeys and clipboard history",
 	"module": "index.ts",
 	"type": "module",
