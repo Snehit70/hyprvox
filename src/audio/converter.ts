@@ -57,7 +57,7 @@ export async function convertAudio(inputBuffer: Buffer): Promise<Buffer> {
 				const outputBuffer = Buffer.concat(chunks);
 				const outputSize = outputBuffer.length;
 				const duration = Date.now() - startTime;
-				logger.info(
+				logger.debug(
 					{
 						inputSize,
 						outputSize,

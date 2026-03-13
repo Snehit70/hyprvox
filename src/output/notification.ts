@@ -30,7 +30,7 @@ export const notify = (
 			wait: false,
 		});
 
-		logger.info({ title, message, type }, "Notification sent");
+		logger.debug({ title, message, type }, "Notification sent");
 	} catch (error) {
 		logger.error({ err: error }, "Failed to send notification");
 	}

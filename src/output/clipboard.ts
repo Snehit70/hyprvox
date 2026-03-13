@@ -36,7 +36,7 @@ export class ClipboardManager {
 	public async append(text: string): Promise<void> {
 		try {
 			await this.write(text);
-			logger.info("Clipboard updated successfully");
+			logger.debug("Clipboard updated successfully");
 		} catch (error) {
 			logger.error("Clipboard write failed, falling back to file");
 			await this.saveToFallbackFile(text);
