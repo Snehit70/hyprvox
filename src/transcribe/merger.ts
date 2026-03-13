@@ -30,8 +30,16 @@ RULES:
 8. Remove false starts and abandoned sentences.
 9. Output ONLY the merged text, no quotes or preamble.`;
 
+export type MergeStrategy =
+	| "exact_match"
+	| "single_source"
+	| "llm"
+	| "llm_fallback"
+	| "empty";
+
 export interface MergeResult {
 	text: string;
+	strategy: MergeStrategy;
 	accuracy: {
 		sourcesMatch: boolean;
 		editDistance: number;
@@ -68,18 +76,21 @@ export class TranscriptMerger {
 		if (!groqText && !deepgramText) {
 			return {
 				text: "",
+				strategy: "empty",
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0 },
 			};
 		}
 		if (!groqText) {
 			return {
 				text: deepgramText,
+				strategy: "single_source",
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0.5 },
 			};
 		}
 		if (!deepgramText) {
 			return {
 				text: groqText,
+				strategy: "single_source",
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0.5 },
 			};
 		}
@@ -87,12 +98,14 @@ export class TranscriptMerger {
 		if (sourcesMatch) {
 			return {
 				text: deepgramText,
+				strategy: "exact_match",
 				accuracy: { sourcesMatch: true, editDistance: 0, confidence: 1 },
 			};
 		}
 
 		const startTime = Date.now();
 		let finalText: string;
+		let mergeStrategy: MergeStrategy = "llm";
 
 		try {
 			const completion = await withRetry(
@@ -126,7 +139,7 @@ export class TranscriptMerger {
 			finalText = completion.choices[0]?.message?.content?.trim() || "";
 			const timeMs = Date.now() - startTime;
 
-			logger.info(
+			logger.debug(
 				{
 					model: mergeModel,
 					timeMs,
@@ -139,6 +152,7 @@ export class TranscriptMerger {
 		} catch (error) {
 			logError("LLM merge failed, using fallback", error);
 			finalText = deepgramText || groqText;
+			mergeStrategy = "llm_fallback";
 		}
 
 		const distToGroq = levenshteinDistance(finalText, groqText);
@@ -160,6 +174,7 @@ export class TranscriptMerger {
 
 		return {
 			text: finalText,
+			strategy: mergeStrategy,
 			accuracy: {
 				sourcesMatch: false,
 				editDistance,

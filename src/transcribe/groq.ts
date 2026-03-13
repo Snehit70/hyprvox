@@ -85,7 +85,7 @@ export class GroqClient {
 					);
 
 					const text = completion.text.trim();
-					logger.info(
+					logger.debug(
 						{
 							model: "whisper-large-v3",
 							language,

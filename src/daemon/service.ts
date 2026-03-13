@@ -14,9 +14,14 @@ import { DeepgramTranscriber } from "../transcribe/deepgram";
 import {
 	DeepgramStreamingTranscriber,
 	type StreamingFailureReason,
+	type StreamingStopReason,
 } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
-import { type MergeResult, TranscriptMerger } from "../transcribe/merger";
+import {
+	type MergeResult,
+	type MergeStrategy,
+	TranscriptMerger,
+} from "../transcribe/merger";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { errorIncludes, getErrorCode } from "../utils/errors";
 import { appendHistory } from "../utils/history";
@@ -27,6 +32,49 @@ import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
 
 const HALLUCINATION_MAX_CHARS = 20;
+
+// --- Instrumentation types ---
+
+type AudioFormatStrategy = "opus" | "raw";
+
+interface TranscriptionMetrics {
+	// Timings (ms, -1 = skipped)
+	totalMs: number;
+	processingMs: number; // user-perceived latency (up to clipboard write)
+	conversionMs: number;
+	groqMs: number;
+	deepgramMs: number;
+	mergeMs: number;
+	clipboardMs: number;
+	statsWriteMs: number;
+	historyAppendMs: number;
+	notificationEnqueueMs: number;
+
+	// Input characteristics
+	rawAudioBytes: number;
+	recordingDurationMs: number;
+	convertedAudioBytes: number;
+
+	// Decisions
+	streamingEnabled: boolean;
+	audioFormatStrategy: AudioFormatStrategy;
+	mergeStrategy: MergeStrategy | "skip_no_speech" | "skip_hallucination";
+	deepgramStopReason: StreamingStopReason | null;
+
+	// Outcome
+	engine: string;
+	textLength: number;
+	groqTextLength: number;
+	deepgramTextLength: number;
+}
+
+async function timeAsync<T>(
+	fn: () => Promise<T>,
+): Promise<{ result: T; durationMs: number }> {
+	const start = Date.now();
+	const result = await fn();
+	return { result, durationMs: Date.now() - start };
+}
 
 export interface DaemonState {
 	status: DaemonStatus;
@@ -642,53 +690,103 @@ export class DaemonService {
 	}
 
 	private async processAudio(audioBuffer: Buffer, duration: number) {
+		const totalStart = Date.now();
+
+		// Initialize metrics with defaults
+		const metrics: TranscriptionMetrics = {
+			totalMs: 0,
+			processingMs: 0,
+			conversionMs: -1,
+			groqMs: -1,
+			deepgramMs: -1,
+			mergeMs: -1,
+			clipboardMs: -1,
+			statsWriteMs: -1,
+			historyAppendMs: -1,
+			notificationEnqueueMs: -1,
+			rawAudioBytes: audioBuffer.length,
+			recordingDurationMs: duration,
+			convertedAudioBytes: -1,
+			streamingEnabled: !!this.config.transcription.streaming,
+			audioFormatStrategy: "opus",
+			mergeStrategy: "skip_no_speech",
+			deepgramStopReason: null,
+			engine: "",
+			textLength: 0,
+			groqTextLength: 0,
+			deepgramTextLength: 0,
+		};
+
 		try {
 			const language = this.config.transcription.language;
 			const boostWords = this.config.transcription.boostWords || [];
 
-			const startTime = Date.now();
-			const convertedBuffer = await convertAudio(audioBuffer);
+			// --- Stage: Audio conversion ---
+			const conversion = await timeAsync(() => convertAudio(audioBuffer));
+			const convertedBuffer = conversion.result;
+			metrics.conversionMs = conversion.durationMs;
+			metrics.convertedAudioBytes = convertedBuffer.length;
 
-			let groqErr: any = null;
-			let deepgramErr: any = null;
-
+			// --- Stage: Parallel transcription ---
+			let groqErr: unknown = null;
+			let deepgramErr: unknown = null;
 			let groqText = "";
 			let deepgramText = "";
-
 			let streamingChunkCount = -1;
 
 			if (this.config.transcription.streaming && this.deepgramStreaming) {
-				const [groqResult, streamingResult] = await Promise.all([
-					this.groq
-						.transcribe(convertedBuffer, language, boostWords)
-						.catch((err) => {
-							groqErr = err;
-							return "";
+				const [groqTimed, deepgramTimed] = await Promise.all([
+					timeAsync(() =>
+						this.groq
+							.transcribe(convertedBuffer, language, boostWords)
+							.catch((err) => {
+								groqErr = err;
+								return "";
+							}),
+					),
+					timeAsync(() =>
+						this.deepgramStreaming!.stop().catch((err) => {
+							deepgramErr = err;
+							return {
+								text: "",
+								chunkCount: -1,
+								stopReason: "not_connected" as const,
+							};
 						}),
-					this.deepgramStreaming.stop().catch((err) => {
-						deepgramErr = err;
-						return { text: "", chunkCount: -1 };
-					}),
+					),
 				]);
-				groqText = groqResult;
+				metrics.groqMs = groqTimed.durationMs;
+				metrics.deepgramMs = deepgramTimed.durationMs;
+				groqText = groqTimed.result;
+				const streamingResult = deepgramTimed.result;
 				deepgramText = streamingResult.text;
 				streamingChunkCount = streamingResult.chunkCount;
+				metrics.deepgramStopReason = streamingResult.stopReason;
 			} else {
-				[groqText, deepgramText] = await Promise.all([
-					this.groq
-						.transcribe(convertedBuffer, language, boostWords)
-						.catch((err) => {
-							groqErr = err;
+				const [groqTimed, deepgramTimed] = await Promise.all([
+					timeAsync(() =>
+						this.groq
+							.transcribe(convertedBuffer, language, boostWords)
+							.catch((err) => {
+								groqErr = err;
+								return "";
+							}),
+					),
+					timeAsync(() =>
+						this.deepgram.transcribe(convertedBuffer, language).catch((err) => {
+							deepgramErr = err;
 							return "";
 						}),
-					this.deepgram.transcribe(convertedBuffer, language).catch((err) => {
-						deepgramErr = err;
-						return "";
-					}),
+					),
 				]);
+				metrics.groqMs = groqTimed.durationMs;
+				metrics.deepgramMs = deepgramTimed.durationMs;
+				groqText = groqTimed.result;
+				deepgramText = deepgramTimed.result;
 			}
 
-			const processingTime = Date.now() - startTime;
+			metrics.groqTextLength = groqText.length;
+			metrics.deepgramTextLength = deepgramText.length;
 
 			const handleTranscriptionError = (
 				err: unknown,
@@ -720,6 +818,7 @@ export class DaemonService {
 				}
 			};
 
+			// --- Early exits (no speech / hallucination) ---
 			if (!groqText && !deepgramText) {
 				if (!groqErr && !deepgramErr) {
 					logger.info({ duration }, "No speech detected in recording");
@@ -747,8 +846,9 @@ export class DaemonService {
 				groqText &&
 				groqText.length < HALLUCINATION_MAX_CHARS
 			) {
+				metrics.mergeStrategy = "skip_hallucination";
 				logger.info(
-					{ groqText, streamingChunkCount },
+					{ groqTextLength: groqText.length, streamingChunkCount },
 					"Filtered Groq hallucination on silent audio",
 				);
 				notify(
@@ -760,15 +860,22 @@ export class DaemonService {
 				return;
 			}
 
+			// --- Stage: Merge ---
 			let finalText = "";
 			let accuracy: MergeResult["accuracy"] | undefined;
 
 			if (groqText && deepgramText) {
-				const mergeResult = await this.merger.merge(groqText, deepgramText);
-				finalText = mergeResult.text;
-				accuracy = mergeResult.accuracy;
+				const mergeTimed = await timeAsync(() =>
+					this.merger.merge(groqText, deepgramText),
+				);
+				metrics.mergeMs = mergeTimed.durationMs;
+				finalText = mergeTimed.result.text;
+				accuracy = mergeTimed.result.accuracy;
+				metrics.mergeStrategy = mergeTimed.result.strategy;
 			} else {
 				finalText = groqText || deepgramText;
+				metrics.mergeStrategy = "single_source";
+				metrics.mergeMs = -1;
 
 				const failedService = !groqText ? "Groq" : "Deepgram";
 				const error = !groqText ? groqErr : deepgramErr;
@@ -787,52 +894,74 @@ export class DaemonService {
 				throw new Error("No transcription generated");
 			}
 
-			await this.clipboard.append(finalText);
+			// --- Stage: Clipboard ---
+			const clipboardTimed = await timeAsync(() =>
+				this.clipboard.append(finalText),
+			);
+			metrics.clipboardMs = clipboardTimed.durationMs;
 
-			const stats = await incrementTranscriptionCount();
-			this.transcriptionCountToday = stats.today;
-			this.transcriptionCountTotal = stats.total;
+			// processingTime captures user-perceived latency (up to clipboard write).
+			// The stages below (history + notification) are awaited but post-clipboard
+			// bookkeeping — their latency is tracked separately in historyAppendMs /
+			// notificationEnqueueMs and included in totalMs but not processingTime.
+			const processingTime = Date.now() - totalStart;
+			metrics.processingMs = processingTime;
 
+			// --- Stage: Stats write ---
+			const statsTimed = await timeAsync(() => incrementTranscriptionCount());
+			metrics.statsWriteMs = statsTimed.durationMs;
+			this.transcriptionCountToday = statsTimed.result.today;
+			this.transcriptionCountTotal = statsTimed.result.total;
+
+			// --- Stage: History append ---
 			const engineUsed =
 				groqText && deepgramText
 					? "groq+deepgram"
 					: groqText
 						? "groq"
 						: "deepgram";
-			await appendHistory({
-				timestamp: new Date().toISOString(),
-				text: finalText,
-				duration,
-				engine: engineUsed,
-				processingTime,
-			});
+			metrics.engine = engineUsed;
 
-			this.notifyStateChange(
-				"Success",
-				"Transcription copied to clipboard",
-				"success",
+			const historyTimed = await timeAsync(() =>
+				appendHistory({
+					timestamp: new Date().toISOString(),
+					text: finalText,
+					duration,
+					engine: engineUsed,
+					processingTime,
+				}),
 			);
+			metrics.historyAppendMs = historyTimed.durationMs;
 
+			// --- Stage: Notification ---
+			const notifyTimed = await timeAsync(async () =>
+				this.notifyStateChange(
+					"Success",
+					"Transcription copied to clipboard",
+					"success",
+				),
+			);
+			metrics.notificationEnqueueMs = notifyTimed.durationMs;
+
+			// --- Finalize metrics ---
+			metrics.totalMs = Date.now() - totalStart;
+			metrics.textLength = finalText.length;
+
+			// --- Outcome log (no full text) ---
 			logger.info(
 				{
-					duration,
-					processingTime,
-					text: finalText,
+					engine: engineUsed,
 					textLength: finalText.length,
-					groqText,
-					groqTextLength: groqText.length,
-					deepgramText,
-					deepgramTextLength: deepgramText.length,
-					models:
-						groqText && deepgramText
-							? "groq+deepgram+llama"
-							: groqText
-								? "groq"
-								: "deepgram",
-					accuracy,
+					recordingDurationMs: duration,
+					processingMs: processingTime,
+					mergeStrategy: metrics.mergeStrategy,
+					...(accuracy ? { mergeConfidence: accuracy.confidence } : {}),
 				},
 				"Transcription complete",
 			);
+
+			// --- Performance log (structured, filterable) ---
+			logger.info({ type: "perf", ...metrics }, "Transcription performance");
 		} catch (error: unknown) {
 			logError("Processing failed", error, { duration });
 
