@@ -40,6 +40,7 @@ type AudioFormatStrategy = "opus" | "raw";
 interface TranscriptionMetrics {
 	// Timings (ms, -1 = skipped)
 	totalMs: number;
+	processingMs: number; // user-perceived latency (up to clipboard write)
 	conversionMs: number;
 	groqMs: number;
 	deepgramMs: number;
@@ -694,6 +695,7 @@ export class DaemonService {
 		// Initialize metrics with defaults
 		const metrics: TranscriptionMetrics = {
 			totalMs: 0,
+			processingMs: 0,
 			conversionMs: -1,
 			groqMs: -1,
 			deepgramMs: -1,
@@ -903,6 +905,7 @@ export class DaemonService {
 			// bookkeeping — their latency is tracked separately in historyAppendMs /
 			// notificationEnqueueMs and included in totalMs but not processingTime.
 			const processingTime = Date.now() - totalStart;
+			metrics.processingMs = processingTime;
 
 			// --- Stage: Stats write ---
 			const statsTimed = await timeAsync(() => incrementTranscriptionCount());
