@@ -899,9 +899,9 @@ export class DaemonService {
 			metrics.clipboardMs = clipboardTimed.durationMs;
 
 			// processingTime captures user-perceived latency (up to clipboard write).
-			// This excludes history append and notification which are fire-and-forget
-			// bookkeeping after the user already has the transcription.
-			// Contrast with metrics.totalMs which includes all pipeline stages.
+			// The stages below (history + notification) are awaited but post-clipboard
+			// bookkeeping — their latency is tracked separately in historyAppendMs /
+			// notificationEnqueueMs and included in totalMs but not processingTime.
 			const processingTime = Date.now() - totalStart;
 
 			// --- Stage: Stats write ---

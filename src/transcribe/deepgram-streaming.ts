@@ -13,6 +13,8 @@ export type StreamingStopReason =
 	| "finalize_transcript"
 	| "finalize_timeout"
 	| "close_timeout"
+	| "finalize_transcript+close_timeout"
+	| "finalize_timeout+close_timeout"
 	| "not_connected";
 
 export interface StreamingResult {
@@ -309,10 +311,11 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 					});
 				});
 
-				// Preserve close_timeout explicitly so tail-latency analysis can
-				// distinguish transport shutdown stalls from finalize stalls.
+				// Preserve close_timeout info using compound value to distinguish:
+				// - "finalize_transcript+close_timeout": finalize worked, transport stalled
+				// - "finalize_timeout+close_timeout": both stages timed out
 				if (!closeClean) {
-					stopReason = "close_timeout";
+					stopReason = `${stopReason}+close_timeout` as StreamingStopReason;
 				}
 			} catch (error) {
 				logError("Error finishing Deepgram streaming", error);
