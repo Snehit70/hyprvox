@@ -873,7 +873,7 @@ export class DaemonService {
 			} else {
 				finalText = groqText || deepgramText;
 				metrics.mergeStrategy = "single_source";
-				metrics.mergeMs = 0;
+				metrics.mergeMs = -1;
 
 				const failedService = !groqText ? "Groq" : "Deepgram";
 				const error = !groqText ? groqErr : deepgramErr;
@@ -913,6 +913,10 @@ export class DaemonService {
 						: "deepgram";
 			metrics.engine = engineUsed;
 
+			// processingTime captures user-perceived latency (up to clipboard write).
+			// This excludes history append and notification which are fire-and-forget
+			// bookkeeping after the user already has the transcription.
+			// Contrast with metrics.totalMs which includes all pipeline stages.
 			const processingTime = Date.now() - totalStart;
 			const historyTimed = await timeAsync(() =>
 				appendHistory({

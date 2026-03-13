@@ -12,7 +12,6 @@ import { logError, logger } from "../utils/logger";
 export type StreamingStopReason =
 	| "finalize_transcript"
 	| "finalize_timeout"
-	| "close_event"
 	| "close_timeout"
 	| "not_connected";
 
@@ -295,25 +294,23 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				// Now close the connection
 				this.connection.requestClose();
 
-				const closeReason = await new Promise<StreamingStopReason>(
-					(resolve) => {
-						const timeout = setTimeout(() => {
-							logger.warn(
-								"Deepgram close timeout, proceeding with available transcripts",
-							);
-							resolve("close_timeout");
-						}, 2000);
+				const closeClean = await new Promise<boolean>((resolve) => {
+					const timeout = setTimeout(() => {
+						logger.warn(
+							"Deepgram close timeout, proceeding with available transcripts",
+						);
+						resolve(false);
+					}, 2000);
 
-						this.once("close", () => {
-							clearTimeout(timeout);
-							resolve("close_event");
-						});
-					},
-				);
+					this.once("close", () => {
+						clearTimeout(timeout);
+						resolve(true);
+					});
+				});
 
 				// Preserve close_timeout explicitly so tail-latency analysis can
 				// distinguish transport shutdown stalls from finalize stalls.
-				if (closeReason === "close_timeout") {
+				if (!closeClean) {
 					stopReason = "close_timeout";
 				}
 			} catch (error) {
