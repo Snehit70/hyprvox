@@ -281,6 +281,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				stopReason = await new Promise<StreamingStopReason>((resolve) => {
 					const timeout = setTimeout(() => {
 						logger.debug("Finalize wait timeout, proceeding");
+						this.off("transcript", transcriptHandler);
 						resolve("finalize_timeout");
 					}, 300);
 

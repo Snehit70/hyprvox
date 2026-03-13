@@ -898,6 +898,12 @@ export class DaemonService {
 			);
 			metrics.clipboardMs = clipboardTimed.durationMs;
 
+			// processingTime captures user-perceived latency (up to clipboard write).
+			// This excludes history append and notification which are fire-and-forget
+			// bookkeeping after the user already has the transcription.
+			// Contrast with metrics.totalMs which includes all pipeline stages.
+			const processingTime = Date.now() - totalStart;
+
 			// --- Stage: Stats write ---
 			const statsTimed = await timeAsync(() => incrementTranscriptionCount());
 			metrics.statsWriteMs = statsTimed.durationMs;
@@ -913,11 +919,6 @@ export class DaemonService {
 						: "deepgram";
 			metrics.engine = engineUsed;
 
-			// processingTime captures user-perceived latency (up to clipboard write).
-			// This excludes history append and notification which are fire-and-forget
-			// bookkeeping after the user already has the transcription.
-			// Contrast with metrics.totalMs which includes all pipeline stages.
-			const processingTime = Date.now() - totalStart;
 			const historyTimed = await timeAsync(() =>
 				appendHistory({
 					timestamp: new Date().toISOString(),
@@ -949,7 +950,7 @@ export class DaemonService {
 					engine: engineUsed,
 					textLength: finalText.length,
 					recordingDurationMs: duration,
-					processingMs: metrics.totalMs,
+					processingMs: processingTime,
 					mergeStrategy: metrics.mergeStrategy,
 					...(accuracy ? { mergeConfidence: accuracy.confidence } : {}),
 				},
