@@ -12,7 +12,6 @@ import { logError, logger } from "../utils/logger";
 export type StreamingStopReason =
 	| "finalize_transcript"
 	| "finalize_timeout"
-	| "close_timeout"
 	| "finalize_transcript+close_timeout"
 	| "finalize_timeout+close_timeout"
 	| "not_connected";
