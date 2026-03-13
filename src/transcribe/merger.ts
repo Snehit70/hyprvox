@@ -30,22 +30,171 @@ RULES:
 8. Remove false starts and abandoned sentences.
 9. Output ONLY the merged text, no quotes or preamble.`;
 
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
 export type MergeStrategy =
 	| "exact_match"
 	| "single_source"
+	| "normalized_match"
+	| "formatting_only"
+	| "minor_diff"
 	| "llm"
 	| "llm_fallback"
 	| "empty";
 
+export type MergeReason =
+	| "both_empty"
+	| "groq_only"
+	| "deepgram_only"
+	| "exact_text_match"
+	| "case_whitespace_match"
+	| "punctuation_stripped_match"
+	| "diff_below_threshold"
+	| "diff_above_threshold"
+	| "llm_succeeded"
+	| "llm_error_fallback";
+
 export interface MergeResult {
 	text: string;
 	strategy: MergeStrategy;
+	reason: MergeReason;
 	accuracy: {
 		sourcesMatch: boolean;
 		editDistance: number;
 		confidence: number;
 	};
 }
+
+// ---------------------------------------------------------------------------
+// Normalization helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Collapse all whitespace to single spaces and trim.
+ */
+function normalizeWhitespace(s: string): string {
+	return s.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Lowercase + collapse whitespace. Used for case/whitespace comparison.
+ */
+function normalizeCaseWhitespace(s: string): string {
+	return normalizeWhitespace(s).toLowerCase();
+}
+
+/**
+ * Remove all punctuation characters, lowercase, collapse whitespace.
+ * Used for punctuation-only difference detection.
+ */
+function normalizePunctuation(s: string): string {
+	// Remove common punctuation while preserving alphanumerics and spaces
+	return s
+		.replace(/[.,!?;:'"()[\]{}\-–—/\\@#$%^&*+=|<>~`]/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.toLowerCase();
+}
+
+// ---------------------------------------------------------------------------
+// Gating constants
+//
+// MINOR_DIFF_THRESHOLD: maximum normalised Levenshtein distance (0–1) below
+// which we consider the transcripts "close enough" to skip the LLM.
+// Derived from stats: sources agree only 0.5% of the time, so the threshold
+// must be conservative. 0.12 (≈12% character-level divergence) catches
+// things like trailing punctuation variants or a single word difference on
+// short utterances while keeping semantic disagreements for the LLM.
+// ---------------------------------------------------------------------------
+const MINOR_DIFF_THRESHOLD = 0.12;
+
+// ---------------------------------------------------------------------------
+// Deterministic merge decision
+// ---------------------------------------------------------------------------
+
+export interface GateDecision {
+	strategy: MergeStrategy;
+	reason: MergeReason;
+	/** text to return immediately; undefined means "proceed to LLM" */
+	text?: string;
+}
+
+/**
+ * Pure deterministic function that decides how to merge two non-empty
+ * transcripts without calling an LLM.
+ *
+ * Exported for unit testing.
+ *
+ * Returns `text` when a local decision is safe. Returns `text: undefined`
+ * when the LLM must be called.
+ *
+ * Strategies in priority order:
+ * 1. exact_match            – strings are identical
+ * 2. normalized_match       – identical after case+whitespace normalisation
+ * 3. formatting_only        – identical after full punctuation removal
+ * 4. minor_diff             – normalised Levenshtein distance < threshold
+ * 5. (no decision)          – LLM needed
+ */
+export function decideMerge(
+	groqText: string,
+	deepgramText: string,
+): GateDecision {
+	// 1. Exact match (already handled above, but re-checked here for completeness)
+	if (groqText === deepgramText) {
+		return {
+			strategy: "exact_match",
+			reason: "exact_text_match",
+			text: deepgramText,
+		};
+	}
+
+	// 2. Case + whitespace only differences → prefer deepgram (better casing)
+	if (
+		normalizeCaseWhitespace(groqText) === normalizeCaseWhitespace(deepgramText)
+	) {
+		return {
+			strategy: "normalized_match",
+			reason: "case_whitespace_match",
+			text: deepgramText,
+		};
+	}
+
+	// 3. Punctuation-only differences → prefer deepgram (better punctuation)
+	if (normalizePunctuation(groqText) === normalizePunctuation(deepgramText)) {
+		return {
+			strategy: "formatting_only",
+			reason: "punctuation_stripped_match",
+			text: deepgramText,
+		};
+	}
+
+	// 4. Near-identical: low normalised edit distance
+	const maxLen = Math.max(groqText.length, deepgramText.length);
+	const rawDist = levenshteinDistance(groqText, deepgramText);
+	const normDist = rawDist / (maxLen || 1);
+
+	if (normDist < MINOR_DIFF_THRESHOLD) {
+		// Prefer deepgram for minor diffs (better punctuation/casing)
+		return {
+			strategy: "minor_diff",
+			reason: "diff_below_threshold",
+			text: deepgramText,
+		};
+	}
+
+	// 5. Semantic disagreement likely – call the LLM
+	return {
+		strategy: "llm",
+		reason: "diff_above_threshold",
+		text: undefined,
+	};
+}
+
+// ---------------------------------------------------------------------------
+// TranscriptMerger
+// ---------------------------------------------------------------------------
 
 export class TranscriptMerger {
 	private _client: Groq | null = null;
@@ -73,10 +222,13 @@ export class TranscriptMerger {
 		const apiKey = config.apiKeys.groq;
 		const sourcesMatch = groqText === deepgramText;
 
+		// --- Early exits for empty / single-source ---
+
 		if (!groqText && !deepgramText) {
 			return {
 				text: "",
 				strategy: "empty",
+				reason: "both_empty",
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0 },
 			};
 		}
@@ -84,6 +236,7 @@ export class TranscriptMerger {
 			return {
 				text: deepgramText,
 				strategy: "single_source",
+				reason: "groq_only",
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0.5 },
 			};
 		}
@@ -91,21 +244,50 @@ export class TranscriptMerger {
 			return {
 				text: groqText,
 				strategy: "single_source",
+				reason: "deepgram_only",
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0.5 },
 			};
 		}
 
-		if (sourcesMatch) {
+		// --- Deterministic gating ---
+
+		const gate = decideMerge(groqText, deepgramText);
+
+		if (gate.text !== undefined) {
+			// Gate fired: skip LLM entirely
+			logger.debug(
+				{
+					strategy: gate.strategy,
+					reason: gate.reason,
+					groqLen: groqText.length,
+					deepgramLen: deepgramText.length,
+				},
+				"Merge gate: skipping LLM",
+			);
+
+			// Compute edit distance for observability even on gated paths
+			const dist = levenshteinDistance(gate.text, groqText);
+			const maxLen = Math.max(gate.text.length, groqText.length) || 1;
+			const normDist = dist / maxLen;
+
 			return {
-				text: deepgramText,
-				strategy: "exact_match",
-				accuracy: { sourcesMatch: true, editDistance: 0, confidence: 1 },
+				text: gate.text,
+				strategy: gate.strategy,
+				reason: gate.reason,
+				accuracy: {
+					sourcesMatch: gate.strategy === "exact_match",
+					editDistance: Math.round(normDist * 100),
+					confidence: Math.round(Math.max(0, 1 - normDist) * 100) / 100,
+				},
 			};
 		}
+
+		// --- LLM merge ---
 
 		const startTime = Date.now();
 		let finalText: string;
 		let mergeStrategy: MergeStrategy = "llm";
+		let mergeReason: MergeReason = "llm_succeeded";
 
 		try {
 			const completion = await withRetry(
@@ -153,6 +335,7 @@ export class TranscriptMerger {
 			logError("LLM merge failed, using fallback", error);
 			finalText = deepgramText || groqText;
 			mergeStrategy = "llm_fallback";
+			mergeReason = "llm_error_fallback";
 		}
 
 		const distToGroq = levenshteinDistance(finalText, groqText);
@@ -175,6 +358,7 @@ export class TranscriptMerger {
 		return {
 			text: finalText,
 			strategy: mergeStrategy,
+			reason: mergeReason,
 			accuracy: {
 				sourcesMatch: false,
 				editDistance,
