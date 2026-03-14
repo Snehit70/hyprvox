@@ -90,9 +90,11 @@ function normalizeCaseWhitespace(s: string): string {
  * Used for punctuation-only difference detection.
  */
 function normalizePunctuation(s: string): string {
-	// Remove common punctuation while preserving alphanumerics and spaces
+	// Remove decorative punctuation only; preserve code/math operators
+	// (<, >, =, |, &, *, +, ^, ~) which are semantically meaningful
+	// in technical speech transcriptions.
 	return s
-		.replace(/[.,!?;:'"()[\]{}\-–—/\\@#$%^&*+=|<>~`]/g, "")
+		.replace(/[.,!?;:'"()[\]{}\-–—/\\@#$%]/g, "")
 		.replace(/\s+/g, " ")
 		.trim()
 		.toLowerCase();
@@ -141,7 +143,7 @@ export function decideMerge(
 	groqText: string,
 	deepgramText: string,
 ): GateDecision {
-	// 1. Exact match (already handled above, but re-checked here for completeness)
+	// 1. Exact match
 	if (groqText === deepgramText) {
 		return {
 			strategy: "exact_match",
@@ -236,7 +238,7 @@ export class TranscriptMerger {
 			return {
 				text: deepgramText,
 				strategy: "single_source",
-				reason: "groq_only",
+				reason: "deepgram_only",
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0.5 },
 			};
 		}
@@ -244,7 +246,7 @@ export class TranscriptMerger {
 			return {
 				text: groqText,
 				strategy: "single_source",
-				reason: "deepgram_only",
+				reason: "groq_only",
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0.5 },
 			};
 		}

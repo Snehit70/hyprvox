@@ -879,7 +879,7 @@ export class DaemonService {
 			} else {
 				finalText = groqText || deepgramText;
 				metrics.mergeStrategy = "single_source";
-				metrics.mergeReason = groqText ? "deepgram_only" : "groq_only";
+				metrics.mergeReason = groqText ? "groq_only" : "deepgram_only";
 				metrics.mergeMs = -1;
 
 				const failedService = !groqText ? "Groq" : "Deepgram";
