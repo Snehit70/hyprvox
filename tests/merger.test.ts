@@ -66,6 +66,7 @@ describe("decideMerge", () => {
 			const result = decideMerge("hello world", "hello worldx");
 			expect(result.strategy).toBe("minor_diff");
 			expect(result.reason).toBe("diff_below_threshold");
+			expect(result.text).toBe("hello world");
 		});
 
 		it("returns llm when difference exceeds threshold", () => {
@@ -107,6 +108,13 @@ describe("decideMerge", () => {
 			);
 			expect(result.strategy).toBe("llm");
 			expect(result.reason).toBe("diff_above_threshold");
+		});
+
+		it("prefers Groq text for minor technical token diffs", () => {
+			const result = decideMerge("update config path", "update konfig path");
+			expect(result.strategy).toBe("minor_diff");
+			expect(result.reason).toBe("diff_below_threshold");
+			expect(result.text).toBe("update config path");
 		});
 	});
 

@@ -184,11 +184,12 @@ export function decideMerge(
 	const deepgramWordCount = deepgramText.trim().split(/\s+/).length;
 
 	if (normDist < MINOR_DIFF_THRESHOLD && groqWordCount === deepgramWordCount) {
-		// Prefer deepgram for minor diffs (better punctuation/casing)
+		// Prefer Groq for residual lexical differences. Formatting-only cases have
+		// already returned above, so this path is primarily about word accuracy.
 		return {
 			strategy: "minor_diff",
 			reason: "diff_below_threshold",
-			text: deepgramText,
+			text: groqText,
 		};
 	}
 
@@ -228,7 +229,7 @@ export class TranscriptMerger {
 		const config = loadConfig();
 		const mergeModel = config.transcription.mergeModel;
 		const apiKey = config.apiKeys.groq;
-		const sourcesMatch = groqText === deepgramText;
+		const sourcesMatch = groqText.trim() === deepgramText.trim();
 		const groqIsEmpty = groqText.trim().length === 0;
 		const deepgramIsEmpty = deepgramText.trim().length === 0;
 
