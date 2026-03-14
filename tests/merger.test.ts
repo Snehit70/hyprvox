@@ -60,8 +60,9 @@ describe("decideMerge", () => {
 	});
 
 	describe("minor diff threshold", () => {
-		it("returns minor_diff for small differences below threshold", () => {
+		it("returns minor_diff for small differences below threshold with same word count", () => {
 			// Single character difference in a longer string = well below 12%
+			// Same word count, so minor_diff gate fires
 			const result = decideMerge("hello world", "hello worldx");
 			expect(result.strategy).toBe("minor_diff");
 			expect(result.reason).toBe("diff_below_threshold");
@@ -79,12 +80,33 @@ describe("decideMerge", () => {
 		});
 
 		it("handles minor word substitution - goes to LLM for meaningful changes", () => {
-			// "cat" -> "dog" is a meaningful word change (1/7 = 14%), above threshold
+			// "cat" -> "dog" is a meaningful word change (3/22 ≈ 13.6%), above threshold
 			const result = decideMerge(
 				"the cat sat on the mat",
 				"the dog sat on the mat",
 			);
 			expect(result.strategy).toBe("llm");
+		});
+
+		it("sends to LLM when word count differs even if edit distance is low", () => {
+			// Deepgram splitting "Hyprland" into "hyper land" — word count diverges
+			// so minor_diff gate must NOT fire, even though char-level distance is <12%
+			const result = decideMerge(
+				"set up the Hyprland config",
+				"set up the hyper land config",
+			);
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
+		});
+
+		it("sends to LLM when Deepgram splits a proper noun", () => {
+			// "Convex" → "con next" — same pattern as Hyprland
+			const result = decideMerge(
+				"deploy to Convex backend",
+				"deploy to con next backend",
+			);
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
 		});
 	});
 

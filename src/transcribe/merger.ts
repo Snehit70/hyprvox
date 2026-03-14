@@ -173,11 +173,17 @@ export function decideMerge(
 	}
 
 	// 4. Near-identical: low normalised edit distance
+	//    BUT only if word counts match — a word-count divergence usually means
+	//    Deepgram split a proper noun into phonetic pieces (e.g. "Hyprland" →
+	//    "hyper land") and the LLM must arbitrate.
 	const maxLen = Math.max(groqText.length, deepgramText.length);
 	const rawDist = levenshteinDistance(groqText, deepgramText);
 	const normDist = rawDist / (maxLen || 1);
 
-	if (normDist < MINOR_DIFF_THRESHOLD) {
+	const groqWordCount = groqText.trim().split(/\s+/).length;
+	const deepgramWordCount = deepgramText.trim().split(/\s+/).length;
+
+	if (normDist < MINOR_DIFF_THRESHOLD && groqWordCount === deepgramWordCount) {
 		// Prefer deepgram for minor diffs (better punctuation/casing)
 		return {
 			strategy: "minor_diff",
@@ -223,10 +229,12 @@ export class TranscriptMerger {
 		const mergeModel = config.transcription.mergeModel;
 		const apiKey = config.apiKeys.groq;
 		const sourcesMatch = groqText === deepgramText;
+		const groqIsEmpty = groqText.trim().length === 0;
+		const deepgramIsEmpty = deepgramText.trim().length === 0;
 
 		// --- Early exits for empty / single-source ---
 
-		if (!groqText && !deepgramText) {
+		if (groqIsEmpty && deepgramIsEmpty) {
 			return {
 				text: "",
 				strategy: "empty",
@@ -234,7 +242,7 @@ export class TranscriptMerger {
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0 },
 			};
 		}
-		if (!groqText) {
+		if (groqIsEmpty) {
 			return {
 				text: deepgramText,
 				strategy: "single_source",
@@ -242,7 +250,7 @@ export class TranscriptMerger {
 				accuracy: { sourcesMatch, editDistance: 0, confidence: 0.5 },
 			};
 		}
-		if (!deepgramText) {
+		if (deepgramIsEmpty) {
 			return {
 				text: groqText,
 				strategy: "single_source",
@@ -267,9 +275,20 @@ export class TranscriptMerger {
 				"Merge gate: skipping LLM",
 			);
 
-			// Compute edit distance for observability even on gated paths
-			const dist = levenshteinDistance(gate.text, groqText);
-			const maxLen = Math.max(gate.text.length, groqText.length) || 1;
+			// Compute edit distance for observability even on gated paths.
+			// Use the same normalization level that matched so editDistance
+			// reflects semantic residual, not cosmetic noise (e.g. case flips).
+			let distText = gate.text;
+			let distGroq = groqText;
+			if (gate.strategy === "normalized_match") {
+				distText = normalizeCaseWhitespace(gate.text);
+				distGroq = normalizeCaseWhitespace(groqText);
+			} else if (gate.strategy === "formatting_only") {
+				distText = normalizePunctuation(gate.text);
+				distGroq = normalizePunctuation(groqText);
+			}
+			const dist = levenshteinDistance(distText, distGroq);
+			const maxLen = Math.max(distText.length, distGroq.length) || 1;
 			const normDist = dist / maxLen;
 
 			return {
