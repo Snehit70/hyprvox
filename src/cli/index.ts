@@ -30,10 +30,18 @@ const stateFile = join(configDir, "daemon.state");
 // as a global binary from any working directory (not just the project root).
 const projectRoot = join(import.meta.dir, "..", "..");
 
+interface PackageMetadata {
+	version: string;
+}
+
+const packageMetadata: PackageMetadata = JSON.parse(
+	readFileSync(join(projectRoot, "package.json"), "utf-8"),
+);
+
 program
 	.name("hyprvox")
 	.description("Speech-to-text daemon for Hyprland")
-	.version("1.0.0");
+	.version(packageMetadata.version);
 
 program
 	.command("start")
