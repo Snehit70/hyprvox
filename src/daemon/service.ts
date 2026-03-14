@@ -18,6 +18,7 @@ import {
 } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
 import {
+	type MergeReason,
 	type MergeResult,
 	type MergeStrategy,
 	TranscriptMerger,
@@ -59,6 +60,7 @@ interface TranscriptionMetrics {
 	streamingEnabled: boolean;
 	audioFormatStrategy: AudioFormatStrategy;
 	mergeStrategy: MergeStrategy | "skip_no_speech" | "skip_hallucination";
+	mergeReason: MergeReason | null;
 	deepgramStopReason: StreamingStopReason | null;
 
 	// Outcome
@@ -710,6 +712,7 @@ export class DaemonService {
 			streamingEnabled: !!this.config.transcription.streaming,
 			audioFormatStrategy: "opus",
 			mergeStrategy: "skip_no_speech",
+			mergeReason: null,
 			deepgramStopReason: null,
 			engine: "",
 			textLength: 0,
@@ -872,9 +875,15 @@ export class DaemonService {
 				finalText = mergeTimed.result.text;
 				accuracy = mergeTimed.result.accuracy;
 				metrics.mergeStrategy = mergeTimed.result.strategy;
+				metrics.mergeReason = mergeTimed.result.reason;
 			} else {
 				finalText = groqText || deepgramText;
 				metrics.mergeStrategy = "single_source";
+				metrics.mergeReason = groqText
+					? "groq_only"
+					: deepgramText
+						? "deepgram_only"
+						: null;
 				metrics.mergeMs = -1;
 
 				const failedService = !groqText ? "Groq" : "Deepgram";
