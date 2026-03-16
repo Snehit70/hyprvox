@@ -36,7 +36,11 @@ interface PackageMetadata {
 
 const packageMetadata: PackageMetadata = (() => {
 	try {
-		return JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
+		const parsed = JSON.parse(
+			readFileSync(join(projectRoot, "package.json"), "utf-8"),
+		);
+		if (typeof parsed.version === "string") return parsed as PackageMetadata;
+		throw new Error("version field missing or not a string");
 	} catch {
 		console.error(
 			colors.yellow("Warning: Could not read package.json for version info"),
