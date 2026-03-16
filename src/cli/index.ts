@@ -34,9 +34,16 @@ interface PackageMetadata {
 	version: string;
 }
 
-const packageMetadata: PackageMetadata = JSON.parse(
-	readFileSync(join(projectRoot, "package.json"), "utf-8"),
-);
+const packageMetadata: PackageMetadata = (() => {
+	try {
+		return JSON.parse(readFileSync(join(projectRoot, "package.json"), "utf-8"));
+	} catch {
+		console.error(
+			colors.yellow("Warning: Could not read package.json for version info"),
+		);
+		return { version: "0.0.0-unknown" };
+	}
+})();
 
 program
 	.name("hyprvox")
