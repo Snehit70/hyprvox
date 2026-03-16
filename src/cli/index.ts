@@ -30,10 +30,29 @@ const stateFile = join(configDir, "daemon.state");
 // as a global binary from any working directory (not just the project root).
 const projectRoot = join(import.meta.dir, "..", "..");
 
+interface PackageMetadata {
+	version: string;
+}
+
+const packageMetadata: PackageMetadata = (() => {
+	try {
+		const parsed = JSON.parse(
+			readFileSync(join(projectRoot, "package.json"), "utf-8"),
+		);
+		if (typeof parsed.version === "string") return parsed as PackageMetadata;
+		throw new Error("version field missing or not a string");
+	} catch {
+		console.error(
+			colors.yellow("Warning: Could not read package.json for version info"),
+		);
+		return { version: "0.0.0-unknown" };
+	}
+})();
+
 program
 	.name("hyprvox")
 	.description("Speech-to-text daemon for Hyprland")
-	.version("1.0.0");
+	.version(packageMetadata.version);
 
 program
 	.command("start")

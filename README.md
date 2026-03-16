@@ -221,6 +221,13 @@ Full guide: [Troubleshooting](docs/TROUBLESHOOTING.md)
 - [CLI Commands](docs/CLI_COMMANDS.md) — Every command and flag
 - [Wayland Support](docs/WAYLAND.md) — Platform-specific setup
 
+## Release Workflow
+
+- Use Conventional Commits on branches merged into `main`; `feat:` triggers a minor bump and `fix:` triggers a patch bump.
+- `.github/workflows/release-please.yml` opens or updates the release PR, and `.github/workflows/release.yml` publishes tagged releases after tests pass.
+- Release Please uses `release-please-config.json` and `.release-please-manifest.json` to track the root package version.
+- Set repository Actions permissions to `Read and write`, and enable `Allow GitHub Actions to create and approve pull requests` or provide a `RELEASE_PLEASE_TOKEN` secret with repo scope.
+
 ## License
 
 MIT

@@ -1,0 +1,9 @@
+{
+	"$schema": "https://raw.githubusercontent.com/googleapis/release-please/v16/schemas/config.json",
+	"packages": {
+		".": {
+			"package-name": "hyprvox",
+			"release-type": "node"
+		}
+	}
+}
