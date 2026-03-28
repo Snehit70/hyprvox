@@ -63,6 +63,12 @@ interface TranscriptionMetrics {
 	mergeReason: MergeReason | null;
 	deepgramStopReason: StreamingStopReason | null;
 
+	// Deepgram early-stop observability
+	deepgramStopWallMs: number;
+	deepgramCriticalPathMs: number;
+	deepgramOverlapMs: number;
+	deepgramStartedEarly: boolean;
+
 	// Outcome
 	engine: string;
 	textLength: number;
@@ -714,6 +720,10 @@ export class DaemonService {
 			mergeStrategy: "skip_no_speech",
 			mergeReason: null,
 			deepgramStopReason: null,
+			deepgramStopWallMs: -1,
+			deepgramCriticalPathMs: -1,
+			deepgramOverlapMs: 0,
+			deepgramStartedEarly: false,
 			engine: "",
 			textLength: 0,
 			groqTextLength: 0,
@@ -724,6 +734,45 @@ export class DaemonService {
 			const language = this.config.transcription.language;
 			const boostWords = this.config.transcription.boostWords || [];
 
+			// Declarations before conversion so the early Deepgram promise
+			// can write into these variables while ffmpeg runs.
+			let groqErr: unknown = null;
+			let deepgramErr: unknown = null;
+			let groqText = "";
+			let deepgramText = "";
+			let streamingChunkCount = -1;
+
+			const useStreaming =
+				this.config.transcription.streaming && !!this.deepgramStreaming;
+
+			// --- Start Deepgram stop early (streaming only) ---
+			// deepgramStreaming.stop() does NOT depend on the converted audio
+			// buffer — it only closes the WebSocket.  Starting it here overlaps
+			// the stop teardown with ffmpeg conversion.
+			type DgStopTimed = {
+				result: {
+					text: string;
+					chunkCount: number;
+					stopReason: StreamingStopReason;
+				};
+				durationMs: number;
+			};
+			let deepgramStopPromise: Promise<DgStopTimed> | null = null;
+
+			if (useStreaming) {
+				metrics.deepgramStartedEarly = true;
+				deepgramStopPromise = timeAsync(() =>
+					this.deepgramStreaming!.stop().catch((err) => {
+						deepgramErr = err;
+						return {
+							text: "",
+							chunkCount: -1,
+							stopReason: "not_connected" as const,
+						};
+					}),
+				);
+			}
+
 			// --- Stage: Audio conversion ---
 			const conversion = await timeAsync(() => convertAudio(audioBuffer));
 			const convertedBuffer = conversion.result;
@@ -731,13 +780,9 @@ export class DaemonService {
 			metrics.convertedAudioBytes = convertedBuffer.length;
 
 			// --- Stage: Parallel transcription ---
-			let groqErr: unknown = null;
-			let deepgramErr: unknown = null;
-			let groqText = "";
-			let deepgramText = "";
-			let streamingChunkCount = -1;
-
-			if (this.config.transcription.streaming && this.deepgramStreaming) {
+			if (useStreaming) {
+				// Deepgram stop is already in flight; wait for it in parallel
+				// with Groq transcription.
 				const [groqTimed, deepgramTimed] = await Promise.all([
 					timeAsync(() =>
 						this.groq
@@ -747,19 +792,17 @@ export class DaemonService {
 								return "";
 							}),
 					),
-					timeAsync(() =>
-						this.deepgramStreaming!.stop().catch((err) => {
-							deepgramErr = err;
-							return {
-								text: "",
-								chunkCount: -1,
-								stopReason: "not_connected" as const,
-							};
-						}),
-					),
+					deepgramStopPromise!,
 				]);
 				metrics.groqMs = groqTimed.durationMs;
-				metrics.deepgramMs = deepgramTimed.durationMs;
+				metrics.deepgramStopWallMs = deepgramTimed.durationMs;
+				metrics.deepgramCriticalPathMs = Math.max(
+					0,
+					deepgramTimed.durationMs - metrics.conversionMs,
+				);
+				metrics.deepgramOverlapMs =
+					deepgramTimed.durationMs - metrics.deepgramCriticalPathMs;
+				metrics.deepgramMs = metrics.deepgramCriticalPathMs;
 				groqText = groqTimed.result;
 				const streamingResult = deepgramTimed.result;
 				deepgramText = streamingResult.text;
