@@ -118,6 +118,45 @@ describe("decideMerge", () => {
 		});
 	});
 
+	describe("single word match", () => {
+		it("gates single-word transcripts with small difference", () => {
+			// "config" vs "konfig" — 1 char diff / 6 = 17% (above minor_diff
+			// 12% but below single_word 35%).  Without this gate it would
+			// go to LLM.
+			const result = decideMerge("config", "konfig");
+			expect(result.strategy).toBe("single_word_match");
+			expect(result.reason).toBe("single_word_close_match");
+			expect(result.text).toBe("config");
+		});
+
+		it("gates single-word with casing difference already caught by normalization", () => {
+			// "Convex" vs "convex" — already caught by case normalization
+			const result = decideMerge("Convex", "convex");
+			expect(result.strategy).toBe("normalized_match");
+		});
+
+		it("sends completely different single words to LLM", () => {
+			// "hello" vs "world" — 100% distance, way above 35% threshold
+			const result = decideMerge("hello", "world");
+			expect(result.strategy).toBe("llm");
+		});
+
+		it("gates single technical term with mild phonetic difference", () => {
+			// "deepgram" vs "deepgrm" — 1 char deletion / 8 = 12.5%
+			// Above minor_diff 12% but below single_word 35%
+			const result = decideMerge("deepgram", "deepgrm");
+			expect(result.strategy).toBe("single_word_match");
+			expect(result.text).toBe("deepgram");
+		});
+
+		it("does not gate multi-word transcripts", () => {
+			// Ensure this gate doesn't fire for multi-word inputs
+			const result = decideMerge("hello world", "hello word");
+			// 1 char diff out of ~11 = ~9%, minor_diff catches this
+			expect(result.strategy).toBe("minor_diff");
+		});
+	});
+
 	describe("edge cases", () => {
 		it("handles empty strings", () => {
 			// Empty strings should be handled before calling decideMerge
@@ -148,11 +187,12 @@ describe("MergeStrategy types", () => {
 			"normalized_match",
 			"formatting_only",
 			"minor_diff",
+			"single_word_match",
 			"llm",
 			"llm_fallback",
 			"empty",
 		];
-		expect(strategies).toHaveLength(8);
+		expect(strategies).toHaveLength(9);
 	});
 });
 
@@ -167,9 +207,10 @@ describe("MergeReason types", () => {
 			"punctuation_stripped_match",
 			"diff_below_threshold",
 			"diff_above_threshold",
+			"single_word_close_match",
 			"llm_succeeded",
 			"llm_error_fallback",
 		];
-		expect(reasons).toHaveLength(10);
+		expect(reasons).toHaveLength(11);
 	});
 });

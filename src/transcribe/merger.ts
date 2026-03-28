@@ -40,6 +40,7 @@ export type MergeStrategy =
 	| "normalized_match"
 	| "formatting_only"
 	| "minor_diff"
+	| "single_word_match"
 	| "llm"
 	| "llm_fallback"
 	| "empty";
@@ -53,6 +54,7 @@ export type MergeReason =
 	| "punctuation_stripped_match"
 	| "diff_below_threshold"
 	| "diff_above_threshold"
+	| "single_word_close_match"
 	| "llm_succeeded"
 	| "llm_error_fallback";
 
@@ -111,6 +113,12 @@ function normalizePunctuation(s: string): string {
 // short utterances while keeping semantic disagreements for the LLM.
 // ---------------------------------------------------------------------------
 const MINOR_DIFF_THRESHOLD = 0.12;
+
+// SINGLE_WORD_THRESHOLD: for single-word transcripts, Groq is the stronger
+// source (Whisper excels on isolated words).  Allow a more lenient distance
+// because there is no surrounding context to lose.  0.35 ≈ 1-2 character
+// differences on a typical word.
+const SINGLE_WORD_THRESHOLD = 0.35;
 
 // ---------------------------------------------------------------------------
 // Deterministic merge decision
@@ -193,7 +201,23 @@ export function decideMerge(
 		};
 	}
 
-	// 5. Semantic disagreement likely – call the LLM
+	// 5. Single-word transcripts: Groq is known to be more accurate on
+	//    technical terms and single words.  If both sources agree the
+	//    utterance is one word and they are close, prefer Groq without
+	//    calling the LLM.
+	if (
+		groqWordCount === 1 &&
+		deepgramWordCount === 1 &&
+		normDist < SINGLE_WORD_THRESHOLD
+	) {
+		return {
+			strategy: "single_word_match",
+			reason: "single_word_close_match",
+			text: groqText,
+		};
+	}
+
+	// 6. Semantic disagreement likely – call the LLM
 	return {
 		strategy: "llm",
 		reason: "diff_above_threshold",
