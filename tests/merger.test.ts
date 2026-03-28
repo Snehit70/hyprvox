@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	decideMerge,
-	type GateDecision,
 	type MergeReason,
 	type MergeStrategy,
 } from "../src/transcribe/merger";
@@ -121,7 +120,8 @@ describe("decideMerge", () => {
 	describe("single word match", () => {
 		it("gates single-word transcripts with small difference", () => {
 			// "config" vs "konfig" — 1 char diff / 6 = 17% (above minor_diff
-			// 12% but below single_word 35%).  Without this gate it would
+			// 12% but below the conservative single-word threshold). Without
+			// this gate it would
 			// go to LLM.
 			const result = decideMerge("config", "konfig");
 			expect(result.strategy).toBe("single_word_match");
@@ -136,17 +136,36 @@ describe("decideMerge", () => {
 		});
 
 		it("sends completely different single words to LLM", () => {
-			// "hello" vs "world" — 100% distance, way above 35% threshold
+			// "hello" vs "world" — 100% distance, well beyond the conservative gate
 			const result = decideMerge("hello", "world");
 			expect(result.strategy).toBe("llm");
 		});
 
 		it("gates single technical term with mild phonetic difference", () => {
-			// "deepgram" vs "deepgrm" — 1 char deletion / 8 = 12.5%
-			// Above minor_diff 12% but below single_word 35%
+			// "deepgram" vs "deepgrm" — 1 char deletion / 8 = 12.5%.
+			// It shares a long prefix, so the conservative single-word
+			// gate still allows it.
 			const result = decideMerge("deepgram", "deepgrm");
 			expect(result.strategy).toBe("single_word_match");
 			expect(result.text).toBe("deepgram");
+		});
+
+		it("does not gate short everyday words with one-character difference", () => {
+			const result = decideMerge("git", "get");
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
+		});
+
+		it("does not gate longer words without a strong shared edge", () => {
+			const result = decideMerge("branch", "brunch");
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
+		});
+
+		it("does not gate shorter six-minus words even when close", () => {
+			const result = decideMerge("cache", "catch");
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
 		});
 
 		it("does not gate multi-word transcripts", () => {
