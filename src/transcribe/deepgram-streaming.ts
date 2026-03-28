@@ -43,6 +43,12 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	private audioBuffer: Buffer[] = [];
 	private static readonly MAX_BUFFER_CHUNKS = 100;
 
+	// Finalize wait: how long to wait for a final transcript after sending
+	// the finalize signal to Deepgram.  Lower values reduce stop latency
+	// but risk truncating tail words on slow-finalize sessions.
+	// Guarded as a constant for easy A/B toggling during validation.
+	private static readonly FINALIZE_TIMEOUT_MS = 100;
+
 	constructor() {
 		super();
 		const config = loadConfig();
@@ -284,7 +290,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 						logger.debug("Finalize wait timeout, proceeding");
 						this.off("transcript", transcriptHandler);
 						resolve("finalize_timeout");
-					}, 300);
+					}, DeepgramStreamingTranscriber.FINALIZE_TIMEOUT_MS);
 
 					const transcriptHandler = () => {
 						clearTimeout(timeout);
