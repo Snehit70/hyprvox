@@ -68,6 +68,8 @@ interface TranscriptionMetrics {
 	deepgramCriticalPathMs: number;
 	deepgramOverlapMs: number;
 	deepgramStartedEarly: boolean;
+	deepgramFinalizeWaitMs: number;
+	deepgramCloseWaitMs: number;
 
 	// Outcome
 	engine: string;
@@ -724,6 +726,8 @@ export class DaemonService {
 			deepgramCriticalPathMs: -1,
 			deepgramOverlapMs: 0,
 			deepgramStartedEarly: false,
+			deepgramFinalizeWaitMs: -1,
+			deepgramCloseWaitMs: -1,
 			engine: "",
 			textLength: 0,
 			groqTextLength: 0,
@@ -742,8 +746,9 @@ export class DaemonService {
 			let deepgramText = "";
 			let streamingChunkCount = -1;
 
+			const deepgramStreaming = this.deepgramStreaming;
 			const useStreaming =
-				this.config.transcription.streaming && !!this.deepgramStreaming;
+				this.config.transcription.streaming && deepgramStreaming !== undefined;
 
 			// --- Start Deepgram stop early (streaming only) ---
 			// deepgramStreaming.stop() does NOT depend on the converted audio
@@ -754,6 +759,8 @@ export class DaemonService {
 					text: string;
 					chunkCount: number;
 					stopReason: StreamingStopReason;
+					finalizeWaitMs: number;
+					closeWaitMs: number;
 				};
 				durationMs: number;
 			};
@@ -762,12 +769,14 @@ export class DaemonService {
 			if (useStreaming) {
 				metrics.deepgramStartedEarly = true;
 				deepgramStopPromise = timeAsync(() =>
-					this.deepgramStreaming!.stop().catch((err) => {
+					deepgramStreaming.stop().catch((err) => {
 						deepgramErr = err;
 						return {
 							text: "",
 							chunkCount: -1,
 							stopReason: "not_connected" as const,
+							finalizeWaitMs: -1,
+							closeWaitMs: -1,
 						};
 					}),
 				);
@@ -781,6 +790,11 @@ export class DaemonService {
 
 			// --- Stage: Parallel transcription ---
 			if (useStreaming) {
+				if (!deepgramStopPromise) {
+					throw new Error(
+						"Deepgram stop promise missing in streaming transcription path",
+					);
+				}
 				// Deepgram stop is already in flight; wait for it in parallel
 				// with Groq transcription.
 				const [groqTimed, deepgramTimed] = await Promise.all([
@@ -792,22 +806,44 @@ export class DaemonService {
 								return "";
 							}),
 					),
-					deepgramStopPromise!,
+					deepgramStopPromise,
 				]);
 				metrics.groqMs = groqTimed.durationMs;
 				metrics.deepgramStopWallMs = deepgramTimed.durationMs;
-				metrics.deepgramCriticalPathMs = Math.max(
+				const streamingResult = deepgramTimed.result;
+				metrics.deepgramFinalizeWaitMs = streamingResult.finalizeWaitMs;
+				metrics.deepgramCloseWaitMs = streamingResult.closeWaitMs;
+				const deepgramPostConversionTailMs = Math.max(
 					0,
 					deepgramTimed.durationMs - metrics.conversionMs,
 				);
-				metrics.deepgramOverlapMs =
-					deepgramTimed.durationMs - metrics.deepgramCriticalPathMs;
+				// Critical-path contribution is only the Deepgram time that still
+				// remains after both ffmpeg and Groq have had a chance to hide it.
+				metrics.deepgramCriticalPathMs = Math.max(
+					0,
+					deepgramTimed.durationMs -
+						(metrics.conversionMs + groqTimed.durationMs),
+				);
+				metrics.deepgramOverlapMs = Math.max(
+					0,
+					deepgramTimed.durationMs - metrics.deepgramCriticalPathMs,
+				);
 				metrics.deepgramMs = metrics.deepgramCriticalPathMs;
 				groqText = groqTimed.result;
-				const streamingResult = deepgramTimed.result;
 				deepgramText = streamingResult.text;
 				streamingChunkCount = streamingResult.chunkCount;
 				metrics.deepgramStopReason = streamingResult.stopReason;
+				logger.debug(
+					{
+						deepgramStopWallMs: metrics.deepgramStopWallMs,
+						deepgramPostConversionTailMs,
+						deepgramCriticalPathMs: metrics.deepgramCriticalPathMs,
+						deepgramOverlapMs: metrics.deepgramOverlapMs,
+						groqMs: metrics.groqMs,
+						conversionMs: metrics.conversionMs,
+					},
+					"Deepgram early-stop overlap metrics",
+				);
 			} else {
 				const [groqTimed, deepgramTimed] = await Promise.all([
 					timeAsync(() =>
@@ -827,6 +863,7 @@ export class DaemonService {
 				]);
 				metrics.groqMs = groqTimed.durationMs;
 				metrics.deepgramMs = deepgramTimed.durationMs;
+				metrics.deepgramCriticalPathMs = deepgramTimed.durationMs;
 				groqText = groqTimed.result;
 				deepgramText = deepgramTimed.result;
 			}

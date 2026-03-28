@@ -20,6 +20,8 @@ export interface StreamingResult {
 	text: string;
 	chunkCount: number;
 	stopReason: StreamingStopReason;
+	finalizeWaitMs: number;
+	closeWaitMs: number;
 }
 
 export interface StreamingFailureReason {
@@ -37,7 +39,6 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	private isConnected: boolean = false;
 	private isConnecting: boolean = false;
 	private isStopping: boolean = false;
-	private wasConnected: boolean = false;
 	private connectionStartTime: number = 0;
 	private chunksSent: number = 0;
 	private audioBuffer: Buffer[] = [];
@@ -46,8 +47,9 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	// Finalize wait: how long to wait for a final transcript after sending
 	// the finalize signal to Deepgram.  Lower values reduce stop latency
 	// but risk truncating tail words on slow-finalize sessions.
-	// Guarded as a constant for easy A/B toggling during validation.
-	private static readonly FINALIZE_TIMEOUT_MS = 100;
+	// Keep the conservative default until real finalize timing data tells us
+	// a lower threshold is safe for transcript completeness.
+	private static readonly FINALIZE_TIMEOUT_MS = 300;
 
 	constructor() {
 		super();
@@ -61,7 +63,6 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			this.isConnected = false;
 			this.isConnecting = true;
 			this.isStopping = false;
-			this.wasConnected = false;
 			this.connectionStartTime = 0;
 			this.chunksSent = 0;
 			this.audioBuffer = [];
@@ -84,7 +85,6 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				if (!this.connection) return; // Connection was closed before open
 				this.isConnected = true;
 				this.isConnecting = false;
-				this.wasConnected = true;
 				this.connectionStartTime = Date.now();
 				logger.info("Deepgram streaming connection opened");
 				this.emit("open");
@@ -277,6 +277,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	public async stop(): Promise<StreamingResult> {
 		this.isStopping = true;
 		let stopReason: StreamingStopReason = "not_connected";
+		let finalizeWaitMs = 0;
+		let closeWaitMs = 0;
 
 		if (this.connection) {
 			try {
@@ -285,6 +287,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				logger.debug("Sent finalize signal to Deepgram");
 
 				// Wait for final transcript after finalize
+				const finalizeStart = Date.now();
 				stopReason = await new Promise<StreamingStopReason>((resolve) => {
 					const timeout = setTimeout(() => {
 						logger.debug("Finalize wait timeout, proceeding");
@@ -298,10 +301,12 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 					};
 					this.once("transcript", transcriptHandler);
 				});
+				finalizeWaitMs = Date.now() - finalizeStart;
 
 				// Now close the connection
 				this.connection.requestClose();
 
+				const closeStart = Date.now();
 				const closeClean = await new Promise<boolean>((resolve) => {
 					const timeout = setTimeout(() => {
 						logger.warn(
@@ -315,6 +320,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 						resolve(true);
 					});
 				});
+				closeWaitMs = Date.now() - closeStart;
 
 				// Preserve close_timeout info using compound value to distinguish:
 				// - "finalize_transcript+close_timeout": finalize worked, transport stalled
@@ -344,6 +350,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				chunkCount: this.transcriptChunks.length,
 				textLength: finalText.length,
 				stopReason,
+				finalizeWaitMs,
+				closeWaitMs,
 			},
 			"Deepgram streaming transcription complete",
 		);
@@ -352,6 +360,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			text: finalText,
 			chunkCount: this.transcriptChunks.length,
 			stopReason,
+			finalizeWaitMs,
+			closeWaitMs,
 		};
 	}
 }
