@@ -20,6 +20,7 @@
 	},
 	"transcription": {
 		"language": "en",
+		"deepgramBoosting": false,
 		"boostWords": [
 			"hyprvox",
 			"Sisyphus",

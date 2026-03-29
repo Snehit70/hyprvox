@@ -8,6 +8,7 @@ import {
 } from "@deepgram/sdk";
 import { loadConfig } from "../config/loader";
 import { logError, logger } from "../utils/logger";
+import { sanitizeDeepgramKeyterms } from "./deepgram-boost";
 
 export type StreamingStopReason =
 	| "finalize_transcript"
@@ -57,7 +58,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 		this.client = createClient(config.apiKeys.deepgram);
 	}
 
-	public async start(language: string = "en") {
+	public async start(language: string = "en", boostWords: string[] = []) {
 		try {
 			this.transcriptChunks = [];
 			this.isConnected = false;
@@ -67,6 +68,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			this.chunksSent = 0;
 			this.audioBuffer = [];
 
+			const keyterms = sanitizeDeepgramKeyterms(boostWords);
 			const options: LiveSchema = {
 				model: "nova-3",
 				interim_results: true,
@@ -77,6 +79,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				sample_rate: 16000,
 				channels: 1,
 				language: language,
+				...(keyterms.length > 0 ? { keyterm: keyterms } : {}),
 			};
 
 			this.connection = this.client.listen.live(options);
@@ -86,7 +89,14 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				this.isConnected = true;
 				this.isConnecting = false;
 				this.connectionStartTime = Date.now();
-				logger.info("Deepgram streaming connection opened");
+				logger.info(
+					{
+						language,
+						boostWordsCount: boostWords.length,
+						deepgramKeytermsCount: keyterms.length,
+					},
+					"Deepgram streaming connection opened",
+				);
 				this.emit("open");
 				this.flushBuffer();
 			});

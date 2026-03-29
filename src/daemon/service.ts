@@ -565,6 +565,9 @@ export class DaemonService {
 
 					const startPromise = this.deepgramStreaming.start(
 						this.config.transcription.language,
+						this.config.transcription.deepgramBoosting
+							? this.config.transcription.boostWords || []
+							: [],
 					);
 
 					// We catch synchronous errors from start(), but async connection errors go to 'error' event
@@ -737,6 +740,9 @@ export class DaemonService {
 		try {
 			const language = this.config.transcription.language;
 			const boostWords = this.config.transcription.boostWords || [];
+			const deepgramBoostWords = this.config.transcription.deepgramBoosting
+				? boostWords
+				: [];
 
 			// Declarations before conversion so the early Deepgram promise
 			// can write into these variables while ffmpeg runs.
@@ -855,10 +861,12 @@ export class DaemonService {
 							}),
 					),
 					timeAsync(() =>
-						this.deepgram.transcribe(convertedBuffer, language).catch((err) => {
-							deepgramErr = err;
-							return "";
-						}),
+						this.deepgram
+							.transcribe(convertedBuffer, language, deepgramBoostWords)
+							.catch((err) => {
+								deepgramErr = err;
+								return "";
+							}),
 					),
 				]);
 				metrics.groqMs = groqTimed.durationMs;

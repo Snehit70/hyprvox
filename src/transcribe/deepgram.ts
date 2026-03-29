@@ -3,6 +3,25 @@ import { loadConfig } from "../config/loader";
 import { TranscriptionError } from "../utils/errors";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
+import { sanitizeDeepgramKeyterms } from "./deepgram-boost";
+
+function getErrorStatus(error: unknown): number | undefined {
+	if (typeof error !== "object" || error === null || !("status" in error)) {
+		return undefined;
+	}
+
+	const { status } = error as { status?: unknown };
+	return typeof status === "number" ? status : undefined;
+}
+
+function getErrorMessage(error: unknown): string | undefined {
+	if (typeof error !== "object" || error === null || !("message" in error)) {
+		return undefined;
+	}
+
+	const { message } = error as { message?: unknown };
+	return typeof message === "string" ? message : undefined;
+}
 
 export class DeepgramTranscriber {
 	private _client: DeepgramClient | null = null;
@@ -32,16 +51,19 @@ export class DeepgramTranscriber {
 					maxRetries: 2,
 					backoffs: [100, 200],
 					timeout: 10000,
-					shouldRetry: (error: any) => {
+					shouldRetry: (error: unknown) => {
 						const status =
-							error?.status ||
-							(error?.message?.includes("401") ? 401 : undefined);
+							getErrorStatus(error) ||
+							(getErrorMessage(error)?.includes("401") ? 401 : undefined);
 						return status !== 401;
 					},
 				},
 			);
-		} catch (error: any) {
-			if (error?.status === 401 || error?.message?.includes("401")) {
+		} catch (error: unknown) {
+			if (
+				getErrorStatus(error) === 401 ||
+				getErrorMessage(error)?.includes("401")
+			) {
 				throw new TranscriptionError(
 					"Deepgram",
 					"DEEPGRAM_INVALID_KEY",
@@ -58,7 +80,10 @@ export class DeepgramTranscriber {
 	public async transcribe(
 		audioBuffer: Buffer,
 		language: string = "en",
+		boostWords: string[] = [],
 	): Promise<string> {
+		const keyterms = sanitizeDeepgramKeyterms(boostWords);
+
 		try {
 			return await withRetry(
 				async (_signal) => {
@@ -68,6 +93,7 @@ export class DeepgramTranscriber {
 							smart_format: true,
 							punctuate: true,
 							language: language,
+							...(keyterms.length > 0 ? { keyterm: keyterms } : {}),
 						});
 
 					if (error) throw error;
@@ -83,6 +109,8 @@ export class DeepgramTranscriber {
 								result?.results?.channels?.[0]?.alternatives?.[0]?.confidence,
 							model: "nova-3",
 							language,
+							boostWordsCount: boostWords.length,
+							deepgramKeytermsCount: keyterms.length,
 						},
 						"Deepgram Nova-3 transcription success",
 					);
@@ -94,24 +122,27 @@ export class DeepgramTranscriber {
 					maxRetries: 2,
 					backoffs: [100, 200],
 					timeout: 30000,
-					shouldRetry: (error: any) => {
+					shouldRetry: (error: unknown) => {
+						const message = getErrorMessage(error);
 						const status =
-							error?.status ||
-							(error?.message?.includes("401") ? 401 : undefined) ||
-							(error?.message?.includes("429") ? 429 : undefined);
+							getErrorStatus(error) ||
+							(message?.includes("401") ? 401 : undefined) ||
+							(message?.includes("429") ? 429 : undefined);
 						return status !== 401 && status !== 429;
 					},
 				},
 			);
-		} catch (error: any) {
-			if (error?.status === 401 || error?.message?.includes("401")) {
+		} catch (error: unknown) {
+			const message = getErrorMessage(error);
+			const status = getErrorStatus(error);
+			if (status === 401 || message?.includes("401")) {
 				throw new TranscriptionError(
 					"Deepgram",
 					"DEEPGRAM_INVALID_KEY",
 					"Deepgram: Invalid API Key",
 				);
 			}
-			if (error?.status === 429 || error?.message?.includes("429")) {
+			if (status === 429 || message?.includes("429")) {
 				throw new TranscriptionError(
 					"Deepgram",
 					"RATE_LIMIT_EXCEEDED",
@@ -120,6 +151,8 @@ export class DeepgramTranscriber {
 			}
 			logError("Deepgram Nova-3 failed, trying fallback", error, {
 				language,
+				boostWordsCount: boostWords.length,
+				deepgramKeytermsCount: keyterms.length,
 			});
 
 			try {
@@ -143,6 +176,8 @@ export class DeepgramTranscriber {
 								textLength: text.length,
 								model: "nova-2",
 								language,
+								boostWordsCount: 0,
+								deepgramKeytermsCount: 0,
 							},
 							"Deepgram Nova-2 fallback success",
 						);
@@ -154,37 +189,34 @@ export class DeepgramTranscriber {
 						maxRetries: 2,
 						backoffs: [100, 200],
 						timeout: 30000,
-						shouldRetry: (error: any) => {
+						shouldRetry: (error: unknown) => {
+							const message = getErrorMessage(error);
 							const status =
-								error?.status ||
-								(error?.message?.includes("401") ? 401 : undefined) ||
-								(error?.message?.includes("429") ? 429 : undefined);
+								getErrorStatus(error) ||
+								(message?.includes("401") ? 401 : undefined) ||
+								(message?.includes("429") ? 429 : undefined);
 							return status !== 401;
 						},
 					},
 				);
-			} catch (retryError: any) {
-				if (
-					retryError?.status === 401 ||
-					retryError?.message?.includes("401")
-				) {
+			} catch (retryError: unknown) {
+				const message = getErrorMessage(retryError);
+				const status = getErrorStatus(retryError);
+				if (status === 401 || message?.includes("401")) {
 					throw new TranscriptionError(
 						"Deepgram",
 						"DEEPGRAM_INVALID_KEY",
 						"Deepgram: Invalid API Key",
 					);
 				}
-				if (
-					retryError?.status === 429 ||
-					retryError?.message?.includes("429")
-				) {
+				if (status === 429 || message?.includes("429")) {
 					throw new TranscriptionError(
 						"Deepgram",
 						"RATE_LIMIT_EXCEEDED",
 						"Deepgram: Rate limit exceeded",
 					);
 				}
-				if (retryError?.message?.includes("timed out")) {
+				if (message?.includes("timed out")) {
 					throw new TranscriptionError(
 						"Deepgram",
 						"TIMEOUT",
@@ -193,6 +225,8 @@ export class DeepgramTranscriber {
 				}
 				logError("Deepgram fallback failed", retryError, {
 					language,
+					boostWordsCount: 0,
+					deepgramKeytermsCount: 0,
 				});
 				throw retryError;
 			}
