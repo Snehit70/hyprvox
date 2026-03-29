@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	decideMerge,
+	hasStructuredFormattingIntent,
 	type MergeReason,
 	type MergeStrategy,
 } from "../src/transcribe/merger";
@@ -12,6 +13,16 @@ describe("decideMerge", () => {
 			expect(result.strategy).toBe("exact_match");
 			expect(result.reason).toBe("exact_text_match");
 			expect(result.text).toBe("hello world");
+		});
+
+		it("routes enumerated dictation to the LLM even when sources match exactly", () => {
+			const result = decideMerge(
+				"the first issue is config the second issue is auth",
+				"the first issue is config the second issue is auth",
+			);
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("structured_formatting_cues");
+			expect(result.text).toBeUndefined();
 		});
 	});
 
@@ -195,6 +206,35 @@ describe("decideMerge", () => {
 			// Should prefer deepgram (better casing and punctuation)
 			expect(result.text).toBe("hello world.");
 		});
+
+		it("routes literal symbol dictation to the LLM", () => {
+			const result = decideMerge("1 open curly bracket", "1 open curly brace");
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("structured_formatting_cues");
+			expect(result.text).toBeUndefined();
+		});
+	});
+});
+
+describe("hasStructuredFormattingIntent", () => {
+	it("detects enumerated list cues", () => {
+		expect(
+			hasStructuredFormattingIntent(
+				"the first issue is config and the second issue is auth",
+			),
+		).toBe(true);
+	});
+
+	it("detects spoken symbol cues", () => {
+		expect(
+			hasStructuredFormattingIntent("open curly bracket foo colon bar"),
+		).toBe(true);
+	});
+
+	it("does not flag ordinary prose", () => {
+		expect(
+			hasStructuredFormattingIntent("we should update the config path later"),
+		).toBe(false);
 	});
 });
 
@@ -221,6 +261,7 @@ describe("MergeReason types", () => {
 			"both_empty",
 			"groq_only",
 			"deepgram_only",
+			"structured_formatting_cues",
 			"exact_text_match",
 			"case_whitespace_match",
 			"punctuation_stripped_match",
@@ -230,6 +271,6 @@ describe("MergeReason types", () => {
 			"llm_succeeded",
 			"llm_error_fallback",
 		];
-		expect(reasons).toHaveLength(11);
+		expect(reasons).toHaveLength(12);
 	});
 });

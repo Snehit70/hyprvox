@@ -6,7 +6,7 @@ import { withRetry } from "../utils/retry";
 
 const SYSTEM_PROMPT = `You are an expert technical transcription editor.
 
-CONTEXT: This is audio from a software developer discussing programming, Linux systems, development tools, and AI systems. Expect technical jargon, project names, and command-line references.
+CONTEXT: This is audio from a software developer discussing programming, Linux systems, development tools, and AI systems. Expect technical jargon, project names, command-line references, and occasional dictated structured text.
 
 Source A (Groq Whisper): Accurate words, technical terms, proper nouns.
 Source B (Deepgram Nova): Good formatting, punctuation, casing.
@@ -18,17 +18,21 @@ EXAMPLES:
 - If Source A says "waybar" and Source B says "Vbar", choose "Waybar"
 - If Source A says "systemd" and Source B says "system d", choose "systemd"
 - If Source A says "antigravity" and Source B says "anti gravity", choose "antigravity"
+- If the speaker says "the first issue is config, the second issue is auth", format it as a numbered list
+- If the speaker dictates "open curly bracket foo colon bar close curly bracket", output "{ foo: bar }" or the closest faithful structured form
+- If the speaker dictates a fragment like "1 open curly bracket", preserve the fragment literally rather than rewriting it as prose
 
 RULES:
 1. Trust Source A for: proper nouns, project names, technical terms, acronyms.
 2. Trust Source B for: punctuation, capitalization, number formatting.
 3. Preserve technical accuracy over grammatical perfection.
-4. Remove: hallucinations, self-corrections, filler words ("um", "uh", "like").
-5. Remove spelling clarifications (e.g., "with an I", "spelled S-M-I-T-H").
-6. Remove pronunciation meta-commentary (e.g., "that's pronounced...").
-7. Remove thinking-out-loud phrases and rhetorical self-questions.
-8. Remove false starts and abandoned sentences.
-9. Output ONLY the merged text, no quotes or preamble.`;
+4. When the speaker clearly dictates structure, prefer structured output over plain prose.
+5. Convert spoken symbol cues to literal characters when the intent is clearly structural: braces, brackets, parentheses, colon, comma, quotes, slash, backslash, equals, arrow, newline.
+6. When the speaker enumerates items with cues like "first", "second", "third", or "step one", format them as a numbered list when that improves readability.
+7. Preserve code, shell commands, file paths, flags, JSON-like fragments, and short dictated snippets exactly. Do not paraphrase or "complete" them.
+8. Detect questions and end them with "?" when the utterance is clearly interrogative.
+9. Remove hallucinations, filler words, false starts, self-corrections, and pronunciation or spelling meta-commentary.
+10. Output ONLY the merged text, no quotes or preamble.`;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -49,6 +53,7 @@ export type MergeReason =
 	| "both_empty"
 	| "groq_only"
 	| "deepgram_only"
+	| "structured_formatting_cues"
 	| "exact_text_match"
 	| "case_whitespace_match"
 	| "punctuation_stripped_match"
@@ -120,6 +125,52 @@ const MINOR_DIFF_THRESHOLD = 0.12;
 const SINGLE_WORD_THRESHOLD = 0.2;
 const SINGLE_WORD_MIN_LENGTH = 6;
 const SINGLE_WORD_SHARED_EDGE_CHARS = 4;
+const ORDINAL_ENUMERATION_PATTERN =
+	/\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/g;
+const NUMBERED_ENUMERATION_PATTERN =
+	/\b(step|item|point|issue|reason|problem|question|task|change|fix)\s+(one|two|three|four|five|first|second|third|fourth|fifth)\b/g;
+const LITERAL_SYMBOL_PATTERNS = [
+	/\bopen\s+(?:curly\s+)?(?:brace|bracket)\b/i,
+	/\bclose\s+(?:curly\s+)?(?:brace|bracket)\b/i,
+	/\bopen\s+(?:square\s+)?bracket\b/i,
+	/\bclose\s+(?:square\s+)?bracket\b/i,
+	/\bopen\s+(?:paren|parenthesis)\b/i,
+	/\bclose\s+(?:paren|parenthesis)\b/i,
+	/\b(?:double|single)\s+quote\b/i,
+	/\bopen\s+quote\b/i,
+	/\bclose\s+quote\b/i,
+	/\bcolon\b/i,
+	/\bcomma\b/i,
+	/\bsemicolon\b/i,
+	/\bbackslash\b/i,
+	/\bslash\b/i,
+	/\bunderscore\b/i,
+	/\bequals\b/i,
+	/\barrow\b/i,
+	/\bnew\s*line\b/i,
+];
+
+function countMatches(pattern: RegExp, text: string): number {
+	return text.match(pattern)?.length ?? 0;
+}
+
+function hasEnumerationCue(text: string): boolean {
+	const normalized = normalizeCaseWhitespace(text);
+	return (
+		countMatches(ORDINAL_ENUMERATION_PATTERN, normalized) >= 2 ||
+		countMatches(NUMBERED_ENUMERATION_PATTERN, normalized) >= 2
+	);
+}
+
+function hasLiteralSymbolCue(text: string): boolean {
+	return LITERAL_SYMBOL_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+export function hasStructuredFormattingIntent(...texts: string[]): boolean {
+	return texts.some(
+		(text) => hasEnumerationCue(text) || hasLiteralSymbolCue(text),
+	);
+}
 
 function commonPrefixLength(a: string, b: string): number {
 	const limit = Math.min(a.length, b.length);
@@ -192,6 +243,14 @@ export function decideMerge(
 	groqText: string,
 	deepgramText: string,
 ): GateDecision {
+	if (hasStructuredFormattingIntent(groqText, deepgramText)) {
+		return {
+			strategy: "llm",
+			reason: "structured_formatting_cues",
+			text: undefined,
+		};
+	}
+
 	// 1. Exact match
 	if (groqText === deepgramText) {
 		return {
@@ -376,6 +435,14 @@ export class TranscriptMerger {
 		let mergeReason: MergeReason = "llm_succeeded";
 
 		try {
+			const formattingHints: string[] = [];
+			if (hasEnumerationCue(groqText) || hasEnumerationCue(deepgramText)) {
+				formattingHints.push("enumeration/list structure");
+			}
+			if (hasLiteralSymbolCue(groqText) || hasLiteralSymbolCue(deepgramText)) {
+				formattingHints.push("literal symbols or code-like structure");
+			}
+
 			const completion = await withRetry(
 				async (signal) => {
 					return await this.getClient(apiKey).chat.completions.create(
@@ -385,11 +452,12 @@ export class TranscriptMerger {
 								{ role: "system", content: SYSTEM_PROMPT },
 								{
 									role: "user",
-									content: `Source A (Groq Whisper):\n${groqText}\n\nSource B (Deepgram Nova):\n${deepgramText}`,
+									content: `${formattingHints.length > 0 ? `Formatting cues detected: ${formattingHints.join(", ")}.\n\n` : ""}Source A (Groq Whisper):\n${groqText}\n\nSource B (Deepgram Nova):\n${deepgramText}`,
 								},
 							],
 							temperature: 0.1,
-							max_tokens: 4096,
+							max_tokens: 8192,
+							seed: 42,
 						},
 						{ signal, timeout: 30000, maxRetries: 0 },
 					);
