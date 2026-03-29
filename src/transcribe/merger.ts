@@ -40,6 +40,7 @@ export type MergeStrategy =
 	| "normalized_match"
 	| "formatting_only"
 	| "minor_diff"
+	| "single_word_match"
 	| "llm"
 	| "llm_fallback"
 	| "empty";
@@ -53,6 +54,7 @@ export type MergeReason =
 	| "punctuation_stripped_match"
 	| "diff_below_threshold"
 	| "diff_above_threshold"
+	| "single_word_close_match"
 	| "llm_succeeded"
 	| "llm_error_fallback";
 
@@ -111,6 +113,53 @@ function normalizePunctuation(s: string): string {
 // short utterances while keeping semantic disagreements for the LLM.
 // ---------------------------------------------------------------------------
 const MINOR_DIFF_THRESHOLD = 0.12;
+
+// SINGLE_WORD_THRESHOLD: allow a conservative fast-path for longer single-word
+// technical terms when the sources are extremely close. This is intentionally
+// tighter than the previous experiment to avoid mistakes on everyday words.
+const SINGLE_WORD_THRESHOLD = 0.2;
+const SINGLE_WORD_MIN_LENGTH = 6;
+const SINGLE_WORD_SHARED_EDGE_CHARS = 4;
+
+function commonPrefixLength(a: string, b: string): number {
+	const limit = Math.min(a.length, b.length);
+	let i = 0;
+	while (i < limit && a[i] === b[i]) {
+		i++;
+	}
+	return i;
+}
+
+function commonSuffixLength(a: string, b: string): number {
+	const limit = Math.min(a.length, b.length);
+	let i = 0;
+	while (i < limit && a[a.length - 1 - i] === b[b.length - 1 - i]) {
+		i++;
+	}
+	return i;
+}
+
+function isConservativeSingleWordMatch(
+	groqText: string,
+	deepgramText: string,
+	normDist: number,
+): boolean {
+	const groqNormalized = normalizeCaseWhitespace(groqText);
+	const deepgramNormalized = normalizeCaseWhitespace(deepgramText);
+	const minLen = Math.min(groqNormalized.length, deepgramNormalized.length);
+
+	if (minLen < SINGLE_WORD_MIN_LENGTH || normDist >= SINGLE_WORD_THRESHOLD) {
+		return false;
+	}
+
+	const sharedPrefix = commonPrefixLength(groqNormalized, deepgramNormalized);
+	const sharedSuffix = commonSuffixLength(groqNormalized, deepgramNormalized);
+
+	return (
+		sharedPrefix >= SINGLE_WORD_SHARED_EDGE_CHARS ||
+		sharedSuffix >= SINGLE_WORD_SHARED_EDGE_CHARS
+	);
+}
 
 // ---------------------------------------------------------------------------
 // Deterministic merge decision
@@ -193,7 +242,22 @@ export function decideMerge(
 		};
 	}
 
-	// 5. Semantic disagreement likely – call the LLM
+	// 5. Single-word transcripts: only fast-path longer, very-close matches
+	//    with a strong shared prefix or suffix. This keeps obvious technical
+	//    near-matches fast while avoiding mistakes on common short words.
+	if (
+		groqWordCount === 1 &&
+		deepgramWordCount === 1 &&
+		isConservativeSingleWordMatch(groqText, deepgramText, normDist)
+	) {
+		return {
+			strategy: "single_word_match",
+			reason: "single_word_close_match",
+			text: groqText,
+		};
+	}
+
+	// 6. Semantic disagreement likely – call the LLM
 	return {
 		strategy: "llm",
 		reason: "diff_above_threshold",

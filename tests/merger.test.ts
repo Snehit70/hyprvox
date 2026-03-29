@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	decideMerge,
-	type GateDecision,
 	type MergeReason,
 	type MergeStrategy,
 } from "../src/transcribe/merger";
@@ -118,6 +117,65 @@ describe("decideMerge", () => {
 		});
 	});
 
+	describe("single word match", () => {
+		it("gates single-word transcripts with small difference", () => {
+			// "config" vs "konfig" — 1 char diff / 6 = 17% (above minor_diff
+			// 12% but below the conservative single-word threshold). Without
+			// this gate it would
+			// go to LLM.
+			const result = decideMerge("config", "konfig");
+			expect(result.strategy).toBe("single_word_match");
+			expect(result.reason).toBe("single_word_close_match");
+			expect(result.text).toBe("config");
+		});
+
+		it("gates single-word with casing difference already caught by normalization", () => {
+			// "Convex" vs "convex" — already caught by case normalization
+			const result = decideMerge("Convex", "convex");
+			expect(result.strategy).toBe("normalized_match");
+		});
+
+		it("sends completely different single words to LLM", () => {
+			// "hello" vs "world" — 100% distance, well beyond the conservative gate
+			const result = decideMerge("hello", "world");
+			expect(result.strategy).toBe("llm");
+		});
+
+		it("gates single technical term with mild phonetic difference", () => {
+			// "deepgram" vs "deepgrm" — 1 char deletion / 8 = 12.5%.
+			// It shares a long prefix, so the conservative single-word
+			// gate still allows it.
+			const result = decideMerge("deepgram", "deepgrm");
+			expect(result.strategy).toBe("single_word_match");
+			expect(result.text).toBe("deepgram");
+		});
+
+		it("does not gate short everyday words with one-character difference", () => {
+			const result = decideMerge("git", "get");
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
+		});
+
+		it("does not gate longer words without a strong shared edge", () => {
+			const result = decideMerge("branch", "brunch");
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
+		});
+
+		it("does not gate shorter six-minus words even when close", () => {
+			const result = decideMerge("cache", "catch");
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
+		});
+
+		it("does not gate multi-word transcripts", () => {
+			// Ensure this gate doesn't fire for multi-word inputs
+			const result = decideMerge("hello world", "hello word");
+			// 1 char diff out of ~11 = ~9%, minor_diff catches this
+			expect(result.strategy).toBe("minor_diff");
+		});
+	});
+
 	describe("edge cases", () => {
 		it("handles empty strings", () => {
 			// Empty strings should be handled before calling decideMerge
@@ -148,11 +206,12 @@ describe("MergeStrategy types", () => {
 			"normalized_match",
 			"formatting_only",
 			"minor_diff",
+			"single_word_match",
 			"llm",
 			"llm_fallback",
 			"empty",
 		];
-		expect(strategies).toHaveLength(8);
+		expect(strategies).toHaveLength(9);
 	});
 });
 
@@ -167,9 +226,10 @@ describe("MergeReason types", () => {
 			"punctuation_stripped_match",
 			"diff_below_threshold",
 			"diff_above_threshold",
+			"single_word_close_match",
 			"llm_succeeded",
 			"llm_error_fallback",
 		];
-		expect(reasons).toHaveLength(10);
+		expect(reasons).toHaveLength(11);
 	});
 });
