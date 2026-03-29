@@ -104,6 +104,7 @@ export class GroqClient {
 							model: "whisper-large-v3",
 							language: language,
 							prompt: prompt,
+							temperature: 0,
 							response_format: "json",
 						},
 						{

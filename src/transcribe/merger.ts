@@ -4,35 +4,63 @@ import { loadConfig } from "../config/loader";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
 
-const SYSTEM_PROMPT = `You are an expert technical transcription editor.
+const SYSTEM_PROMPT = `You are merging two speech-to-text transcripts into one final transcript.
 
-CONTEXT: This is audio from a software developer discussing programming, Linux systems, development tools, and AI systems. Expect technical jargon, project names, command-line references, and occasional dictated structured text.
+Priority order:
+1. Preserve spoken content and spoken order.
+2. Resolve recognition mistakes between the two transcripts.
+3. Improve readability only when it does not change meaning, order, or coverage.
+4. Do not add explanatory or bridging text that was not spoken.
 
-Source A (Groq Whisper): Accurate words, technical terms, proper nouns.
-Source B (Deepgram Nova): Good formatting, punctuation, casing.
+Rules:
+- This is transcription, not summarization.
+- Output only the final merged transcript text.
+- Do not explain, justify, evaluate, or comment on the transcript.
+- Do not mention the transcripts or describe your reasoning.
+- Do not shorten, condense, paraphrase, or rewrite the content into a cleaner summary.
+- Preserve spoken order. Do not reorder clauses, examples, corrections, or list items unless one transcript clearly dropped a fragment and the other clearly preserves the same sequence.
+- Apply corrections in place.
+- Prefer preserving coverage when one transcript contains more concrete spoken content and it does not look hallucinated.
+- Preserve code, shell commands, file paths, flags, JSON-like fragments, and short dictated snippets literally.
+- Use normal prose by default.
+- Format as a headed numbered list only when the speaker clearly dictates repeated issue-style items as the intended final structure.
+- Only repeated issue, reason, problem, task, or step patterns may collapse into a heading plus numbered items.
+- If the speaker is discussing examples, referring to ordinal positions in prose, or critiquing prior output, keep it as prose unless they explicitly dictate a list.
+- Do not compress prose into short labels. For example, "the first example is good" must not become "1. Good".
+- If a headed or numbered list has started because of repeated issue-style patterns, stop the list when the noun pattern changes.
+- Convert spoken symbol cues to literal characters only when the intent is clearly structural, such as braces, brackets, parentheses, colon, comma, quotes, slash, backslash, equals, arrow, or newline.
+- Detect clearly interrogative utterances and end them with "?".
+- Remove only obvious hallucinations or abandoned fragments such as "uh no wait" when the corrected wording is present. When unsure, preserve the spoken content.
+- Prefer canonical technical or project names when clearly supported by one transcript or by a spelled-out correction.
 
-EXAMPLES:
-- If Source A says "github" and Source B says "get hub", choose "GitHub"
-- If Source A says "convex" and Source B says "con next", choose "Convex"
-- If Source A says "hyprland" and Source B says "high per land", choose "Hyprland"
-- If Source A says "waybar" and Source B says "Vbar", choose "Waybar"
-- If Source A says "systemd" and Source B says "system d", choose "systemd"
-- If Source A says "antigravity" and Source B says "anti gravity", choose "antigravity"
-- If the speaker says "the first issue is config, the second issue is auth", format it as a numbered list
-- If the speaker dictates "open curly bracket foo colon bar close curly bracket", output "{ foo: bar }" or the closest faithful structured form
-- If the speaker dictates a fragment like "1 open curly bracket", preserve the fragment literally rather than rewriting it as prose
+Examples:
 
-RULES:
-1. Trust Source A for: proper nouns, project names, technical terms, acronyms.
-2. Trust Source B for: punctuation, capitalization, number formatting.
-3. Preserve technical accuracy over grammatical perfection.
-4. When the speaker clearly dictates structure, prefer structured output over plain prose.
-5. Convert spoken symbol cues to literal characters when the intent is clearly structural: braces, brackets, parentheses, colon, comma, quotes, slash, backslash, equals, arrow, newline.
-6. When the speaker enumerates items with cues like "first", "second", "third", or "step one", format them as a numbered list when that improves readability.
-7. Preserve code, shell commands, file paths, flags, JSON-like fragments, and short dictated snippets exactly. Do not paraphrase or "complete" them.
-8. Detect questions and end them with "?" when the utterance is clearly interrogative.
-9. Remove hallucinations, filler words, false starts, self-corrections, and pronunciation or spelling meta-commentary.
-10. Output ONLY the merged text, no quotes or preamble.`;
+Spoken:
+"the first issue is onboarding the second issue is collaboration the third issue is export quality"
+
+Transcript:
+"The issues are:
+1. Onboarding
+2. Collaboration
+3. Export quality"
+
+Spoken:
+"the first example is good and the second example is confusing"
+
+Transcript:
+"The first example is good and the second example is confusing."
+
+Spoken:
+"the editor should support hyperland config waybar module convex schema whisperflow comparison and aceon integration"
+
+Transcript:
+"The editor should support Hyprland config, Waybar module, Convex schema, WhisperFlow comparison, and Aceon integration."
+
+Spoken:
+"open curly bracket foo colon bar close curly bracket"
+
+Transcript:
+"{ foo: bar }"`;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -455,9 +483,11 @@ export class TranscriptMerger {
 									content: `${formattingHints.length > 0 ? `Formatting cues detected: ${formattingHints.join(", ")}.\n\n` : ""}Source A (Groq Whisper):\n${groqText}\n\nSource B (Deepgram Nova):\n${deepgramText}`,
 								},
 							],
-							temperature: 0.1,
+							temperature: 0,
 							max_tokens: 8192,
 							seed: 42,
+							reasoning_effort: "none",
+							include_reasoning: false,
 						},
 						{ signal, timeout: 30000, maxRetries: 0 },
 					);
