@@ -50,7 +50,7 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	// but risk truncating tail words on slow-finalize sessions.
 	// Keep the conservative default until real finalize timing data tells us
 	// a lower threshold is safe for transcript completeness.
-	private static readonly FINALIZE_TIMEOUT_MS = 300;
+	private static readonly FINALIZE_TIMEOUT_MS = 600;
 
 	constructor() {
 		super();
