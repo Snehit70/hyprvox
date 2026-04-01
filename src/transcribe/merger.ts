@@ -167,14 +167,10 @@ const LITERAL_SYMBOL_PATTERNS = [
 	/\b(?:double|single)\s+quote\b/i,
 	/\bopen\s+quote\b/i,
 	/\bclose\s+quote\b/i,
-	/\bcolon\b/i,
-	/\bcomma\b/i,
-	/\bsemicolon\b/i,
-	/\bbackslash\b/i,
-	/\bslash\b/i,
-	/\bunderscore\b/i,
-	/\bequals\b/i,
-	/\barrow\b/i,
+	/\b(?:add|insert|put)\s+(?:a\s+)?(?:comma|semicolon|colon|slash|backslash|underscore|equals|arrow)\b/i,
+	/\bcolon\s+(?:here|there|after|before)\b/i,
+	/\bcomma\s+(?:here|there|after|before)\b/i,
+	/\bsemicolon\s+(?:here|there|after|before)\b/i,
 	/\bnew\s*line\b/i,
 ];
 

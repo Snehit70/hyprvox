@@ -70,6 +70,10 @@ export function useDaemonState(): UseDaemonStateResult {
 
 			setDaemonState(state);
 
+			if (state.status !== "recording") {
+				setAudioLevel(null);
+			}
+
 			if (wasProcessing && state.status === "idle" && state.lastTranscription) {
 				setShowSuccess(true);
 				setTimeout(() => setShowSuccess(false), 1500);

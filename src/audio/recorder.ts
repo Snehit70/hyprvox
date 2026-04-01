@@ -311,17 +311,27 @@ export class AudioRecorder extends EventEmitter {
 	}
 
 	private getPcmChunk(chunk: Buffer): Buffer {
-		if (
-			!this.seenWaveHeader &&
-			chunk.length >= 44 &&
-			chunk.subarray(0, 4).toString("ascii") === "RIFF" &&
-			chunk.subarray(8, 12).toString("ascii") === "WAVE"
-		) {
+		if (!this.seenWaveHeader) {
 			this.seenWaveHeader = true;
-			return chunk.subarray(44);
+			if (
+				chunk.length >= 12 &&
+				chunk.subarray(0, 4).toString("ascii") === "RIFF" &&
+				chunk.subarray(8, 12).toString("ascii") === "WAVE"
+			) {
+				let offset = 12;
+				while (offset + 8 <= chunk.length) {
+					const id = chunk.subarray(offset, offset + 4).toString("ascii");
+					const size = chunk.readUInt32LE(offset + 4);
+					offset += 8;
+					if (id === "data") {
+						return chunk.subarray(offset);
+					}
+					offset += size;
+				}
+				return Buffer.alloc(0);
+			}
 		}
 
-		this.seenWaveHeader = true;
 		return chunk;
 	}
 
