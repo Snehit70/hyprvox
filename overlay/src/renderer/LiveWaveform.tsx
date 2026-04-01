@@ -71,12 +71,10 @@ export const LiveWaveform = ({
 		width: 0,
 		height: 0,
 	});
-	// Stable refs for callbacks to prevent re-initialization on every render
 	const onErrorRef = useRef(onError);
 	const onStreamReadyRef = useRef(onStreamReady);
 	const onStreamEndRef = useRef(onStreamEnd);
 
-	// Keep refs in sync with props
 	useEffect(() => {
 		onErrorRef.current = onError;
 	}, [onError]);

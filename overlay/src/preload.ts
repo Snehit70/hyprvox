@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { ConnectionStatus, DaemonState } from "./ipc-client";
+import type {
+	AudioLevelMessage,
+	ConnectionStatus,
+	DaemonState,
+} from "./ipc-client";
 
 const electronAPI = {
 	onToggleListening: (callback: () => void): (() => void) => {
@@ -27,6 +31,16 @@ const electronAPI = {
 		): void => callback(status);
 		ipcRenderer.on("connection-status", handler);
 		return () => ipcRenderer.removeListener("connection-status", handler);
+	},
+	onAudioLevel: (
+		callback: (audioLevel: AudioLevelMessage) => void,
+	): (() => void) => {
+		const handler = (
+			_event: Electron.IpcRendererEvent,
+			audioLevel: AudioLevelMessage,
+		): void => callback(audioLevel);
+		ipcRenderer.on("audio-level", handler);
+		return () => ipcRenderer.removeListener("audio-level", handler);
 	},
 	getDaemonState: (): Promise<DaemonState> => {
 		return ipcRenderer.invoke("get-daemon-state");

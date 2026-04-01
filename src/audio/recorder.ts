@@ -6,6 +6,12 @@ import { AppError, type ErrorCode, hasErrorCode } from "../utils/errors";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
 
+export interface AudioLevelPayload {
+	level: number;
+	peak: number;
+	timestamp: number;
+}
+
 export class AudioRecorder extends EventEmitter {
 	private recording: Recording | null = null;
 	private chunks: Buffer[] = [];
@@ -18,6 +24,8 @@ export class AudioRecorder extends EventEmitter {
 	private readonly WARNING_4M = 240000;
 	private readonly WARNING_430M = 270000;
 	private isStopping: boolean = false;
+	private seenWaveHeader: boolean = false;
+	private pendingWaveHeader: Buffer = Buffer.alloc(0);
 
 	constructor() {
 		super();
@@ -49,6 +57,8 @@ export class AudioRecorder extends EventEmitter {
 
 		this.loadSettings();
 		this.chunks = [];
+		this.seenWaveHeader = false;
+		this.pendingWaveHeader = Buffer.alloc(0);
 		this.startTime = Date.now();
 
 		const config = loadConfig();
@@ -93,6 +103,14 @@ export class AudioRecorder extends EventEmitter {
 								? chunk
 								: Buffer.from(chunk, "binary");
 							this.chunks.push(bufferChunk);
+							const pcmChunk = this.getPcmChunk(bufferChunk);
+							const level = this.getAudioLevel(pcmChunk);
+							if (level) {
+								this.emit("level", {
+									...level,
+									timestamp: Date.now(),
+								} satisfies AudioLevelPayload);
+							}
 							this.emit("data", bufferChunk);
 						});
 
@@ -292,5 +310,80 @@ export class AudioRecorder extends EventEmitter {
 		const threshold = 100; // Low threshold for silence
 
 		return rms < threshold;
+	}
+
+	private getPcmChunk(chunk: Buffer): Buffer {
+		if (!this.seenWaveHeader) {
+			this.pendingWaveHeader = Buffer.concat([this.pendingWaveHeader, chunk]);
+			const header = this.pendingWaveHeader;
+
+			if (
+				header.length >= 12 &&
+				header.subarray(0, 4).toString("ascii") === "RIFF" &&
+				header.subarray(8, 12).toString("ascii") === "WAVE"
+			) {
+				let offset = 12;
+				while (offset + 8 <= header.length) {
+					const id = header.subarray(offset, offset + 4).toString("ascii");
+					const size = header.readUInt32LE(offset + 4);
+					offset += 8;
+					if (id === "data") {
+						this.seenWaveHeader = true;
+						const pcm = header.subarray(offset);
+						this.pendingWaveHeader = Buffer.alloc(0);
+						return pcm;
+					}
+					if (offset + size > header.length) return Buffer.alloc(0);
+					offset += size + (size % 2);
+				}
+				return Buffer.alloc(0);
+			}
+
+			// Not a RIFF/WAVE header — treat everything as PCM
+			this.seenWaveHeader = true;
+			this.pendingWaveHeader = Buffer.alloc(0);
+			return header;
+		}
+
+		return chunk;
+	}
+
+	private getAudioLevel(
+		chunk: Buffer,
+	): Omit<AudioLevelPayload, "timestamp"> | null {
+		if (chunk.length < 2) {
+			return null;
+		}
+
+		const evenLength = Math.floor(chunk.length / 2) * 2;
+		if (evenLength === 0) {
+			return null;
+		}
+
+		const aligned = Buffer.from(chunk.subarray(0, evenLength));
+		const samples = new Int16Array(
+			aligned.buffer,
+			aligned.byteOffset,
+			evenLength / 2,
+		);
+
+		let sumSquares = 0;
+		let peak = 0;
+
+		for (let i = 0; i < samples.length; i++) {
+			const sample = samples[i] as number;
+			const normalized = Math.abs(sample) / 32768;
+			sumSquares += normalized * normalized;
+			if (normalized > peak) {
+				peak = normalized;
+			}
+		}
+
+		const rms = Math.sqrt(sumSquares / samples.length);
+
+		return {
+			level: Math.min(1, rms),
+			peak: Math.min(1, peak),
+		};
 	}
 }

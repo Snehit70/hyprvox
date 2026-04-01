@@ -171,7 +171,8 @@ const defaultPaths = {
 const defaultTranscription = {
 	language: "en",
 	streaming: false,
-	mergeModel: "llama-3.3-70b-versatile",
+	deepgramBoosting: false,
+	mergeModel: "qwen/qwen3-32b",
 } as const;
 
 export const ApiKeysSchema = z.object({
@@ -234,6 +235,7 @@ export const TranscriptionSchema = z.object({
 	}),
 	language: z.enum(["en"]).default(defaultTranscription.language as "en"),
 	streaming: z.boolean().default(defaultTranscription.streaming),
+	deepgramBoosting: z.boolean().default(defaultTranscription.deepgramBoosting),
 	mergeModel: z.string().default(defaultTranscription.mergeModel),
 });
 

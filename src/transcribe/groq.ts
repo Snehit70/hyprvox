@@ -1,8 +1,42 @@
 import Groq from "groq-sdk";
+import { toFile } from "groq-sdk/uploads";
 import { loadConfig } from "../config/loader";
 import { TranscriptionError } from "../utils/errors";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
+
+const BASE_TRANSCRIPTION_PROMPT = [
+	"Technical English dictation about software development, Linux, and AI.",
+	"Preserve commands, filenames, acronyms, project names, and code terms exactly.",
+	"When the speaker clearly dictates structure, prefer literal symbols for braces, brackets, parentheses, colons, commas, quotes, and slashes.",
+	"Preserve numbered list cues like first, second, and third when spoken.",
+].join(" ");
+
+function buildTranscriptionPrompt(boostWords: string[]): string {
+	if (boostWords.length === 0) {
+		return BASE_TRANSCRIPTION_PROMPT;
+	}
+
+	return `${BASE_TRANSCRIPTION_PROMPT} Prefer these terms: ${boostWords.join(", ")}.`;
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+	if (typeof error !== "object" || error === null || !("status" in error)) {
+		return undefined;
+	}
+
+	const { status } = error as { status?: unknown };
+	return typeof status === "number" ? status : undefined;
+}
+
+function getErrorMessage(error: unknown): string | undefined {
+	if (typeof error !== "object" || error === null || !("message" in error)) {
+		return undefined;
+	}
+
+	const { message } = error as { message?: unknown };
+	return typeof message === "string" ? message : undefined;
+}
 
 export class GroqClient {
 	private _client: Groq | null = null;
@@ -33,13 +67,14 @@ export class GroqClient {
 					maxRetries: 2,
 					backoffs: [100, 200],
 					timeout: 10000,
-					shouldRetry: (error: any) => {
-						return error?.status !== 401;
+					shouldRetry: (error: unknown) => {
+						const status = getErrorStatus(error);
+						return status === undefined || status >= 500 || status === 429;
 					},
 				},
 			);
-		} catch (error: any) {
-			if (error?.status === 401) {
+		} catch (error: unknown) {
+			if (getErrorStatus(error) === 401) {
 				throw new TranscriptionError(
 					"Groq",
 					"GROQ_INVALID_KEY",
@@ -61,20 +96,18 @@ export class GroqClient {
 		try {
 			return await withRetry(
 				async (signal) => {
-					const file = new File([audioBuffer], "audio.opus", {
+					const file = await toFile(audioBuffer, "audio.opus", {
 						type: "audio/opus",
 					});
-					const prompt =
-						boostWords.length > 0
-							? `Keywords: ${boostWords.join(", ")}`
-							: undefined;
+					const prompt = buildTranscriptionPrompt(boostWords);
 
 					const completion = await this.client.audio.transcriptions.create(
 						{
-							file: file as any,
+							file,
 							model: "whisper-large-v3",
 							language: language,
 							prompt: prompt,
+							temperature: 0,
 							response_format: "json",
 						},
 						{
@@ -90,6 +123,7 @@ export class GroqClient {
 							model: "whisper-large-v3",
 							language,
 							boostWordsCount: boostWords.length,
+							promptLength: prompt.length,
 							textLength: text.length,
 						},
 						"Groq transcription success",
@@ -101,28 +135,28 @@ export class GroqClient {
 					maxRetries: 2,
 					backoffs: [100, 200],
 					timeout: 30000,
-					shouldRetry: (error: any) => {
-						const status = error?.status;
-						return status !== 401;
+					shouldRetry: (error: unknown) => {
+						const status = getErrorStatus(error);
+						return status === undefined || status >= 500 || status === 429;
 					},
 				},
 			);
-		} catch (error: any) {
-			if (error?.status === 401) {
+		} catch (error: unknown) {
+			if (getErrorStatus(error) === 401) {
 				throw new TranscriptionError(
 					"Groq",
 					"GROQ_INVALID_KEY",
 					"Groq: Invalid API Key",
 				);
 			}
-			if (error?.status === 429) {
+			if (getErrorStatus(error) === 429) {
 				throw new TranscriptionError(
 					"Groq",
 					"RATE_LIMIT_EXCEEDED",
 					"Groq: Rate limit exceeded",
 				);
 			}
-			if (error?.message?.includes("timed out")) {
+			if (getErrorMessage(error)?.includes("timed out")) {
 				throw new TranscriptionError(
 					"Groq",
 					"TIMEOUT",

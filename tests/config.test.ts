@@ -145,6 +145,26 @@ describe("Config Loader", () => {
 			"TypeScript",
 			"Artificial Intelligence",
 		]);
+		expect(config.transcription.deepgramBoosting).toBe(false);
+	});
+
+	test("should allow opting into Deepgram boosting", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+			transcription: {
+				boostWords: ["Hyprland", "Waybar"],
+				deepgramBoosting: true,
+				language: "en",
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		const config = loadConfig(CONFIG_FILE);
+		expect(config.transcription.deepgramBoosting).toBe(true);
 	});
 
 	test("should reject boost words exceeding limit", () => {
