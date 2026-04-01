@@ -1,11 +1,8 @@
 name: release-please
 
 on:
-  workflow_dispatch: # Manual trigger only — auto-trigger disabled because
-    # GITHUB_TOKEN cannot create PRs (repo setting:
-    # "Allow GitHub Actions to create and approve pull requests" is off).
-    # To re-enable: go to Settings → Actions → General → enable that checkbox,
-    # or add a PAT as the RELEASE_PLEASE_TOKEN secret.
+  push:
+    branches: [main]
 
 permissions:
   contents: write
