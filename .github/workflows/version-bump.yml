@@ -1,0 +1,67 @@
+name: Auto Version Bump
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      !startsWith(github.event.head_commit.message, 'chore: bump version')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.10
+
+      - name: Setup Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Determine Version Bump Type
+        id: bump-type
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          if echo "$COMMIT_MSG" | grep -qE "(^feat!:|^fix!:|BREAKING CHANGE:)"; then
+            echo "type=major" >> $GITHUB_OUTPUT
+            echo "Detected: MAJOR (breaking change)"
+          elif echo "$COMMIT_MSG" | grep -qE "^feat(\(.+\))?:"; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+            echo "Detected: MINOR (new feature)"
+          elif echo "$COMMIT_MSG" | grep -qE "^fix(\(.+\))?:"; then
+            echo "type=patch" >> $GITHUB_OUTPUT
+            echo "Detected: PATCH (bug fix)"
+          else
+            echo "type=none" >> $GITHUB_OUTPUT
+            echo "Detected: No version bump needed"
+          fi
+
+      - name: Bump Version
+        if: steps.bump-type.outputs.type != 'none'
+        run: |
+          BUMP_TYPE="${{ steps.bump-type.outputs.type }}"
+
+          CURRENT_VERSION=$(bun -p "require('./package.json').version")
+          bun x npm version $BUMP_TYPE --no-git-tag-version
+          NEW_VERSION=$(bun -p "require('./package.json').version")
+
+          echo "Bumped: $CURRENT_VERSION → $NEW_VERSION"
+
+          # Update release-please manifest too
+          echo "{\".\":\"$NEW_VERSION\"}" > .release-please-manifest.json
+
+          git add package.json .release-please-manifest.json
+          git commit -m "chore: bump version to $NEW_VERSION"
+          git push
