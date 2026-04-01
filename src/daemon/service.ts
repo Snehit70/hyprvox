@@ -4,7 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { convertAudio } from "../audio/converter";
-import { AudioRecorder } from "../audio/recorder";
+import { type AudioLevelPayload, AudioRecorder } from "../audio/recorder";
 import type { Config } from "../config/schema";
 import { configService } from "../config/service";
 import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
@@ -98,6 +98,7 @@ export interface DaemonState {
 }
 
 export class DaemonService {
+	private static readonly OVERLAY_AUDIO_LEVEL_INTERVAL_MS = 33;
 	private status: DaemonStatus = "idle";
 	private config: Config;
 	private recorder: AudioRecorder;
@@ -125,6 +126,8 @@ export class DaemonService {
 	private pendingStateWrite = false;
 	private overlayProcess?: ChildProcess;
 	private overlayPidFile: string;
+	private lastOverlayAudioLevelAt = 0;
+	private smoothedOverlayLevel = 0;
 
 	constructor() {
 		this.config = configService.get();
@@ -220,6 +223,33 @@ export class DaemonService {
 			timestamp: Date.now(),
 		});
 		this.scheduleStateWrite();
+	}
+
+	private handleRecorderLevel(payload: AudioLevelPayload): void {
+		if (!this.config.overlay?.enabled || this.status !== "recording") {
+			return;
+		}
+
+		if (this.ipcServer.clientCount === 0) {
+			return;
+		}
+
+		if (
+			payload.timestamp - this.lastOverlayAudioLevelAt <
+			DaemonService.OVERLAY_AUDIO_LEVEL_INTERVAL_MS
+		) {
+			return;
+		}
+
+		this.lastOverlayAudioLevelAt = payload.timestamp;
+		this.smoothedOverlayLevel =
+			this.smoothedOverlayLevel * 0.7 + payload.level * 0.3;
+
+		this.ipcServer.broadcastAudioLevel(
+			Math.min(1, this.smoothedOverlayLevel),
+			payload.peak,
+			payload.timestamp,
+		);
 	}
 
 	private getOverlayPath(): string {
@@ -393,11 +423,15 @@ export class DaemonService {
 		this.hotkeyListener.on("trigger", () => this.handleTrigger());
 
 		this.recorder.on("start", () => {
+			this.lastOverlayAudioLevelAt = 0;
+			this.smoothedOverlayLevel = 0;
 			this.setStatus("recording");
 			this.notifyStateChange("Recording Started", "Listening...");
 		});
 
 		this.recorder.on("stop", (audioBuffer: Buffer, duration: number) => {
+			this.lastOverlayAudioLevelAt = 0;
+			this.smoothedOverlayLevel = 0;
 			this.setStatus("processing");
 			this.notifyStateChange(
 				"Recording Stopped",
@@ -410,7 +444,13 @@ export class DaemonService {
 			notify("Warning", msg, "warning");
 		});
 
+		this.recorder.on("level", (payload: AudioLevelPayload) => {
+			this.handleRecorderLevel(payload);
+		});
+
 		this.recorder.on("error", (err: Error) => {
+			this.lastOverlayAudioLevelAt = 0;
+			this.smoothedOverlayLevel = 0;
 			this.errorCount++;
 			this.setStatus("error", err.message);
 

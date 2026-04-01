@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
+	AudioLevelMessage,
 	ConnectionStatus,
 	DaemonState,
 	DaemonStatus,
@@ -19,6 +20,7 @@ interface UseDaemonStateResult {
 	daemonState: DaemonState;
 	connectionStatus: ConnectionStatus;
 	errorMessage?: string;
+	audioLevel: AudioLevelMessage | null;
 }
 
 function mapDaemonToOverlay(
@@ -53,6 +55,7 @@ export function useDaemonState(): UseDaemonStateResult {
 	const [connectionStatus, setConnectionStatus] =
 		useState<ConnectionStatus>("disconnected");
 	const [showSuccess, setShowSuccess] = useState(false);
+	const [audioLevel, setAudioLevel] = useState<AudioLevelMessage | null>(null);
 	const prevStatusRef = useRef<DaemonStatus>("idle");
 
 	useEffect(() => {
@@ -79,12 +82,19 @@ export function useDaemonState(): UseDaemonStateResult {
 			},
 		);
 
+		const unsubAudioLevel = api.onAudioLevel(
+			(nextAudioLevel: AudioLevelMessage) => {
+				setAudioLevel(nextAudioLevel);
+			},
+		);
+
 		void api.getDaemonState().then(setDaemonState);
 		void api.getConnectionStatus().then(setConnectionStatus);
 
 		return () => {
 			unsubState();
 			unsubConnection();
+			unsubAudioLevel();
 		};
 	}, []);
 
@@ -100,5 +110,6 @@ export function useDaemonState(): UseDaemonStateResult {
 		daemonState,
 		connectionStatus,
 		errorMessage: daemonState.error,
+		audioLevel,
 	};
 }

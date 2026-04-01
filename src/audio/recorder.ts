@@ -6,6 +6,12 @@ import { AppError, type ErrorCode, hasErrorCode } from "../utils/errors";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
 
+export interface AudioLevelPayload {
+	level: number;
+	peak: number;
+	timestamp: number;
+}
+
 export class AudioRecorder extends EventEmitter {
 	private recording: Recording | null = null;
 	private chunks: Buffer[] = [];
@@ -18,6 +24,7 @@ export class AudioRecorder extends EventEmitter {
 	private readonly WARNING_4M = 240000;
 	private readonly WARNING_430M = 270000;
 	private isStopping: boolean = false;
+	private seenWaveHeader: boolean = false;
 
 	constructor() {
 		super();
@@ -49,6 +56,7 @@ export class AudioRecorder extends EventEmitter {
 
 		this.loadSettings();
 		this.chunks = [];
+		this.seenWaveHeader = false;
 		this.startTime = Date.now();
 
 		const config = loadConfig();
@@ -93,6 +101,14 @@ export class AudioRecorder extends EventEmitter {
 								? chunk
 								: Buffer.from(chunk, "binary");
 							this.chunks.push(bufferChunk);
+							const pcmChunk = this.getPcmChunk(bufferChunk);
+							const level = this.getAudioLevel(pcmChunk);
+							if (level) {
+								this.emit("level", {
+									...level,
+									timestamp: Date.now(),
+								} satisfies AudioLevelPayload);
+							}
 							this.emit("data", bufferChunk);
 						});
 
@@ -292,5 +308,58 @@ export class AudioRecorder extends EventEmitter {
 		const threshold = 100; // Low threshold for silence
 
 		return rms < threshold;
+	}
+
+	private getPcmChunk(chunk: Buffer): Buffer {
+		if (
+			!this.seenWaveHeader &&
+			chunk.length >= 44 &&
+			chunk.subarray(0, 4).toString("ascii") === "RIFF" &&
+			chunk.subarray(8, 12).toString("ascii") === "WAVE"
+		) {
+			this.seenWaveHeader = true;
+			return chunk.subarray(44);
+		}
+
+		this.seenWaveHeader = true;
+		return chunk;
+	}
+
+	private getAudioLevel(
+		chunk: Buffer,
+	): Omit<AudioLevelPayload, "timestamp"> | null {
+		if (chunk.length < 2) {
+			return null;
+		}
+
+		const evenLength = Math.floor(chunk.length / 2) * 2;
+		if (evenLength === 0) {
+			return null;
+		}
+
+		const samples = new Int16Array(
+			chunk.buffer,
+			chunk.byteOffset,
+			evenLength / 2,
+		);
+
+		let sumSquares = 0;
+		let peak = 0;
+
+		for (let i = 0; i < samples.length; i++) {
+			const sample = samples[i] as number;
+			const normalized = Math.abs(sample) / 32768;
+			sumSquares += normalized * normalized;
+			if (normalized > peak) {
+				peak = normalized;
+			}
+		}
+
+		const rms = Math.sqrt(sumSquares / samples.length);
+
+		return {
+			level: Math.min(1, rms),
+			peak: Math.min(1, peak),
+		};
 	}
 }

@@ -1,4 +1,8 @@
-import type { ConnectionStatus, DaemonState } from "./ipc-client";
+import type {
+	AudioLevelMessage,
+	ConnectionStatus,
+	DaemonState,
+} from "./ipc-client";
 
 export interface ElectronAPI {
 	onToggleListening: (callback: () => void) => () => void;
@@ -6,6 +10,9 @@ export interface ElectronAPI {
 	onDaemonState: (callback: (state: DaemonState) => void) => () => void;
 	onConnectionStatus: (
 		callback: (status: ConnectionStatus) => void,
+	) => () => void;
+	onAudioLevel: (
+		callback: (audioLevel: AudioLevelMessage) => void,
 	) => () => void;
 	getDaemonState: () => Promise<DaemonState>;
 	getConnectionStatus: () => Promise<ConnectionStatus>;

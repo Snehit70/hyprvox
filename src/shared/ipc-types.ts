@@ -15,11 +15,20 @@ export interface DaemonState {
 	timestamp?: number;
 }
 
-export interface IPCMessage {
-	type: "hello" | "state";
-	version?: number;
-	status?: DaemonStatus;
-	lastTranscription?: string;
-	error?: string;
-	timestamp?: number;
+export interface AudioLevelMessage {
+	type: "audio_level";
+	level: number;
+	peak?: number;
+	timestamp: number;
 }
+
+export type IPCMessage =
+	| {
+			type: "hello" | "state";
+			version?: number;
+			status?: DaemonStatus;
+			lastTranscription?: string;
+			error?: string;
+			timestamp?: number;
+	  }
+	| AudioLevelMessage;

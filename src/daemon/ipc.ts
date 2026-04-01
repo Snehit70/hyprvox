@@ -28,11 +28,13 @@ export interface IPCServerEvents {
 	error: (error: Error) => void;
 }
 
+type StateIPCMessage = Extract<IPCMessage, { type: "hello" | "state" }>;
+
 export class IPCServer extends EventEmitter {
 	private server: Server | null = null;
 	private clients: Map<number, Socket> = new Map();
 	private clientIdCounter = 0;
-	private currentState: IPCMessage | null = null;
+	private currentState: StateIPCMessage | null = null;
 
 	get socketPath(): string {
 		return SOCKET_PATH;
@@ -140,7 +142,7 @@ export class IPCServer extends EventEmitter {
 		logger.debug({ clientId }, "IPC client connected");
 		this.emit("clientConnected", clientId);
 
-		const helloMessage: IPCMessage = {
+		const helloMessage: StateIPCMessage = {
 			type: "hello",
 			version: IPC_PROTOCOL_VERSION,
 			status: this.currentState?.status || "idle",
@@ -192,7 +194,7 @@ export class IPCServer extends EventEmitter {
 		}
 	}
 
-	broadcast(message: IPCMessage): void {
+	broadcast(message: StateIPCMessage): void {
 		this.currentState = message;
 
 		const stateMessage: IPCMessage = {
@@ -234,6 +236,27 @@ export class IPCServer extends EventEmitter {
 			{ status, timestamp, clients: this.clients.size },
 			"State broadcast",
 		);
+	}
+
+	broadcastAudioLevel(
+		level: number,
+		peak?: number,
+		timestamp = Date.now(),
+	): void {
+		if (this.clients.size === 0) {
+			return;
+		}
+
+		const message: IPCMessage = {
+			type: "audio_level",
+			level,
+			peak,
+			timestamp,
+		};
+
+		for (const clientId of this.clients.keys()) {
+			this.sendToClient(clientId, message);
+		}
 	}
 }
 

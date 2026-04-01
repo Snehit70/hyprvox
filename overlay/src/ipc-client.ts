@@ -3,6 +3,7 @@ import { createConnection, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type {
+	AudioLevelMessage,
 	ConnectionStatus,
 	DaemonState,
 	IPCMessage,
@@ -14,6 +15,7 @@ const MAX_RECONNECT_DELAY = 5000;
 const MAX_RECONNECT_ATTEMPTS = 10;
 
 export type {
+	AudioLevelMessage,
 	ConnectionStatus,
 	DaemonState,
 	DaemonStatus,
@@ -30,6 +32,7 @@ export class IPCClient extends EventEmitter {
 	private currentState: DaemonState = { status: "idle" };
 	private _protocolVersion = 0;
 	private shouldReconnect = true;
+	private currentAudioLevel: AudioLevelMessage | null = null;
 
 	get state(): DaemonState {
 		return this.currentState;
@@ -41,6 +44,10 @@ export class IPCClient extends EventEmitter {
 
 	get protocolVersion(): number {
 		return this._protocolVersion;
+	}
+
+	get audioLevel(): AudioLevelMessage | null {
+		return this.currentAudioLevel;
 	}
 
 	connect(): void {
@@ -139,6 +146,9 @@ export class IPCClient extends EventEmitter {
 				error: msg.error,
 				timestamp: msg.timestamp,
 			});
+		} else if (msg.type === "audio_level") {
+			this.currentAudioLevel = msg;
+			this.emit("audioLevel", msg);
 		}
 	}
 
