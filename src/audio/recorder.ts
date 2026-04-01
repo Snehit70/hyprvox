@@ -327,13 +327,13 @@ export class AudioRecorder extends EventEmitter {
 					const id = header.subarray(offset, offset + 4).toString("ascii");
 					const size = header.readUInt32LE(offset + 4);
 					offset += 8;
-					if (offset + size > header.length) return Buffer.alloc(0);
 					if (id === "data") {
 						this.seenWaveHeader = true;
 						const pcm = header.subarray(offset);
 						this.pendingWaveHeader = Buffer.alloc(0);
 						return pcm;
 					}
+					if (offset + size > header.length) return Buffer.alloc(0);
 					offset += size + (size % 2);
 				}
 				return Buffer.alloc(0);
