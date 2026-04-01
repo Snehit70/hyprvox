@@ -25,6 +25,7 @@ export class AudioRecorder extends EventEmitter {
 	private readonly WARNING_430M = 270000;
 	private isStopping: boolean = false;
 	private seenWaveHeader: boolean = false;
+	private pendingWaveHeader: Buffer = Buffer.alloc(0);
 
 	constructor() {
 		super();
@@ -57,6 +58,7 @@ export class AudioRecorder extends EventEmitter {
 		this.loadSettings();
 		this.chunks = [];
 		this.seenWaveHeader = false;
+		this.pendingWaveHeader = Buffer.alloc(0);
 		this.startTime = Date.now();
 
 		const config = loadConfig();
@@ -312,24 +314,35 @@ export class AudioRecorder extends EventEmitter {
 
 	private getPcmChunk(chunk: Buffer): Buffer {
 		if (!this.seenWaveHeader) {
-			this.seenWaveHeader = true;
+			this.pendingWaveHeader = Buffer.concat([this.pendingWaveHeader, chunk]);
+			const header = this.pendingWaveHeader;
+
 			if (
-				chunk.length >= 12 &&
-				chunk.subarray(0, 4).toString("ascii") === "RIFF" &&
-				chunk.subarray(8, 12).toString("ascii") === "WAVE"
+				header.length >= 12 &&
+				header.subarray(0, 4).toString("ascii") === "RIFF" &&
+				header.subarray(8, 12).toString("ascii") === "WAVE"
 			) {
 				let offset = 12;
-				while (offset + 8 <= chunk.length) {
-					const id = chunk.subarray(offset, offset + 4).toString("ascii");
-					const size = chunk.readUInt32LE(offset + 4);
+				while (offset + 8 <= header.length) {
+					const id = header.subarray(offset, offset + 4).toString("ascii");
+					const size = header.readUInt32LE(offset + 4);
 					offset += 8;
+					if (offset + size > header.length) return Buffer.alloc(0);
 					if (id === "data") {
-						return chunk.subarray(offset);
+						this.seenWaveHeader = true;
+						const pcm = header.subarray(offset);
+						this.pendingWaveHeader = Buffer.alloc(0);
+						return pcm;
 					}
-					offset += size;
+					offset += size + (size % 2);
 				}
 				return Buffer.alloc(0);
 			}
+
+			// Not a RIFF/WAVE header — treat everything as PCM
+			this.seenWaveHeader = true;
+			this.pendingWaveHeader = Buffer.alloc(0);
+			return header;
 		}
 
 		return chunk;
@@ -347,9 +360,10 @@ export class AudioRecorder extends EventEmitter {
 			return null;
 		}
 
+		const aligned = Buffer.from(chunk.subarray(0, evenLength));
 		const samples = new Int16Array(
-			chunk.buffer,
-			chunk.byteOffset,
+			aligned.buffer,
+			aligned.byteOffset,
 			evenLength / 2,
 		);
 

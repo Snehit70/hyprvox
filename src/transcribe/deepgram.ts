@@ -195,7 +195,7 @@ export class DeepgramTranscriber {
 								getErrorStatus(error) ||
 								(message?.includes("401") ? 401 : undefined) ||
 								(message?.includes("429") ? 429 : undefined);
-							return status !== 401;
+							return status !== 401 && status !== 429;
 						},
 					},
 				);

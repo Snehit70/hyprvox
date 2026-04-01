@@ -67,7 +67,10 @@ export class GroqClient {
 					maxRetries: 2,
 					backoffs: [100, 200],
 					timeout: 10000,
-					shouldRetry: (error: unknown) => getErrorStatus(error) !== 401,
+					shouldRetry: (error: unknown) => {
+						const status = getErrorStatus(error);
+						return status === undefined || status >= 500 || status === 429;
+					},
 				},
 			);
 		} catch (error: unknown) {
@@ -132,7 +135,10 @@ export class GroqClient {
 					maxRetries: 2,
 					backoffs: [100, 200],
 					timeout: 30000,
-					shouldRetry: (error: unknown) => getErrorStatus(error) !== 401,
+					shouldRetry: (error: unknown) => {
+						const status = getErrorStatus(error);
+						return status === undefined || status >= 500 || status === 429;
+					},
 				},
 			);
 		} catch (error: unknown) {
