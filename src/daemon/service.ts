@@ -761,7 +761,7 @@ export class DaemonService {
 			recordingDurationMs: duration,
 			convertedAudioBytes: -1,
 			streamingEnabled: !!this.config.transcription.streaming,
-			audioFormatStrategy: "opus",
+			audioFormatStrategy: "raw", // Will be set based on compression decision
 			mergeStrategy: "skip_no_speech",
 			mergeReason: null,
 			deepgramStopReason: null,
@@ -828,13 +828,59 @@ export class DaemonService {
 				);
 			}
 
-			// --- Stage: Audio conversion ---
-			const conversion = await timeAsync(() => convertAudio(audioBuffer));
-			const convertedBuffer = conversion.result;
-			metrics.conversionMs = conversion.durationMs;
-			metrics.convertedAudioBytes = convertedBuffer.length;
+			// --- Stage: Audio conversion (conditional) ---
+			// Determine if compression should be applied based on config
+			const compressionMode = this.config.audio.compression;
+			const compressionThreshold = this.config.audio.compressionThreshold;
+			const bufferSize = audioBuffer.length;
+
+			let shouldCompress: boolean;
+			if (compressionMode === "always") {
+				shouldCompress = true;
+			} else if (compressionMode === "never") {
+				shouldCompress = false;
+			} else {
+				// "auto" mode: compress only if buffer exceeds threshold
+				shouldCompress = bufferSize >= compressionThreshold;
+			}
+
+			let audioBufferToTranscribe: Buffer;
+			if (shouldCompress) {
+				const conversion = await timeAsync(() => convertAudio(audioBuffer));
+				audioBufferToTranscribe = conversion.result;
+				metrics.conversionMs = conversion.durationMs;
+				metrics.convertedAudioBytes = audioBufferToTranscribe.length;
+				metrics.audioFormatStrategy = "opus";
+				logger.debug(
+					{
+						mode: compressionMode,
+						threshold: compressionThreshold,
+						bufferSize,
+						compressed: true,
+					},
+					"Audio compression applied",
+				);
+			} else {
+				// Skip compression, use raw WAV
+				audioBufferToTranscribe = audioBuffer;
+				metrics.conversionMs = 0;
+				metrics.convertedAudioBytes = audioBuffer.length;
+				metrics.audioFormatStrategy = "raw";
+				logger.debug(
+					{
+						mode: compressionMode,
+						threshold: compressionThreshold,
+						bufferSize,
+						compressed: false,
+					},
+					"Audio compression skipped",
+				);
+			}
 
 			// --- Stage: Parallel transcription ---
+			const audioFormat =
+				metrics.audioFormatStrategy === "opus" ? "opus" : "wav";
+
 			if (useStreaming) {
 				if (!deepgramStopPromise) {
 					throw new Error(
@@ -846,7 +892,12 @@ export class DaemonService {
 				const [groqTimed, deepgramTimed] = await Promise.all([
 					timeAsync(() =>
 						this.groq
-							.transcribe(convertedBuffer, language, boostWords)
+							.transcribe(
+								audioBufferToTranscribe,
+								language,
+								boostWords,
+								audioFormat,
+							)
 							.catch((err) => {
 								groqErr = err;
 								return "";
@@ -894,7 +945,12 @@ export class DaemonService {
 				const [groqTimed, deepgramTimed] = await Promise.all([
 					timeAsync(() =>
 						this.groq
-							.transcribe(convertedBuffer, language, boostWords)
+							.transcribe(
+								audioBufferToTranscribe,
+								language,
+								boostWords,
+								audioFormat,
+							)
 							.catch((err) => {
 								groqErr = err;
 								return "";
@@ -902,7 +958,12 @@ export class DaemonService {
 					),
 					timeAsync(() =>
 						this.deepgram
-							.transcribe(convertedBuffer, language, deepgramBoostWords)
+							.transcribe(
+								audioBufferToTranscribe,
+								language,
+								deepgramBoostWords,
+								audioFormat,
+							)
 							.catch((err) => {
 								deepgramErr = err;
 								return "";

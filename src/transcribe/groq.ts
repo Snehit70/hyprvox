@@ -92,12 +92,15 @@ export class GroqClient {
 		audioBuffer: Buffer,
 		language: string = "en",
 		boostWords: string[] = [],
+		format: "opus" | "wav" = "opus",
 	): Promise<string> {
 		try {
 			return await withRetry(
 				async (signal) => {
-					const file = await toFile(audioBuffer, "audio.opus", {
-						type: "audio/opus",
+					const filename = format === "opus" ? "audio.opus" : "audio.wav";
+					const mimeType = format === "opus" ? "audio/opus" : "audio/wav";
+					const file = await toFile(audioBuffer, filename, {
+						type: mimeType,
 					});
 					const prompt = buildTranscriptionPrompt(boostWords);
 

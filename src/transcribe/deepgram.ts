@@ -81,6 +81,7 @@ export class DeepgramTranscriber {
 		audioBuffer: Buffer,
 		language: string = "en",
 		boostWords: string[] = [],
+		format: "opus" | "wav" = "opus",
 	): Promise<string> {
 		const keyterms = sanitizeDeepgramKeyterms(boostWords);
 

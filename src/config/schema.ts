@@ -175,6 +175,11 @@ const defaultTranscription = {
 	mergeModel: "qwen/qwen3-32b",
 } as const;
 
+const defaultAudio = {
+	compression: "auto" as const,
+	compressionThreshold: 1048576, // 1MB in bytes (~32 seconds of audio)
+};
+
 export const ApiKeysSchema = z.object({
 	groq: z
 		.string()
@@ -247,12 +252,25 @@ export const OverlaySchema = z
 	})
 	.default({ enabled: true, autoStart: true });
 
+export const AudioSchema = z
+	.object({
+		compression: z
+			.enum(["auto", "always", "never"])
+			.default(defaultAudio.compression),
+		compressionThreshold: z
+			.number()
+			.min(0)
+			.default(defaultAudio.compressionThreshold),
+	})
+	.default(defaultAudio);
+
 export const ConfigSchema = z.object({
 	apiKeys: ApiKeysSchema,
 	behavior: BehaviorSchema.default(defaultBehavior),
 	paths: PathsSchema.default(defaultPaths),
 	transcription: TranscriptionSchema.default(defaultTranscription),
 	overlay: OverlaySchema,
+	audio: AudioSchema,
 });
 
 export const ConfigFileSchema = z.object({
@@ -261,6 +279,7 @@ export const ConfigFileSchema = z.object({
 	paths: PathsSchema.default(defaultPaths),
 	transcription: TranscriptionSchema.default(defaultTranscription),
 	overlay: OverlaySchema,
+	audio: AudioSchema,
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
