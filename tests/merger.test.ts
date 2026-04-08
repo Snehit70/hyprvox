@@ -340,4 +340,20 @@ describe("request-too-large detection", () => {
 			),
 		).toBe(false);
 	});
+
+	it("does not treat Groq 429 throttling as request-too-large", () => {
+		const error = {
+			status: 429,
+			message:
+				"Rate limit reached for model on tokens per minute (TPM): Limit 7000, Used 0, Requested 8906",
+			error: {
+				error: {
+					code: "rate_limit_exceeded",
+					type: "tokens",
+				},
+			},
+		};
+
+		expect(isRequestTooLargeError(error)).toBe(false);
+	});
 });
