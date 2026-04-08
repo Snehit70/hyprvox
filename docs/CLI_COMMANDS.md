@@ -8,6 +8,12 @@ This document provides a comprehensive list of all commands available in the `hy
 bun run index.ts <command> [subcommand] [options]
 ```
 
+If you installed the published package globally, you can also use:
+
+```bash
+hyprvox <command> [subcommand] [options]
+```
+
 ## Main Commands
 
 ### `start`

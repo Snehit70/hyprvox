@@ -4,6 +4,8 @@
 
 Voice input for AI workflows on Linux.
 
+`hyprvox` is published on the npm registry as `hyprvox`.
+
 <!-- DEMO PLACEHOLDER: Add a GIF showing the full workflow -->
 
 ## The Problem
@@ -45,6 +47,18 @@ bun install
 
 bun run index.ts config init   # Set up API keys (Groq + Deepgram)
 bun run index.ts install       # Install as systemd service
+```
+
+If you want to install the published CLI from npm instead of building from source:
+
+```bash
+npm install -g hyprvox
+```
+
+Or with Bun:
+
+```bash
+bun add -g hyprvox
 ```
 
 Press Right Ctrl to record. Press again to stop. Paste anywhere.
@@ -225,6 +239,7 @@ Full guide: [Troubleshooting](docs/TROUBLESHOOTING.md)
 
 - Use Conventional Commits on branches merged into `main`; `feat:` triggers a minor bump and `fix:` triggers a patch bump.
 - `.github/workflows/release-please.yml` opens or updates the release PR, and `.github/workflows/release.yml` publishes tagged releases after tests pass.
+- The root CLI package is also published to npm as `hyprvox`.
 - Release Please uses `release-please-config.json` and `.release-please-manifest.json` to track the root package version.
 - Set repository Actions permissions to `Read and write`, and enable `Allow GitHub Actions to create and approve pull requests` or provide a `RELEASE_PLEASE_TOKEN` secret with repo scope.
 

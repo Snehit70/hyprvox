@@ -6,6 +6,14 @@ This guide covers everything you need to know about using `hyprvox` effectively.
 
 The `hyprvox` daemon runs in the background and listens for your hotkey to start recording.
 
+If you prefer using the published CLI instead of the repo checkout:
+
+```bash
+npm install -g hyprvox
+# or
+bun add -g hyprvox
+```
+
 ### Starting the Daemon
 If you've installed it as a systemd service (recommended):
 ```bash

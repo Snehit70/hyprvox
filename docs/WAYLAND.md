@@ -73,6 +73,15 @@ Hyprland is a dynamic tiling Wayland compositor with excellent keybinding suppor
    bun run index.ts health
    ```
 
+   If you installed the published package globally instead:
+
+   ```bash
+   npm install -g hyprvox
+   # or
+   bun add -g hyprvox
+   hyprvox health
+   ```
+
 2. **Install required dependencies**:
 
    ```bash
@@ -148,6 +157,10 @@ bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle
 
 # Alternative: Use a different key (e.g., Super+V)
 bind = SUPER, V, exec, bun run /path/to/hyprvox/index.ts toggle
+
+# If hyprvox is installed globally
+bind = , code:105, exec, hyprvox toggle
+bind = SUPER, V, exec, hyprvox toggle
 ```
 
 **Key Code Reference:**
