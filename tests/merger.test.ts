@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+	buildMergeUserPrompt,
+	calculateMergeMaxTokens,
 	decideMerge,
 	hasStructuredFormattingIntent,
+	isRequestTooLargeError,
 	type MergeReason,
 	type MergeStrategy,
 } from "../src/transcribe/merger";
@@ -272,5 +275,61 @@ describe("MergeReason types", () => {
 			"llm_error_fallback",
 		];
 		expect(reasons).toHaveLength(12);
+	});
+});
+
+describe("merge token budgeting", () => {
+	it("keeps merge completion tokens well below the old 8k default", () => {
+		const groqText =
+			"We can always improve many things, but you should understand how Hyprvox works.";
+		const deepgramText =
+			"We can always improve many things, but you should understand how Hyprvox works and how we can improve it further.";
+		const userPrompt = buildMergeUserPrompt(groqText, deepgramText, []);
+
+		const maxTokens = calculateMergeMaxTokens(
+			groqText,
+			deepgramText,
+			userPrompt,
+		);
+
+		expect(maxTokens).toBeGreaterThanOrEqual(128);
+		expect(maxTokens).toBeLessThanOrEqual(1024);
+	});
+
+	it("drops completion budget to zero when the prompt already exceeds the request budget", () => {
+		const longText = "alpha ".repeat(20_000);
+		const userPrompt = buildMergeUserPrompt(longText, longText, []);
+
+		const maxTokens = calculateMergeMaxTokens(
+			longText,
+			longText,
+			userPrompt,
+			100,
+		);
+
+		expect(maxTokens).toBe(0);
+	});
+});
+
+describe("request-too-large detection", () => {
+	it("detects Groq 413 token budget errors as non-retryable", () => {
+		const error = {
+			status: 413,
+			message: "413 request too large",
+			error: {
+				error: {
+					code: "rate_limit_exceeded",
+					type: "tokens",
+					message:
+						"Request too large for model on tokens per minute (TPM): Limit 6000, Requested 8906",
+				},
+			},
+		};
+
+		expect(isRequestTooLargeError(error)).toBe(true);
+	});
+
+	it("does not flag transient network failures as request-too-large", () => {
+		expect(isRequestTooLargeError(new Error("ECONNRESET"))).toBe(false);
 	});
 });
