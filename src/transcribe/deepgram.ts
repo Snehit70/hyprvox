@@ -84,6 +84,7 @@ export class DeepgramTranscriber {
 		format: "opus" | "wav" = "opus",
 	): Promise<string> {
 		const keyterms = sanitizeDeepgramKeyterms(boostWords);
+		const encodingOption = format === "opus" ? { encoding: "opus" as const } : {};
 
 		try {
 			return await withRetry(
@@ -94,7 +95,7 @@ export class DeepgramTranscriber {
 							smart_format: true,
 							punctuate: true,
 							language: language,
-							...(format === "opus" ? { encoding: "opus" } : {}),
+							...encodingOption,
 							...(keyterms.length > 0 ? { keyterm: keyterms } : {}),
 						});
 
@@ -166,6 +167,7 @@ export class DeepgramTranscriber {
 								smart_format: true,
 								punctuate: true,
 								language: language,
+								...encodingOption,
 							});
 
 						if (retryError) throw retryError;
