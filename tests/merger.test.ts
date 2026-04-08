@@ -332,4 +332,12 @@ describe("request-too-large detection", () => {
 	it("does not flag transient network failures as request-too-large", () => {
 		expect(isRequestTooLargeError(new Error("ECONNRESET"))).toBe(false);
 	});
+
+	it("does not match unrelated requested-resource errors", () => {
+		expect(
+			isRequestTooLargeError(
+				new Error("The requested resource was not found"),
+			),
+		).toBe(false);
+	});
 });

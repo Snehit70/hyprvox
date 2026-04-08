@@ -94,6 +94,7 @@ export class DeepgramTranscriber {
 							smart_format: true,
 							punctuate: true,
 							language: language,
+							encoding: format === "opus" ? "opus" : "linear16",
 							...(keyterms.length > 0 ? { keyterm: keyterms } : {}),
 						});
 

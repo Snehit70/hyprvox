@@ -256,7 +256,6 @@ export function isRequestTooLargeError(error: unknown): boolean {
 		candidate.error?.error?.code === "rate_limit_exceeded" ||
 		candidate.error?.error?.type === "tokens" ||
 		message.includes("request too large") ||
-		message.includes("requested") ||
 		message.includes("tokens per minute")
 	);
 }
