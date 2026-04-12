@@ -70,10 +70,6 @@
 	font-weight: 500;
 }
 
-.status-indicator.processing {
-	/* Uses base centering from .status-indicator */
-}
-
 .shimmering-text {
 	font-size: 16px;
 	font-weight: 600;
@@ -184,7 +180,7 @@
 
 .status-indicator.success .checkmark-circle-icon circle,
 .status-indicator.success .checkmark-circle-icon polyline {
-	stroke: currentColor;
+	stroke: currentcolor;
 	stroke-width: 2.2;
 	stroke-linecap: round;
 	stroke-linejoin: round;
@@ -293,4 +289,16 @@
 
 .state-error {
 	border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
 }

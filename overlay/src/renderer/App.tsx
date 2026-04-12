@@ -139,6 +139,26 @@ function getIndicatorState(state: OverlayState): IndicatorState | null {
 	return state;
 }
 
+function getAriaStatusText(state: OverlayState, errorMessage?: string): string {
+	switch (state) {
+		case "connecting":
+			return "Connecting";
+		case "listening":
+			return "Listening";
+		case "recording":
+			return "Recording";
+		case "processing":
+			return "Transcribing";
+		case "success":
+			return "Transcription copied";
+		case "error":
+			return errorMessage ? `Error: ${errorMessage}` : "Error";
+		case "hidden":
+		default:
+			return "";
+	}
+}
+
 export function App() {
 	const { overlayState, errorMessage } = useDaemonState();
 	const styles = getStateStyles(overlayState);
@@ -146,6 +166,7 @@ export function App() {
 	const isRecording = overlayState === "recording";
 	const isProcessing = overlayState === "processing";
 	const nextIndicatorState = getIndicatorState(overlayState);
+	const ariaStatusText = getAriaStatusText(overlayState, errorMessage);
 	const [currentIndicator, setCurrentIndicator] =
 		useState<AnimatedIndicator | null>(
 			nextIndicatorState ? { state: nextIndicatorState, key: 0 } : null,
@@ -299,6 +320,10 @@ export function App() {
 					</div>
 				)}
 			</div>
+
+			<output className="sr-only" aria-live="polite" aria-atomic="true">
+				{ariaStatusText}
+			</output>
 
 			{overlayState === "error" && errorMessage && (
 				<span className="error-message">{errorMessage}</span>
