@@ -31,17 +31,21 @@
 }
 
 .status-layer-enter {
-	animation: status-slide-up-in 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+	animation: status-slide-up-in 0.32s cubic-bezier(0.16, 0.84, 0.24, 1) forwards;
 }
 
 .status-layer-leave {
-	animation: status-slide-up-out 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+	animation: status-slide-up-out 0.32s cubic-bezier(0.16, 0.84, 0.24, 1)
+		forwards;
 }
 
 @keyframes status-slide-up-in {
 	0% {
-		transform: translateY(18px);
+		transform: translateY(20px);
 		opacity: 0;
+	}
+	40% {
+		opacity: 0.85;
 	}
 	100% {
 		transform: translateY(0);
@@ -55,7 +59,7 @@
 		opacity: 1;
 	}
 	100% {
-		transform: translateY(-18px);
+		transform: translateY(-20px);
 		opacity: 0;
 	}
 }
@@ -143,17 +147,86 @@
 	color: #10b981;
 }
 
-.status-indicator.success .checkmark {
-	animation: checkmark-draw 0.4s ease-out forwards;
+.status-indicator.success .checkmark-badge {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 38px;
+	height: 38px;
+	border-radius: 50%;
+	background: radial-gradient(
+		circle at center,
+		rgba(16, 185, 129, 0.28) 0%,
+		rgba(16, 185, 129, 0.15) 60%,
+		rgba(16, 185, 129, 0.06) 100%
+	);
+	box-shadow:
+		0 0 0 1px rgba(16, 185, 129, 0.4) inset,
+		0 0 18px rgba(16, 185, 129, 0.28);
+	animation: success-pop 0.22s cubic-bezier(0.22, 0.9, 0.28, 1.12) forwards;
 }
 
-@keyframes checkmark-draw {
+.status-indicator.success .checkmark-badge::after {
+	content: "";
+	position: absolute;
+	inset: 2px;
+	border-radius: 50%;
+	border: 1.5px solid rgba(16, 185, 129, 0.55);
+	animation: success-ring 0.42s ease-out forwards;
+}
+
+.status-indicator.success .checkmark-circle-icon {
+	position: relative;
+	color: #10b981;
+	filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.45));
+}
+
+.status-indicator.success .checkmark-circle-icon circle,
+.status-indicator.success .checkmark-circle-icon polyline {
+	stroke: currentColor;
+	stroke-width: 2.2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.status-indicator.success .checkmark-circle-icon polyline {
+	stroke-dasharray: 18;
+	stroke-dashoffset: 18;
+	animation: checkmark-stroke 0.18s 0.05s ease-out forwards;
+}
+
+@keyframes success-pop {
 	0% {
-		stroke-dasharray: 30;
-		stroke-dashoffset: 30;
+		transform: scale(0.9);
+		opacity: 0;
+	}
+	65% {
+		transform: scale(1.04);
+		opacity: 1;
 	}
 	100% {
-		stroke-dasharray: 30;
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes success-ring {
+	0% {
+		transform: scale(0.84);
+		opacity: 0.7;
+	}
+	100% {
+		transform: scale(1.2);
+		opacity: 0;
+	}
+}
+
+@keyframes checkmark-stroke {
+	0% {
+		stroke-dashoffset: 18;
+	}
+	100% {
 		stroke-dashoffset: 0;
 	}
 }
