@@ -7,6 +7,9 @@
 /* Status indicators */
 .status-indicator {
 	position: absolute;
+	left: 50%;
+	top: 50%;
+	transform: translate(-50%, -50%);
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -14,10 +17,86 @@
 	pointer-events: none;
 }
 
+.status-stack {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.status-layer {
+	position: absolute;
+	inset: 0;
+	will-change: transform, opacity;
+}
+
+.status-layer-enter {
+	animation: status-slide-up-in 0.32s cubic-bezier(0.16, 0.84, 0.24, 1) forwards;
+}
+
+.status-layer-leave {
+	animation: status-slide-up-out 0.32s cubic-bezier(0.16, 0.84, 0.24, 1)
+		forwards;
+}
+
+@keyframes status-slide-up-in {
+	0% {
+		transform: translateY(20px);
+		opacity: 0;
+	}
+	40% {
+		opacity: 0.85;
+	}
+	100% {
+		transform: translateY(0);
+		opacity: 1;
+	}
+}
+
+@keyframes status-slide-up-out {
+	0% {
+		transform: translateY(0);
+		opacity: 1;
+	}
+	100% {
+		transform: translateY(-20px);
+		opacity: 0;
+	}
+}
+
 .status-text {
 	color: rgba(255, 255, 255, 0.7);
 	font-size: 14px;
 	font-weight: 500;
+}
+
+.shimmering-text {
+	font-size: 16px;
+	font-weight: 600;
+	letter-spacing: 0.02em;
+	background-image: linear-gradient(
+		110deg,
+		rgba(255, 255, 255, 0.25) 0%,
+		rgba(255, 255, 255, 0.95) 30%,
+		rgba(255, 255, 255, 0.25) 60%
+	);
+	background-size: 220% 100%;
+	background-position: 180% 0;
+	background-clip: text;
+	-webkit-background-clip: text;
+	color: transparent;
+	-webkit-text-fill-color: transparent;
+	animation: shimmer-slide 1.6s linear infinite;
+	text-shadow: 0 0 8px rgba(255, 255, 255, 0.18);
+}
+
+@keyframes shimmer-slide {
+	0% {
+		background-position: 180% 0;
+	}
+	100% {
+		background-position: -40% 0;
+	}
 }
 
 /* Connecting state - pulsing dots */
@@ -64,17 +143,86 @@
 	color: #10b981;
 }
 
-.status-indicator.success .checkmark {
-	animation: checkmark-draw 0.4s ease-out forwards;
+.status-indicator.success .checkmark-badge {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 38px;
+	height: 38px;
+	border-radius: 50%;
+	background: radial-gradient(
+		circle at center,
+		rgba(16, 185, 129, 0.28) 0%,
+		rgba(16, 185, 129, 0.15) 60%,
+		rgba(16, 185, 129, 0.06) 100%
+	);
+	box-shadow:
+		0 0 0 1px rgba(16, 185, 129, 0.4) inset,
+		0 0 18px rgba(16, 185, 129, 0.28);
+	animation: success-pop 0.22s cubic-bezier(0.22, 0.9, 0.28, 1.12) forwards;
 }
 
-@keyframes checkmark-draw {
+.status-indicator.success .checkmark-badge::after {
+	content: "";
+	position: absolute;
+	inset: 2px;
+	border-radius: 50%;
+	border: 1.5px solid rgba(16, 185, 129, 0.55);
+	animation: success-ring 0.42s ease-out forwards;
+}
+
+.status-indicator.success .checkmark-circle-icon {
+	position: relative;
+	color: #10b981;
+	filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.45));
+}
+
+.status-indicator.success .checkmark-circle-icon circle,
+.status-indicator.success .checkmark-circle-icon polyline {
+	stroke: currentcolor;
+	stroke-width: 2.2;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+}
+
+.status-indicator.success .checkmark-circle-icon polyline {
+	stroke-dasharray: 18;
+	stroke-dashoffset: 18;
+	animation: checkmark-stroke 0.18s 0.05s ease-out forwards;
+}
+
+@keyframes success-pop {
 	0% {
-		stroke-dasharray: 30;
-		stroke-dashoffset: 30;
+		transform: scale(0.9);
+		opacity: 0;
+	}
+	65% {
+		transform: scale(1.04);
+		opacity: 1;
 	}
 	100% {
-		stroke-dasharray: 30;
+		transform: scale(1);
+		opacity: 1;
+	}
+}
+
+@keyframes success-ring {
+	0% {
+		transform: scale(0.84);
+		opacity: 0.7;
+	}
+	100% {
+		transform: scale(1.2);
+		opacity: 0;
+	}
+}
+
+@keyframes checkmark-stroke {
+	0% {
+		stroke-dashoffset: 18;
+	}
+	100% {
 		stroke-dashoffset: 0;
 	}
 }
@@ -141,4 +289,16 @@
 
 .state-error {
 	border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
 }
