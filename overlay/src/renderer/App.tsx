@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { LiveWaveform } from "./LiveWaveform";
 import { type OverlayState, useDaemonState } from "./useDaemonState";
 import "./styles.css";
@@ -49,7 +49,9 @@ function getStateStyles(state: OverlayState): {
 	}
 }
 
-function StatusIndicator({ state }: { state: OverlayState }) {
+type IndicatorState = Exclude<OverlayState, "hidden" | "recording">;
+
+function StatusIndicator({ state }: { state: IndicatorState }) {
 	if (state === "connecting") {
 		return (
 			<div className="status-indicator connecting">
@@ -114,7 +116,23 @@ function StatusIndicator({ state }: { state: OverlayState }) {
 		);
 	}
 
+	if (state === "processing") {
+		return (
+			<div className="status-indicator processing">
+				<span className="shimmering-text">Transcribing...</span>
+			</div>
+		);
+	}
+
 	return null;
+}
+
+function getIndicatorState(state: OverlayState): IndicatorState | null {
+	if (state === "hidden" || state === "recording") {
+		return null;
+	}
+
+	return state;
 }
 
 export function App() {
@@ -123,11 +141,53 @@ export function App() {
 
 	const isRecording = overlayState === "recording";
 	const isProcessing = overlayState === "processing";
-	const showWaveform =
-		overlayState === "recording" || overlayState === "processing";
+	const showWaveform = overlayState === "recording";
+	const nextIndicatorState = getIndicatorState(overlayState);
+	const [currentIndicator, setCurrentIndicator] =
+		useState<IndicatorState | null>(nextIndicatorState);
+	const [leavingIndicator, setLeavingIndicator] =
+		useState<IndicatorState | null>(null);
+	const [isAnimatingIndicator, setIsAnimatingIndicator] = useState(false);
+	const indicatorTimeoutRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		window.electronAPI?.notifyReady();
+	}, []);
+
+	useEffect(() => {
+		if (nextIndicatorState === currentIndicator) {
+			return;
+		}
+
+		if (indicatorTimeoutRef.current !== null) {
+			window.clearTimeout(indicatorTimeoutRef.current);
+			indicatorTimeoutRef.current = null;
+		}
+
+		if (nextIndicatorState === null) {
+			setLeavingIndicator(null);
+			setCurrentIndicator(null);
+			setIsAnimatingIndicator(false);
+			return;
+		}
+
+		setLeavingIndicator(currentIndicator);
+		setCurrentIndicator(nextIndicatorState);
+		setIsAnimatingIndicator(true);
+
+		indicatorTimeoutRef.current = window.setTimeout(() => {
+			setLeavingIndicator(null);
+			setIsAnimatingIndicator(false);
+			indicatorTimeoutRef.current = null;
+		}, 280);
+	}, [nextIndicatorState, currentIndicator]);
+
+	useEffect(() => {
+		return () => {
+			if (indicatorTimeoutRef.current !== null) {
+				window.clearTimeout(indicatorTimeoutRef.current);
+			}
+		};
 	}, []);
 
 	if (overlayState === "hidden") {
@@ -165,7 +225,20 @@ export function App() {
 				/>
 			)}
 
-			<StatusIndicator state={overlayState} />
+			<div className="status-stack" aria-hidden="true">
+				{leavingIndicator && isAnimatingIndicator && (
+					<div className="status-layer status-layer-leave">
+						<StatusIndicator state={leavingIndicator} />
+					</div>
+				)}
+				{currentIndicator && (
+					<div
+						className={`status-layer ${isAnimatingIndicator ? "status-layer-enter" : ""}`}
+					>
+						<StatusIndicator state={currentIndicator} />
+					</div>
+				)}
+			</div>
 
 			{overlayState === "error" && errorMessage && (
 				<span className="error-message">{errorMessage}</span>
