@@ -177,13 +177,22 @@ export function App() {
 	const [waveformExiting, setWaveformExiting] = useState(false);
 	const indicatorTimeoutRef = useRef<number | null>(null);
 	const waveformTimeoutRef = useRef<number | null>(null);
+	const previousOverlayStateRef = useRef<OverlayState>(overlayState);
 	const transitionKeyRef = useRef(0);
 
-	const showWaveform = isRecording || waveformExiting;
+	const showWaveform =
+		isRecording ||
+		waveformExiting ||
+		(overlayState === "processing" &&
+			previousOverlayStateRef.current === "recording");
 
 	useEffect(() => {
 		window.electronAPI?.notifyReady();
 	}, []);
+
+	useEffect(() => {
+		previousOverlayStateRef.current = overlayState;
+	}, [overlayState]);
 
 	useEffect(() => {
 		if (nextIndicatorState === currentIndicator?.state) {
