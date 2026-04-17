@@ -38,6 +38,16 @@ curl -fsSL https://bun.sh/install | bash
 # Fedora: sudo dnf install ffmpeg
 ```
 
+On RHEL/Amazon Linux/Fedora-style systems, install `unzip` before the Bun installer:
+
+```bash
+sudo dnf install -y unzip
+curl -fsSL https://bun.sh/install | bash
+source ~/.bash_profile
+```
+
+`hyprvox` is currently published as a Bun-executed CLI. Even when you install it from npm, the `hyprvox` command still requires Bun to be present on the target machine.
+
 ### Installation
 
 ```bash
@@ -55,10 +65,27 @@ If you want to install the published CLI from npm instead of building from sourc
 npm install -g hyprvox
 ```
 
-Or with Bun:
+Then make sure Bun is installed and on `PATH`:
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+source ~/.bash_profile
+```
+
+Or install with Bun directly:
 
 ```bash
 bun add -g hyprvox
+```
+
+If you install from npm on a fresh Linux machine, this is the minimum working sequence:
+
+```bash
+sudo dnf install -y unzip ffmpeg alsa-utils
+curl -fsSL https://bun.sh/install | bash
+source ~/.bash_profile
+npm install -g hyprvox
+hyprvox --help
 ```
 
 Press Right Ctrl to record. Press again to stop. Paste anywhere.
@@ -145,11 +172,26 @@ windowrule = match:class hyprvox-overlay, move ((monitor_w-window_w)*0.5) (monit
 **Audio** — `alsa-utils`
 - Arch: `sudo pacman -S alsa-utils`
 - Ubuntu: `sudo apt install alsa-utils`
-- Fedora: `sudo dnf install alsa-utils`
+- Fedora/RHEL/Amazon Linux: `sudo dnf install alsa-utils`
+
+**Audio encoding** — `ffmpeg`
+- Arch: `sudo pacman -S ffmpeg`
+- Ubuntu: `sudo apt install ffmpeg`
+- Fedora/RHEL/Amazon Linux: `sudo dnf install ffmpeg`
+
+**Bun installer helper** — `unzip`
+- Arch: usually already present, otherwise `sudo pacman -S unzip`
+- Ubuntu: `sudo apt install unzip`
+- Fedora/RHEL/Amazon Linux: `sudo dnf install unzip`
 
 **Clipboard**
 - Wayland: `wl-clipboard`
 - X11: `xclip` or `xsel`
+
+**Notifications**
+- Wayland/X11 desktop sessions: `libnotify`
+- Fedora/RHEL/Amazon Linux: `sudo dnf install libnotify`
+- Ubuntu/Debian: `sudo apt install libnotify-bin`
 
 **Permissions**
 ```bash
@@ -166,7 +208,7 @@ sudo usermod -aG audio,input $USER
 | Groq | Whisper V3 (fast) | [console.groq.com](https://console.groq.com/keys) |
 | Deepgram | Nova-3 (accurate) | [console.deepgram.com](https://console.deepgram.com/) |
 
-Run `bun run index.ts config init` to set them up.
+Run `bun run index.ts config init` or `hyprvox config init` to set them up.
 
 ## Usage
 
@@ -218,6 +260,14 @@ This bypasses XWayland limitations.
 Full guide: [Wayland Support](docs/WAYLAND.md)
 
 ## Troubleshooting
+
+If you're testing on a headless server such as EC2, some health checks will fail by design:
+- no clipboard tool installed
+- no desktop notification service
+- no microphone devices attached
+- no API keys configured yet
+
+The install is still valid if `hyprvox --help` works. Full transcription requires a machine with audio input, clipboard support, and configured API keys.
 
 | Problem | Fix |
 |---------|-----|
