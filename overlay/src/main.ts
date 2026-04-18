@@ -29,6 +29,14 @@ let previousStatus: string = "idle";
 let hideTimeout: NodeJS.Timeout | null = null;
 let isWindowVisible = false;
 
+process.on("uncaughtException", (err) => {
+	console.error("[Overlay] Uncaught exception:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+	console.error("[Overlay] Unhandled rejection:", reason);
+});
+
 function createOverlayWindow(
 	config: OverlayConfig = DEFAULT_CONFIG,
 ): BrowserWindow {
@@ -175,9 +183,14 @@ function setupIPCClient(): void {
 
 app.whenReady().then(() => {
 	mainWindow = createOverlayWindow();
+	console.log("[Overlay] App ready");
 
 	mainWindow.on("closed", () => {
 		mainWindow = null;
+	});
+
+	mainWindow.webContents.on("render-process-gone", (_event, details) => {
+		console.error("[Overlay] Render process gone:", details);
 	});
 
 	ipcMain.on("window-ready", () => {
@@ -193,6 +206,10 @@ app.whenReady().then(() => {
 	});
 
 	setupIPCClient();
+});
+
+app.on("child-process-gone", (_event, details) => {
+	console.error("[Overlay] Child process gone:", details);
 });
 
 app.on("window-all-closed", () => {

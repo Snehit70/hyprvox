@@ -1,5 +1,12 @@
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import {
+	closeSync,
+	existsSync,
+	mkdirSync,
+	openSync,
+	readFileSync,
+	unlinkSync,
+} from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -126,8 +133,16 @@ export class DaemonService {
 	private pendingStateWrite = false;
 	private overlayProcess?: ChildProcess;
 	private overlayPidFile: string;
+	private overlayLogFile: string;
+	private overlayRestartTimer?: NodeJS.Timeout;
+	private overlayStopRequested = false;
+	private overlayRestartAttempts: number[] = [];
 	private lastOverlayAudioLevelAt = 0;
 	private smoothedOverlayLevel = 0;
+
+	private static readonly OVERLAY_RESTART_DELAY_MS = 2000;
+	private static readonly OVERLAY_RESTART_WINDOW_MS = 60000;
+	private static readonly OVERLAY_RESTART_MAX_ATTEMPTS = 5;
 
 	constructor() {
 		this.config = configService.get();
@@ -142,6 +157,7 @@ export class DaemonService {
 		this.pidFile = join(configDir, "daemon.pid");
 		this.stateFile = join(configDir, "daemon.state");
 		this.overlayPidFile = join(configDir, "overlay.pid");
+		this.overlayLogFile = join(this.config.paths.logs, "overlay.log");
 
 		const stats = loadStats();
 		this.transcriptionCountToday = stats.today;
@@ -275,10 +291,86 @@ export class DaemonService {
 		logger.debug({ pid, timeoutMs }, "Timeout waiting for process exit");
 	}
 
-	private startOverlay(): void {
+	private pruneOverlayRestartAttempts(now = Date.now()): void {
+		this.overlayRestartAttempts = this.overlayRestartAttempts.filter(
+			(at) => now - at <= DaemonService.OVERLAY_RESTART_WINDOW_MS,
+		);
+	}
+
+	private removeOverlayPidFile(expectedPid?: number): void {
+		try {
+			if (expectedPid !== undefined) {
+				const raw = readFileSync(this.overlayPidFile, "utf8").trim();
+				const currentPid = parseInt(raw, 10);
+				if (currentPid !== expectedPid) {
+					return;
+				}
+			}
+			unlinkSync(this.overlayPidFile);
+		} catch (e) {
+			logger.debug({ err: e }, "Failed to remove overlay PID file");
+		}
+	}
+
+	private scheduleOverlayRestart(reason: string): void {
+		if (
+			this.overlayStopRequested ||
+			this.overlayRestartTimer ||
+			!this.config.overlay?.enabled ||
+			!this.config.overlay?.autoStart
+		) {
+			return;
+		}
+
+		const now = Date.now();
+		this.pruneOverlayRestartAttempts(now);
+		if (
+			this.overlayRestartAttempts.length >=
+			DaemonService.OVERLAY_RESTART_MAX_ATTEMPTS
+		) {
+			logger.error(
+				{
+					reason,
+					attempts: this.overlayRestartAttempts.length,
+					windowMs: DaemonService.OVERLAY_RESTART_WINDOW_MS,
+					logFile: this.overlayLogFile,
+				},
+				"Overlay crashed too often; automatic restart disabled",
+			);
+			return;
+		}
+
+		this.overlayRestartAttempts.push(now);
+		logger.warn(
+			{
+				reason,
+				delayMs: DaemonService.OVERLAY_RESTART_DELAY_MS,
+				attempt: this.overlayRestartAttempts.length,
+				logFile: this.overlayLogFile,
+			},
+			"Scheduling overlay restart",
+		);
+
+		this.overlayRestartTimer = setTimeout(() => {
+			this.overlayRestartTimer = undefined;
+			this.startOverlay("restart");
+		}, DaemonService.OVERLAY_RESTART_DELAY_MS);
+	}
+
+	private startOverlay(trigger: "startup" | "restart" = "startup"): void {
 		if (!this.config.overlay?.enabled || !this.config.overlay?.autoStart) {
 			return;
 		}
+
+		if (
+			this.overlayProcess &&
+			this.overlayProcess.exitCode === null &&
+			this.overlayProcess.signalCode === null
+		) {
+			return;
+		}
+
+		this.overlayStopRequested = false;
 
 		(async () => {
 			try {
@@ -307,6 +399,7 @@ export class DaemonService {
 				// Explicitly pass display environment for Wayland/X11 compatibility
 				const uid = process.getuid?.() ?? 1000;
 				const overlayEnv: NodeJS.ProcessEnv = { ...process.env };
+				let overlayLogFd: number | undefined;
 
 				// Only set display vars if already present in parent env — injecting
 				// WAYLAND_DISPLAY on a pure X11 system (or DISPLAY on Wayland-only)
@@ -330,15 +423,40 @@ export class DaemonService {
 					"Starting overlay with display environment",
 				);
 
+				mkdirSync(this.config.paths.logs, { recursive: true, mode: 0o700 });
+				overlayLogFd = openSync(this.overlayLogFile, "a");
+
 				this.overlayProcess = spawn("bun", ["run", "start"], {
 					cwd: overlayPath,
 					detached: true,
-					stdio: "ignore",
+					stdio: ["ignore", overlayLogFd, overlayLogFd],
 					env: overlayEnv,
 				});
 
 				this.overlayProcess.on("error", (err) => {
 					logger.warn({ err }, "Overlay process error");
+					this.scheduleOverlayRestart("spawn_error");
+				});
+
+				const overlayPid = this.overlayProcess.pid;
+				this.overlayProcess.on("exit", (code, signal) => {
+					if (this.overlayProcess?.pid === overlayPid) {
+						this.overlayProcess = undefined;
+					}
+					this.removeOverlayPidFile(overlayPid);
+					logger.warn(
+						{
+							pid: overlayPid,
+							code,
+							signal,
+							stopRequested: this.overlayStopRequested,
+							logFile: this.overlayLogFile,
+						},
+						"Overlay process exited",
+					);
+					if (!this.overlayStopRequested) {
+						this.scheduleOverlayRestart("process_exit");
+					}
 				});
 
 				this.overlayProcess.unref();
@@ -350,14 +468,32 @@ export class DaemonService {
 					});
 				}
 
-				logger.info({ pid }, "Overlay started");
+				if (overlayLogFd !== undefined) {
+					closeSync(overlayLogFd);
+				}
+
+				if (trigger === "startup") {
+					this.overlayRestartAttempts = [];
+				}
+
+				logger.info(
+					{ pid, logFile: this.overlayLogFile, trigger },
+					"Overlay started",
+				);
 			} catch (error) {
 				logError("Failed to start overlay", error);
+				this.scheduleOverlayRestart("start_failure");
 			}
 		})();
 	}
 
 	private stopOverlay(): void {
+		this.overlayStopRequested = true;
+		if (this.overlayRestartTimer) {
+			clearTimeout(this.overlayRestartTimer);
+			this.overlayRestartTimer = undefined;
+		}
+
 		if (this.overlayProcess) {
 			try {
 				this.overlayProcess.kill("SIGTERM");
@@ -381,11 +517,7 @@ export class DaemonService {
 			// PID file absent or process already dead
 		}
 
-		try {
-			unlinkSync(this.overlayPidFile);
-		} catch (e) {
-			logger.debug({ err: e }, "Failed to remove overlay PID file");
-		}
+		this.removeOverlayPidFile();
 	}
 
 	private setStatus(status: DaemonStatus, error?: string) {
