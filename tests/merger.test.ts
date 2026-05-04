@@ -335,9 +335,7 @@ describe("request-too-large detection", () => {
 
 	it("does not match unrelated requested-resource errors", () => {
 		expect(
-			isRequestTooLargeError(
-				new Error("The requested resource was not found"),
-			),
+			isRequestTooLargeError(new Error("The requested resource was not found")),
 		).toBe(false);
 	});
 

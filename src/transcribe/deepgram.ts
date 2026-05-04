@@ -84,7 +84,8 @@ export class DeepgramTranscriber {
 		format: "opus" | "wav" = "opus",
 	): Promise<string> {
 		const keyterms = sanitizeDeepgramKeyterms(boostWords);
-		const encodingOption = format === "opus" ? { encoding: "opus" as const } : {};
+		const encodingOption =
+			format === "opus" ? { encoding: "opus" as const } : {};
 
 		try {
 			return await withRetry(
