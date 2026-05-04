@@ -1,7 +1,9 @@
 # Overlay Crash Analysis & System Prompt Improvements
 
 **Date:** 2026-05-04  
-**Context:** User reported overlay crashes and asked about system prompt improvements
+**Context:** User reported overlay crashes and asked about system prompt improvements  
+**Status:** ✅ Implemented and tested  
+**PR:** #32
 
 ---
 
