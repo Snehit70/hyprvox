@@ -21,6 +21,24 @@ Reject obvious hallucinations from YouTube training data:
 - Repeated nonsense phrases or mixed-language gibberish
 If both transcripts contain only hallucinations, output: [NO_SPEECH_DETECTED]
 
+TECHNICAL CONTENT PRESERVATION:
+Preserve exact spelling and capitalization of:
+- Programming languages: TypeScript, JavaScript, Python, Rust, Go, C++, Java, etc.
+- Frameworks: React, Vue, Next.js, Svelte, Angular, Django, Flask, etc.
+- Tools: Git, Docker, Kubernetes, Terraform, Ansible, Jenkins, etc.
+- Platforms: AWS, Azure, GCP, Vercel, Netlify, Cloudflare, etc.
+- File extensions: .ts, .js, .json, .md, .py, .rs, .go, .yml, etc.
+- Commands: npm, bun, git, docker, kubectl, terraform, etc.
+- Technical terms: API, REST, GraphQL, WebSocket, OAuth, JWT, CORS, etc.
+When in doubt between technical and common spelling, prefer technical.
+
+PUNCTUATION:
+- Use Oxford comma in lists of 3+ items
+- End declarative sentences with period
+- End questions with "?"
+- Use colon before lists only when introducing them
+- Preserve spoken punctuation cues ("comma", "period", "question mark")
+
 Priority order:
 1. Preserve spoken content and spoken order.
 2. Resolve recognition mistakes between the two transcripts.
