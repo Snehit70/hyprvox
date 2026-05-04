@@ -18,23 +18,42 @@ export const healthCommand = new Command("health")
 
 		let allOk = true;
 		let config: any;
+		const sessionType = process.env.WAYLAND_DISPLAY
+			? "wayland"
+			: process.env.XDG_SESSION_TYPE === "wayland"
+				? "wayland"
+				: process.env.DISPLAY
+					? "x11"
+					: "unknown";
+		const isWayland = sessionType === "wayland";
 
 		// 1. Environment Check
 		console.log(colors.bold("--- Environment ---"));
-		const isWayland =
-			process.env.WAYLAND_DISPLAY || process.env.XDG_SESSION_TYPE === "wayland";
 		console.log(`${colors.dim("OS:")}      ${process.platform}`);
 		console.log(
-			`${colors.dim("Session:")} ${isWayland ? colors.magenta("Wayland") : colors.blue("X11")}`,
+			`${colors.dim("Session:")} ${
+				sessionType === "wayland"
+					? colors.magenta("Wayland")
+					: sessionType === "x11"
+						? colors.blue("X11")
+						: colors.yellow("Unknown")
+			}`,
 		);
 
 		try {
 			if (isWayland) {
 				execSync("which wl-copy", { stdio: "ignore" });
 				console.log(`${colors.green("✅")} wl-clipboard found`);
-			} else {
+			} else if (sessionType === "x11") {
 				execSync("which xclip || which xsel", { stdio: "ignore" });
 				console.log(`${colors.green("✅")} xclip/xsel found`);
+			} else {
+				execSync("which wl-copy || which xclip || which xsel", {
+					stdio: "ignore",
+				});
+				console.log(
+					`${colors.green("✅")} Clipboard tools found (session auto-detect unavailable)`,
+				);
 			}
 		} catch (_e) {
 			console.log(

@@ -17,6 +17,7 @@ This file provides minimal, durable context for automated agents working in this
 - Runtime: Bun (package manager + runtime)
 - Language: TypeScript (strict)
 - Logging: pino w/ daily rotated log files
+- Overlay: Electron sidecar started by the daemon over local IPC
 
 **Details:** `package.json`, `docs/ARCHITECTURE.md`
 
@@ -34,15 +35,24 @@ This file provides minimal, durable context for automated agents working in this
 - Uses Groq LLM to merge transcripts from Groq Whisper and Deepgram Nova-3.
 - Model is configurable via `transcription.mergeModel` (default: `llama-3.3-70b-versatile`).
 
-**Log files:** `~/.config/hyprvox/logs/hyprvox-YYYY-MM-DD.log`
+**Log files:** use `paths.logs` from config; current local config writes to `~/.config/voice-cli/logs/`
 
 ## Where to Find Operational Data
-- Logs: `~/.config/hyprvox/logs/`
-- History: `~/.config/hyprvox/history.json`
-- Config: `~/.config/hyprvox/config.json`
+- Config dir: `~/.config/hypr/vox/`
+- Logs: configured by `paths.logs` in `~/.config/hypr/vox/config.json` (current local config uses `~/.config/voice-cli/logs/`)
+- History: `~/.config/voice-cli/history.json`
+- Config: `~/.config/hypr/vox/config.json`
+- IPC socket: `~/.config/hypr/vox/daemon.sock`
+- Overlay PID file: `~/.config/hypr/vox/overlay.pid`
 
 ## Known Workflows
 - Hotkey toggle: Right Control (default). Recording starts on first press, stops on second.
+- In Hyprland setups, the built-in hotkey is often disabled and a compositor binding calls `hyprvox toggle` instead.
 - Output: text appended to clipboard + notification; history entry stored.
+
+## Overlay Notes
+- Overlay process is launched by `src/daemon/service.ts` and connects to the daemon over IPC.
+- If transcription still works but visual feedback disappears, check overlay status separately from daemon status.
+- First places to inspect are `bun run index.ts health`, `bun run index.ts overlay`, `journalctl --user -u hyprvox.service`, and the configured log directory from `paths.logs`.
 
 **Details:** `docs/STT_FLOW.md`, `docs/CONFIGURATION.md`

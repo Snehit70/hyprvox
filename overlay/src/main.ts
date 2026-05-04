@@ -8,6 +8,22 @@ import {
 } from "electron";
 import { type DaemonState, getIPCClient, type IPCClient } from "./ipc-client";
 
+// Validate display environment before starting
+if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
+	console.error(
+		"[Overlay] No display environment found (DISPLAY or WAYLAND_DISPLAY)",
+	);
+	console.error("[Overlay] Overlay cannot start without a display server");
+	process.exit(1);
+}
+
+// Disable GPU acceleration to prevent rendering crashes on Wayland
+// GPU-related crashes are the most common cause of overlay failures
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch("disable-gpu");
+app.commandLine.appendSwitch("disable-software-rasterizer");
+app.commandLine.appendSwitch("disable-dev-shm-usage");
+
 interface OverlayConfig {
 	width: number;
 	height: number;
@@ -22,12 +38,22 @@ const DEFAULT_CONFIG: OverlayConfig = {
 
 const SUCCESS_HIDE_DELAY_MS = 1500;
 const ERROR_HIDE_DELAY_MS = 3000;
+const IPC_CONNECTION_TIMEOUT_MS = 5000;
 
 let mainWindow: BrowserWindow | null = null;
 let ipcClient: IPCClient | null = null;
 let previousStatus: string = "idle";
 let hideTimeout: NodeJS.Timeout | null = null;
 let isWindowVisible = false;
+let ipcConnectionTimeout: NodeJS.Timeout | null = null;
+
+process.on("uncaughtException", (err) => {
+	console.error("[Overlay] Uncaught exception:", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+	console.error("[Overlay] Unhandled rejection:", reason);
+});
 
 function createOverlayWindow(
 	config: OverlayConfig = DEFAULT_CONFIG,
@@ -67,10 +93,51 @@ function createOverlayWindow(
 
 	window.loadFile(path.join(__dirname, "renderer", "index.html"));
 
+	// Add crash recovery handlers
+	window.on("unresponsive", () => {
+		console.error("[Overlay] Window became unresponsive");
+		if (mainWindow) {
+			mainWindow.destroy();
+			mainWindow = null;
+		}
+		// Recreate window after delay
+		setTimeout(() => {
+			if (!mainWindow) {
+				console.log("[Overlay] Recreating window after unresponsive event");
+				mainWindow = createOverlayWindow();
+				// IPC client is a singleton already connected, no need to reinitialize
+			}
+		}, 2000);
+	});
+
+	window.webContents.on("render-process-gone", (_event, details) => {
+		console.error("[Overlay] Renderer process crashed", details);
+		if (mainWindow) {
+			mainWindow.destroy();
+			mainWindow = null;
+		}
+		// Recreate window after delay
+		setTimeout(() => {
+			if (!mainWindow) {
+				console.log("[Overlay] Recreating window after crash");
+				mainWindow = createOverlayWindow();
+				// IPC client is a singleton already connected, no need to reinitialize
+			}
+		}, 2000);
+	});
+
 	return window;
 }
 
 function setupIPCClient(): void {
+	// Set connection timeout
+	ipcConnectionTimeout = setTimeout(() => {
+		console.error(
+			"[Overlay] IPC connection timeout - daemon may not be running",
+		);
+		app.quit();
+	}, IPC_CONNECTION_TIMEOUT_MS);
+
 	ipcClient = getIPCClient();
 
 	ipcClient.on("stateChange", (state: DaemonState) => {
@@ -162,6 +229,10 @@ function setupIPCClient(): void {
 	});
 
 	ipcClient.on("connected", () => {
+		if (ipcConnectionTimeout) {
+			clearTimeout(ipcConnectionTimeout);
+			ipcConnectionTimeout = null;
+		}
 		console.log("[IPC] Connected to daemon");
 	});
 
@@ -175,9 +246,14 @@ function setupIPCClient(): void {
 
 app.whenReady().then(() => {
 	mainWindow = createOverlayWindow();
+	console.log("[Overlay] App ready");
 
 	mainWindow.on("closed", () => {
 		mainWindow = null;
+	});
+
+	mainWindow.webContents.on("render-process-gone", (_event, details) => {
+		console.error("[Overlay] Render process gone:", details);
 	});
 
 	ipcMain.on("window-ready", () => {
@@ -193,6 +269,10 @@ app.whenReady().then(() => {
 	});
 
 	setupIPCClient();
+});
+
+app.on("child-process-gone", (_event, details) => {
+	console.error("[Overlay] Child process gone:", details);
 });
 
 app.on("window-all-closed", () => {
