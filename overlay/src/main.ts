@@ -105,7 +105,7 @@ function createOverlayWindow(
 			if (!mainWindow) {
 				console.log("[Overlay] Recreating window after unresponsive event");
 				mainWindow = createOverlayWindow();
-				setupIPCClient();
+				// IPC client is a singleton already connected, no need to reinitialize
 			}
 		}, 2000);
 	});
@@ -121,7 +121,7 @@ function createOverlayWindow(
 			if (!mainWindow) {
 				console.log("[Overlay] Recreating window after crash");
 				mainWindow = createOverlayWindow();
-				setupIPCClient();
+				// IPC client is a singleton already connected, no need to reinitialize
 			}
 		}, 2000);
 	});

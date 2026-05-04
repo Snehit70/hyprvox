@@ -1217,7 +1217,8 @@ export class DaemonService {
 			}
 
 			// Check for hallucinations (short text or known patterns)
-			if (groqText && !deepgramErr) {
+			// Only skip if we have strong evidence: no Deepgram text to validate against
+			if (groqText && !deepgramText) {
 				const isShortHallucination =
 					streamingChunkCount === 0 &&
 					groqText.length < HALLUCINATION_MAX_CHARS;
@@ -1232,7 +1233,7 @@ export class DaemonService {
 							hasPattern: hasHallucinationPattern,
 							text: groqText.substring(0, 100),
 						},
-						"Filtered Groq hallucination",
+						"Filtered Groq hallucination (no Deepgram text to validate)",
 					);
 					notify(
 						"No Speech Detected",
