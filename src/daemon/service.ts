@@ -39,7 +39,59 @@ import { checkHotkeyConflict } from "./conflict";
 import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
 
-const HALLUCINATION_MAX_CHARS = 20;
+const HALLUCINATION_MAX_CHARS = 50;
+
+// Common Whisper hallucination patterns (from YouTube training data)
+const HALLUCINATION_PATTERNS = [
+	/thank you for watching/i,
+	/thanks for watching/i,
+	/please subscribe/i,
+	/don't forget to like/i,
+	/like and subscribe/i,
+	/hit the bell/i,
+];
+
+// System prompt phrases that should never appear in output
+const PROMPT_LEAKAGE_PATTERNS = [
+	/when the speaker clearly dictates/i,
+	/the speaker clearly/i,
+	/prefer literal symbols/i,
+	/preserve spoken content/i,
+	/format as a headed numbered list/i,
+];
+
+function containsHallucination(text: string): boolean {
+	return HALLUCINATION_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function containsPromptLeakage(text: string): boolean {
+	return PROMPT_LEAKAGE_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isGarbageTranscript(text: string): boolean {
+	// Check for non-Latin characters (Thai, Chinese, Arabic, etc.)
+	// eslint-disable-next-line no-control-regex
+	const nonLatinChars = text.match(/[^\u0020-\u007E\u00A0-\u00FF]/g);
+	if (nonLatinChars && nonLatinChars.length > text.length * 0.1) {
+		return true; // >10% non-Latin characters
+	}
+
+	// Check for excessive nonsense (words not in basic dictionary pattern)
+	const words = text.split(/\s+/);
+	const suspiciousWords = words.filter((word) => {
+		// Remove punctuation
+		const clean = word.replace(/[^\w]/g, "").toLowerCase();
+		// Flag words with unusual character patterns
+		return (
+			clean.length > 3 &&
+			(/\d{2,}/.test(clean) || // multiple digits in word
+				/[a-z]{15,}/.test(clean) || // extremely long word
+				/(.)\1{3,}/.test(clean)) // repeated character 4+ times
+		);
+	});
+
+	return suspiciousWords.length > words.length * 0.3; // >30% suspicious words
+}
 
 // --- Instrumentation types ---
 
@@ -1164,24 +1216,32 @@ export class DaemonService {
 				throw new Error("Both transcription services failed");
 			}
 
-			if (
-				streamingChunkCount === 0 &&
-				!deepgramErr &&
-				groqText &&
-				groqText.length < HALLUCINATION_MAX_CHARS
-			) {
-				metrics.mergeStrategy = "skip_hallucination";
-				logger.info(
-					{ groqTextLength: groqText.length, streamingChunkCount },
-					"Filtered Groq hallucination on silent audio",
-				);
-				notify(
-					"No Speech Detected",
-					"Recording contained no audible speech.",
-					"warning",
-				);
-				this.setStatus("idle");
-				return;
+			// Check for hallucinations (short text or known patterns)
+			if (groqText && !deepgramErr) {
+				const isShortHallucination =
+					streamingChunkCount === 0 &&
+					groqText.length < HALLUCINATION_MAX_CHARS;
+				const hasHallucinationPattern = containsHallucination(groqText);
+
+				if (isShortHallucination || hasHallucinationPattern) {
+					metrics.mergeStrategy = "skip_hallucination";
+					logger.info(
+						{
+							groqTextLength: groqText.length,
+							streamingChunkCount,
+							hasPattern: hasHallucinationPattern,
+							text: groqText.substring(0, 100),
+						},
+						"Filtered Groq hallucination",
+					);
+					notify(
+						"No Speech Detected",
+						"Recording contained no audible speech.",
+						"warning",
+					);
+					this.setStatus("idle");
+					return;
+				}
 			}
 
 			// --- Stage: Merge ---
@@ -1222,6 +1282,38 @@ export class DaemonService {
 
 			if (!finalText) {
 				throw new Error("No transcription generated");
+			}
+
+			// --- Validation: Check for prompt leakage ---
+			if (containsPromptLeakage(finalText)) {
+				logger.error(
+					{ text: finalText.substring(0, 200) },
+					"System prompt leakage detected in output",
+				);
+				notify(
+					"Transcription Error",
+					"Output validation failed. Please try again.",
+					"error",
+				);
+				throw new Error("System prompt leakage detected");
+			}
+
+			// --- Validation: Check for garbage transcript ---
+			if (isGarbageTranscript(finalText)) {
+				logger.error(
+					{
+						text: finalText.substring(0, 200),
+						textLength: finalText.length,
+						duration,
+					},
+					"Garbage transcript detected",
+				);
+				notify(
+					"Transcription Error",
+					"Output quality check failed. Please try again.",
+					"error",
+				);
+				throw new Error("Garbage transcript detected");
 			}
 
 			// --- Stage: Clipboard ---

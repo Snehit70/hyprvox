@@ -48,9 +48,11 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	// Finalize wait: how long to wait for a final transcript after sending
 	// the finalize signal to Deepgram.  Lower values reduce stop latency
 	// but risk truncating tail words on slow-finalize sessions.
-	// Keep the conservative default until real finalize timing data tells us
-	// a lower threshold is safe for transcript completeness.
-	private static readonly FINALIZE_TIMEOUT_MS = 600;
+	// Data from Apr-May 2026: clean detection median=286ms, p95=376ms.
+	// 81% of sessions hit the 600ms timeout unnecessarily.
+	// Reduced to 400ms to save ~200ms on timeout cases while maintaining
+	// safety margin above p95 clean detection time.
+	private static readonly FINALIZE_TIMEOUT_MS = 400;
 
 	constructor() {
 		super();
