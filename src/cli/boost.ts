@@ -2,7 +2,10 @@ import { Command } from "commander";
 import * as colors from "yoctocolors";
 import { loadConfig } from "../config/loader";
 import { saveConfig } from "../config/writer";
+import { buildContextLexicon } from "../transcribe/lexicon";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
+
+const projectRoot = new URL("../..", import.meta.url).pathname;
 
 export const boostCommand = new Command("boost")
 	.description("Manage boost words (custom vocabulary)")
@@ -25,11 +28,45 @@ boostCommand
 				`${colors.bold("Boost Words")} (${colors.cyan(words.length.toString())}/450):`,
 			);
 			console.log(colors.dim("------------------------"));
-			words.forEach((word) => console.log(`${colors.green("-")} ${word}`));
+			for (const word of words) {
+				console.log(`${colors.green("-")} ${word}`);
+			}
 			console.log(colors.dim("------------------------"));
 		} catch (error) {
 			console.error(
 				colors.red("Failed to list boost words:"),
+				(error as Error).message,
+			);
+		}
+	});
+
+boostCommand
+	.command("lexicon")
+	.description("Show computed project lexicon terms")
+	.action(() => {
+		try {
+			const config = loadConfig();
+			const terms = buildContextLexicon({
+				rootDir: projectRoot,
+				boostWords: config.transcription.boostWords || [],
+			});
+
+			if (terms.length === 0) {
+				console.log(colors.yellow("No lexicon terms found."));
+				return;
+			}
+
+			console.log(
+				`${colors.bold("Project Lexicon")} (${colors.cyan(terms.length.toString())} terms):`,
+			);
+			console.log(colors.dim("------------------------"));
+			for (const term of terms) {
+				console.log(`${colors.green("-")} ${term}`);
+			}
+			console.log(colors.dim("------------------------"));
+		} catch (error) {
+			console.error(
+				colors.red("Failed to build project lexicon:"),
 				(error as Error).message,
 			);
 		}

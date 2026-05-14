@@ -68,6 +68,8 @@ sequenceDiagram
 ### 4. Parallel Transcription
 To minimize latency and maximize accuracy, `hyprvox` executes requests to two separate providers simultaneously using `Promise.all`:
 
+Before provider calls, the daemon builds a local project lexicon from configured boost words, common technical terms, and repo filenames. This improves exact tokens such as `AGENTS.md`, `CRUD`, `SSE`, and `CodeRabbit`.
+
 1.  **Groq (Whisper Large V3)**:
     - **Strength**: Unrivaled technical accuracy and word recognition.
     - **Usage**: Primary source for content.
@@ -77,12 +79,15 @@ To minimize latency and maximize accuracy, `hyprvox` executes requests to two se
 
 **Fallback Logic**: If one service fails, the daemon automatically uses the result from the successful one. If both fail, a critical error notification is shown.
 
+**Technical Term Preservation**: Groq always receives the computed lexicon as prompt terms. Deepgram receives it as `keyterm` hints when `transcription.deepgramBoosting` is enabled.
+
 **Replay Logging**: The daemon also logs the raw Groq source transcript at info level so merge-quality experiments can replay exact source pairs later.
 
 ### 5. LLM-Based Merging
 If both Groq and Deepgram return results, they are sent to **Llama 3.3 70B** on Groq Cloud.
 
 - **Prompting**: The LLM is instructed to trust Groq for words/technical terms and Deepgram for punctuation/formatting.
+- **Lexicon Hints**: The merge prompt includes known project terms and exact tokens found in either source transcript.
 - **Deduplication**: Automatically removes hallucinations or repeated phrases common in Whisper models.
 - **Latency**: Highly optimized (typically <500ms).
 - **Fallback**: If the LLM call fails or times out, the system defaults to the Deepgram result (for better formatting) or Groq.

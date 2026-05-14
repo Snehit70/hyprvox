@@ -3,10 +3,12 @@ import {
 	buildMergeUserPrompt,
 	calculateMergeMaxTokens,
 	decideMerge,
+	extractExactTokenHints,
 	hasStructuredFormattingIntent,
 	isRequestTooLargeError,
 	type MergeReason,
 	type MergeStrategy,
+	TranscriptMerger,
 } from "../src/transcribe/merger";
 import { exactTokenFixtures } from "./fixtures/transcript-quality";
 
@@ -254,6 +256,89 @@ describe("hasStructuredFormattingIntent", () => {
 		expect(
 			hasStructuredFormattingIntent("we should update the config path later"),
 		).toBe(false);
+	});
+});
+
+describe("extractExactTokenHints", () => {
+	it("extracts filenames, acronyms, camel-case names, ports, URLs, and headers", () => {
+		const tokens = extractExactTokenHints(
+			"Open `AGENTS.md`, update CodeRabbit, CRUD, and localhost:3000.",
+			"Call https://api.example.com with Authorization: Bearer and VITE_API_URL.",
+		);
+
+		expect(tokens).toEqual(
+			expect.arrayContaining([
+				"AGENTS.md",
+				"CodeRabbit",
+				"CRUD",
+				"localhost:3000",
+				"https://api.example.com",
+				"Authorization: Bearer",
+				"VITE_API_URL",
+			]),
+		);
+	});
+
+	it("deduplicates exact tokens case-insensitively", () => {
+		const tokens = extractExactTokenHints("AGENTS.md", "agents.md AGENTS.md");
+
+		expect(tokens).toEqual(["AGENTS.md"]);
+	});
+
+	it("does not extract ordinary prose words", () => {
+		const tokens = extractExactTokenHints(
+			"we should update the config later and keep the text readable",
+		);
+
+		expect(tokens).toEqual([]);
+	});
+});
+
+describe("buildMergeUserPrompt", () => {
+	it("includes exact-token preservation hints from both sources", () => {
+		const prompt = buildMergeUserPrompt(
+			"Open AGENTS.md and update CRUD handlers.",
+			"Open agents dot MD and update cred handlers.",
+			[],
+		);
+
+		expect(prompt).toContain("Preserve these exact tokens");
+		expect(prompt).toContain("AGENTS.md");
+		expect(prompt).toContain("CRUD");
+	});
+
+	it("includes known project terms when provided", () => {
+		const prompt = buildMergeUserPrompt(
+			"Open agents dot MD.",
+			"Open AGENTS.md.",
+			[],
+			["AGENTS.md", "CodeRabbit"],
+		);
+
+		expect(prompt).toContain("Known project terms: AGENTS.md, CodeRabbit.");
+	});
+
+	it("omits exact-token section for ordinary prose", () => {
+		const prompt = buildMergeUserPrompt(
+			"we should update the config later",
+			"we should update the config later",
+			[],
+		);
+
+		expect(prompt).not.toContain("Preserve these exact tokens");
+	});
+});
+
+describe("TranscriptMerger", () => {
+	it("stores a defensive copy of context lexicon terms", () => {
+		const merger = new TranscriptMerger();
+		const terms = ["AGENTS.md"];
+
+		merger.setContextLexicon(terms);
+		terms.push("MUTATED.md");
+		const state = merger as unknown as { contextLexicon: string[] };
+
+		expect(state.contextLexicon).toEqual(["AGENTS.md"]);
 	});
 });
 

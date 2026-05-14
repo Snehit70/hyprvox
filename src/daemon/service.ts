@@ -24,6 +24,7 @@ import {
 	type StreamingStopReason,
 } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
+import { buildContextLexicon } from "../transcribe/lexicon";
 import {
 	type MergeReason,
 	type MergeResult,
@@ -42,6 +43,7 @@ import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
 
 const HALLUCINATION_MAX_CHARS = 50;
+const projectRoot = join(import.meta.dir, "..", "..");
 
 // Common Whisper hallucination patterns (from YouTube training data)
 const HALLUCINATION_PATTERNS = [
@@ -159,6 +161,8 @@ export class DaemonService {
 	private overlayRestartAttempts: number[] = [];
 	private lastOverlayAudioLevelAt = 0;
 	private smoothedOverlayLevel = 0;
+	private contextLexicon: string[] = [];
+	private providerBoostWords: string[] = [];
 
 	private static readonly OVERLAY_RESTART_DELAY_MS = 2000;
 	private static readonly OVERLAY_RESTART_WINDOW_MS = 60000;
@@ -171,6 +175,7 @@ export class DaemonService {
 		this.groq = new GroqClient();
 		this.deepgram = new DeepgramTranscriber();
 		this.merger = new TranscriptMerger();
+		this.refreshContextLexicon();
 		this.clipboard = new ClipboardManager();
 		this.ipcServer = getIPCServer();
 		const configDir = join(homedir(), ".config", "hypr", "vox");
@@ -196,6 +201,7 @@ export class DaemonService {
 				this.groq.reset();
 				this.deepgram.reset();
 				this.merger.reset();
+				this.refreshContextLexicon();
 				logger.info("Config reloaded successfully");
 				notify("Config Reloaded", "Configuration updated", "info");
 			} else {
@@ -215,6 +221,39 @@ export class DaemonService {
 	private setupSignalHandlers() {
 		process.on("SIGUSR1", this.signalHandler);
 		process.on("SIGUSR2", this.reloadSignalHandler);
+	}
+
+	private refreshContextLexicon(): void {
+		const configuredBoostWords = this.config.transcription.boostWords || [];
+		this.contextLexicon = buildContextLexicon({
+			rootDir: projectRoot,
+			boostWords: configuredBoostWords,
+		});
+		this.providerBoostWords = this.mergeProviderBoostWords(
+			configuredBoostWords,
+			this.contextLexicon,
+		);
+		this.merger.setContextLexicon(this.contextLexicon);
+	}
+
+	private mergeProviderBoostWords(...wordLists: string[][]): string[] {
+		const seen = new Set<string>();
+		const merged: string[] = [];
+
+		for (const words of wordLists) {
+			for (const rawWord of words) {
+				const word = rawWord.trim().replace(/\s+/g, " ");
+				if (!word) continue;
+
+				const key = word.toLowerCase();
+				if (seen.has(key)) continue;
+
+				seen.add(key);
+				merged.push(word);
+			}
+		}
+
+		return merged;
 	}
 
 	private scheduleStateWrite(): void {
@@ -758,7 +797,7 @@ export class DaemonService {
 					const startPromise = this.deepgramStreaming.start(
 						this.config.transcription.language,
 						this.config.transcription.deepgramBoosting
-							? this.config.transcription.boostWords || []
+							? this.providerBoostWords
 							: [],
 					);
 
@@ -935,7 +974,7 @@ export class DaemonService {
 
 		try {
 			const language = this.config.transcription.language;
-			const boostWords = this.config.transcription.boostWords || [];
+			const boostWords = this.providerBoostWords;
 			const deepgramBoostWords = this.config.transcription.deepgramBoosting
 				? boostWords
 				: [];

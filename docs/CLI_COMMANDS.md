@@ -94,6 +94,10 @@ Manage custom vocabulary (boost words) to improve transcription accuracy.
   - List all currently configured boost words.
   - **Options:**
     - `--help`: Display help for this subcommand.
+- **`boost lexicon`**
+  - Show the computed project lexicon used for technical term preservation.
+  - **Options:**
+    - `--help`: Display help for this subcommand.
 - **`boost add <words...>`**
   - Add one or more words to the boost list.
   - **Options:**
