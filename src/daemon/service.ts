@@ -162,6 +162,7 @@ export class DaemonService {
 	private lastOverlayAudioLevelAt = 0;
 	private smoothedOverlayLevel = 0;
 	private contextLexicon: string[] = [];
+	private providerBoostWords: string[] = [];
 
 	private static readonly OVERLAY_RESTART_DELAY_MS = 2000;
 	private static readonly OVERLAY_RESTART_WINDOW_MS = 60000;
@@ -223,11 +224,36 @@ export class DaemonService {
 	}
 
 	private refreshContextLexicon(): void {
+		const configuredBoostWords = this.config.transcription.boostWords || [];
 		this.contextLexicon = buildContextLexicon({
 			rootDir: projectRoot,
-			boostWords: this.config.transcription.boostWords || [],
+			boostWords: configuredBoostWords,
 		});
+		this.providerBoostWords = this.mergeProviderBoostWords(
+			configuredBoostWords,
+			this.contextLexicon,
+		);
 		this.merger.setContextLexicon(this.contextLexicon);
+	}
+
+	private mergeProviderBoostWords(...wordLists: string[][]): string[] {
+		const seen = new Set<string>();
+		const merged: string[] = [];
+
+		for (const words of wordLists) {
+			for (const rawWord of words) {
+				const word = rawWord.trim().replace(/\s+/g, " ");
+				if (!word) continue;
+
+				const key = word.toLowerCase();
+				if (seen.has(key)) continue;
+
+				seen.add(key);
+				merged.push(word);
+			}
+		}
+
+		return merged;
 	}
 
 	private scheduleStateWrite(): void {
@@ -771,7 +797,7 @@ export class DaemonService {
 					const startPromise = this.deepgramStreaming.start(
 						this.config.transcription.language,
 						this.config.transcription.deepgramBoosting
-							? this.contextLexicon
+							? this.providerBoostWords
 							: [],
 					);
 
@@ -948,7 +974,7 @@ export class DaemonService {
 
 		try {
 			const language = this.config.transcription.language;
-			const boostWords = this.contextLexicon;
+			const boostWords = this.providerBoostWords;
 			const deepgramBoostWords = this.config.transcription.deepgramBoosting
 				? boostWords
 				: [];

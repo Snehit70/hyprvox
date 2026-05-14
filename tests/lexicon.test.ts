@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -56,5 +56,16 @@ describe("buildContextLexicon", () => {
 		expect(terms).toContain("Aceon");
 		expect(terms).toContain("Hyprvox");
 		expect(terms).not.toContain("package.json");
+	});
+
+	it("does not follow directory symlinks while scanning filenames", () => {
+		const rootDir = mkdtempSync(join(tmpdir(), "hyprvox-lexicon-"));
+		const linkedDir = mkdtempSync(join(tmpdir(), "hyprvox-linked-"));
+		writeFileSync(join(linkedDir, "ShouldNotAppear.ts"), "");
+		symlinkSync(linkedDir, join(rootDir, "linked"), "dir");
+
+		const terms = buildContextLexicon({ rootDir });
+
+		expect(terms).not.toContain("ShouldNotAppear.ts");
 	});
 });

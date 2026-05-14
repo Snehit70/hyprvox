@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { basename, join } from "node:path";
 
 const MAX_LEXICON_TERMS = 120;
@@ -58,10 +58,20 @@ function addTerm(terms: string[], seen: Set<string>, rawTerm: string): void {
 function collectFilenames(rootDir: string): string[] {
 	const filenames: string[] = [];
 	const stack = [rootDir];
+	const visitedDirs = new Set<string>();
 
 	while (stack.length > 0 && filenames.length < MAX_FILENAME_TERMS) {
 		const dir = stack.pop();
 		if (!dir) break;
+
+		let canonicalDir: string;
+		try {
+			canonicalDir = realpathSync(dir);
+		} catch {
+			continue;
+		}
+		if (visitedDirs.has(canonicalDir)) continue;
+		visitedDirs.add(canonicalDir);
 
 		let entries: string[];
 		try {
@@ -77,7 +87,9 @@ function collectFilenames(rootDir: string): string[] {
 			const path = join(dir, entry);
 			let isDirectory = false;
 			try {
-				isDirectory = statSync(path).isDirectory();
+				const stat = lstatSync(path);
+				if (stat.isSymbolicLink()) continue;
+				isDirectory = stat.isDirectory();
 			} catch {
 				continue;
 			}
