@@ -18,6 +18,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -31,16 +33,23 @@ jobs:
 
       - name: Determine Version Bump Type
         id: bump-type
-        env:
-          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          if echo "$COMMIT_MSG" | grep -qE "(^feat!:|^fix!:|BREAKING CHANGE:)"; then
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            COMMIT_RANGE="${{ github.sha }}"
+          else
+            COMMIT_RANGE="$BEFORE..${{ github.sha }}"
+          fi
+
+          COMMIT_MESSAGES=$(git log --format=%B "$COMMIT_RANGE")
+
+          if echo "$COMMIT_MESSAGES" | grep -qE "(^feat!:|^fix!:|BREAKING CHANGE:)"; then
             echo "type=major" >> $GITHUB_OUTPUT
             echo "Detected: MAJOR (breaking change)"
-          elif echo "$COMMIT_MSG" | grep -qE "^feat(\(.+\))?:"; then
+          elif echo "$COMMIT_MESSAGES" | grep -qE "^feat(\(.+\))?:"; then
             echo "type=minor" >> $GITHUB_OUTPUT
             echo "Detected: MINOR (new feature)"
-          elif echo "$COMMIT_MSG" | grep -qE "^fix(\(.+\))?:"; then
+          elif echo "$COMMIT_MESSAGES" | grep -qE "^fix(\(.+\))?:"; then
             echo "type=patch" >> $GITHUB_OUTPUT
             echo "Detected: PATCH (bug fix)"
           else
