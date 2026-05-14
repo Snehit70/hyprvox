@@ -43,6 +43,7 @@ import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
 
 const HALLUCINATION_MAX_CHARS = 50;
+const projectRoot = join(import.meta.dir, "..", "..");
 
 // Common Whisper hallucination patterns (from YouTube training data)
 const HALLUCINATION_PATTERNS = [
@@ -160,6 +161,7 @@ export class DaemonService {
 	private overlayRestartAttempts: number[] = [];
 	private lastOverlayAudioLevelAt = 0;
 	private smoothedOverlayLevel = 0;
+	private contextLexicon: string[] = [];
 
 	private static readonly OVERLAY_RESTART_DELAY_MS = 2000;
 	private static readonly OVERLAY_RESTART_WINDOW_MS = 60000;
@@ -172,6 +174,7 @@ export class DaemonService {
 		this.groq = new GroqClient();
 		this.deepgram = new DeepgramTranscriber();
 		this.merger = new TranscriptMerger();
+		this.refreshContextLexicon();
 		this.clipboard = new ClipboardManager();
 		this.ipcServer = getIPCServer();
 		const configDir = join(homedir(), ".config", "hypr", "vox");
@@ -197,6 +200,7 @@ export class DaemonService {
 				this.groq.reset();
 				this.deepgram.reset();
 				this.merger.reset();
+				this.refreshContextLexicon();
 				logger.info("Config reloaded successfully");
 				notify("Config Reloaded", "Configuration updated", "info");
 			} else {
@@ -216,6 +220,14 @@ export class DaemonService {
 	private setupSignalHandlers() {
 		process.on("SIGUSR1", this.signalHandler);
 		process.on("SIGUSR2", this.reloadSignalHandler);
+	}
+
+	private refreshContextLexicon(): void {
+		this.contextLexicon = buildContextLexicon({
+			rootDir: projectRoot,
+			boostWords: this.config.transcription.boostWords || [],
+		});
+		this.merger.setContextLexicon(this.contextLexicon);
 	}
 
 	private scheduleStateWrite(): void {
@@ -756,12 +768,11 @@ export class DaemonService {
 						},
 					);
 
-					const lexiconBoostWords = buildContextLexicon({
-						boostWords: this.config.transcription.boostWords || [],
-					});
 					const startPromise = this.deepgramStreaming.start(
 						this.config.transcription.language,
-						this.config.transcription.deepgramBoosting ? lexiconBoostWords : [],
+						this.config.transcription.deepgramBoosting
+							? this.contextLexicon
+							: [],
 					);
 
 					// We catch synchronous errors from start(), but async connection errors go to 'error' event
@@ -937,9 +948,7 @@ export class DaemonService {
 
 		try {
 			const language = this.config.transcription.language;
-			const boostWords = buildContextLexicon({
-				boostWords: this.config.transcription.boostWords || [],
-			});
+			const boostWords = this.contextLexicon;
 			const deepgramBoostWords = this.config.transcription.deepgramBoosting
 				? boostWords
 				: [];

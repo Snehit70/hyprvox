@@ -5,6 +5,8 @@ import { saveConfig } from "../config/writer";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 
+const projectRoot = new URL("../..", import.meta.url).pathname;
+
 export const boostCommand = new Command("boost")
 	.description("Manage boost words (custom vocabulary)")
 	.summary("manage boost words");
@@ -45,6 +47,7 @@ boostCommand
 		try {
 			const config = loadConfig();
 			const terms = buildContextLexicon({
+				rootDir: projectRoot,
 				boostWords: config.transcription.boostWords || [],
 			});
 

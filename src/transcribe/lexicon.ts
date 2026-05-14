@@ -98,7 +98,7 @@ function collectFilenames(rootDir: string): string[] {
 }
 
 export function buildContextLexicon({
-	rootDir = process.cwd(),
+	rootDir,
 	boostWords = [],
 	maxTerms = MAX_LEXICON_TERMS,
 }: ContextLexiconOptions = {}): string[] {
@@ -107,8 +107,10 @@ export function buildContextLexicon({
 
 	for (const term of boostWords) addTerm(terms, seen, term);
 	for (const term of COMMON_TECHNICAL_TERMS) addTerm(terms, seen, term);
-	for (const filename of collectFilenames(rootDir))
-		addTerm(terms, seen, filename);
+	if (rootDir) {
+		for (const filename of collectFilenames(rootDir))
+			addTerm(terms, seen, filename);
+	}
 
 	return terms.slice(0, maxTerms);
 }

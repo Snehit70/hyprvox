@@ -8,6 +8,7 @@ import {
 	isRequestTooLargeError,
 	type MergeReason,
 	type MergeStrategy,
+	TranscriptMerger,
 } from "../src/transcribe/merger";
 import { exactTokenFixtures } from "./fixtures/transcript-quality";
 
@@ -325,6 +326,19 @@ describe("buildMergeUserPrompt", () => {
 		);
 
 		expect(prompt).not.toContain("Preserve these exact tokens");
+	});
+});
+
+describe("TranscriptMerger", () => {
+	it("stores a defensive copy of context lexicon terms", () => {
+		const merger = new TranscriptMerger();
+		const terms = ["AGENTS.md"];
+
+		merger.setContextLexicon(terms);
+		terms.push("MUTATED.md");
+		const state = merger as unknown as { contextLexicon: string[] };
+
+		expect(state.contextLexicon).toEqual(["AGENTS.md"]);
 	});
 });
 

@@ -49,4 +49,12 @@ describe("buildContextLexicon", () => {
 
 		expect(terms).toHaveLength(2);
 	});
+
+	it("does not scan the current shell directory by default", () => {
+		const terms = buildContextLexicon({ boostWords: ["Aceon"] });
+
+		expect(terms).toContain("Aceon");
+		expect(terms).toContain("Hyprvox");
+		expect(terms).not.toContain("package.json");
+	});
 });
