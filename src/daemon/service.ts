@@ -24,6 +24,7 @@ import {
 	type StreamingStopReason,
 } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
+import { buildContextLexicon } from "../transcribe/lexicon";
 import {
 	type MergeReason,
 	type MergeResult,
@@ -755,11 +756,12 @@ export class DaemonService {
 						},
 					);
 
+					const lexiconBoostWords = buildContextLexicon({
+						boostWords: this.config.transcription.boostWords || [],
+					});
 					const startPromise = this.deepgramStreaming.start(
 						this.config.transcription.language,
-						this.config.transcription.deepgramBoosting
-							? this.config.transcription.boostWords || []
-							: [],
+						this.config.transcription.deepgramBoosting ? lexiconBoostWords : [],
 					);
 
 					// We catch synchronous errors from start(), but async connection errors go to 'error' event
@@ -935,7 +937,9 @@ export class DaemonService {
 
 		try {
 			const language = this.config.transcription.language;
-			const boostWords = this.config.transcription.boostWords || [];
+			const boostWords = buildContextLexicon({
+				boostWords: this.config.transcription.boostWords || [],
+			});
 			const deepgramBoostWords = this.config.transcription.deepgramBoosting
 				? boostWords
 				: [];
