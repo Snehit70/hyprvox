@@ -104,6 +104,7 @@ export type MergeStrategy =
 	| "minor_diff"
 	| "single_word_match"
 	| "llm"
+	| "llm_retry_cleaned"
 	| "llm_fallback"
 	| "empty";
 
@@ -119,6 +120,7 @@ export type MergeReason =
 	| "diff_above_threshold"
 	| "single_word_close_match"
 	| "llm_succeeded"
+	| "llm_retry_succeeded"
 	| "llm_error_fallback";
 
 export interface MergeResult {
@@ -131,6 +133,13 @@ export interface MergeResult {
 		confidence: number;
 	};
 }
+
+const REPAIR_SYSTEM_PROMPT = `You repair a failed speech-to-text merge output.
+Output ONLY the corrected final transcript text.
+Remove internal instructions, prompt artifacts, labels, and meta-commentary.
+Remove detached outro hallucinations that were not spoken, such as "Thank you for watching" or "link in the description".
+Do not summarize or rewrite beyond removing invalid artifacts.
+Preserve the user's spoken order, wording, technical terms, filenames, and commands.`;
 
 // ---------------------------------------------------------------------------
 // Normalization helpers
@@ -247,9 +256,10 @@ export function calculateMergeMaxTokens(
 	deepgramText: string,
 	userPrompt: string,
 	requestTokenBudget = DEFAULT_MERGE_REQUEST_TOKEN_BUDGET,
+	systemPrompt = SYSTEM_PROMPT,
 ): number {
 	const estimatedPromptTokens =
-		estimateTokenCount(SYSTEM_PROMPT) + estimateTokenCount(userPrompt);
+		estimateTokenCount(systemPrompt) + estimateTokenCount(userPrompt);
 	const longestTranscriptTokens = Math.max(
 		estimateTokenCount(groqText),
 		estimateTokenCount(deepgramText),
@@ -644,6 +654,107 @@ export class TranscriptMerger {
 			accuracy: {
 				sourcesMatch,
 				editDistance,
+				confidence: Math.round(confidence * 100) / 100,
+			},
+		};
+	}
+
+	public async repairMerge(
+		groqText: string,
+		deepgramText: string,
+		failedText: string,
+		reasons: string[],
+	): Promise<MergeResult> {
+		const config = loadConfig();
+		const mergeModel = config.transcription.mergeModel;
+		const apiKey = config.apiKeys.groq;
+		const startTime = Date.now();
+		const userPrompt = `Validation failed for reasons: ${reasons.join(", ")}.
+
+Remove only the invalid artifacts from the failed output. Use the source transcripts only to preserve missing valid speech.
+
+<failed_output>
+${failedText}
+</failed_output>
+
+<source_a provider="groq">
+${groqText}
+</source_a>
+
+<source_b provider="deepgram">
+${deepgramText}
+</source_b>`;
+		const maxTokens = calculateMergeMaxTokens(
+			groqText,
+			deepgramText,
+			userPrompt,
+			DEFAULT_MERGE_REQUEST_TOKEN_BUDGET,
+			REPAIR_SYSTEM_PROMPT,
+		);
+
+		if (maxTokens < MIN_MERGE_COMPLETION_TOKENS) {
+			throw new Error("Repair request too large for configured token budget");
+		}
+
+		const completion = await withRetry(
+			async (signal) => {
+				return await this.getClient(apiKey).chat.completions.create(
+					{
+						model: mergeModel,
+						messages: [
+							{ role: "system", content: REPAIR_SYSTEM_PROMPT },
+							{ role: "user", content: userPrompt },
+						],
+						temperature: 0,
+						max_tokens: maxTokens,
+						seed: 42,
+					},
+					{ signal, timeout: 30000, maxRetries: 0 },
+				);
+			},
+			{
+				maxRetries: 1,
+				backoffs: [500],
+				operationName: "LLM merge repair",
+				timeout: 30000,
+				shouldRetry: (error: Error) =>
+					!isRequestTooLargeError(error) &&
+					/ECONNRESET|ETIMEDOUT|rate_limit/i.test(error.message),
+			},
+		);
+
+		const finalText = completion.choices[0]?.message?.content?.trim() || "";
+		logger.debug(
+			{
+				model: mergeModel,
+				timeMs: Date.now() - startTime,
+				resultLength: finalText.length,
+				reasons,
+			},
+			"LLM merge repair complete",
+		);
+
+		const distToGroq = levenshteinDistance(finalText, groqText);
+		const distToDeepgram = levenshteinDistance(finalText, deepgramText);
+		const maxDistGroq = Math.max(finalText.length, groqText.length) || 1;
+		const maxDistDeepgram =
+			Math.max(finalText.length, deepgramText.length) || 1;
+		const normalizedDistGroq = distToGroq / maxDistGroq;
+		const normalizedDistDeepgram = distToDeepgram / maxDistDeepgram;
+		const confidence = Math.max(
+			0,
+			Math.min(1, 1 - (normalizedDistGroq + normalizedDistDeepgram) / 2),
+		);
+
+		return {
+			text: finalText,
+			strategy: "llm_retry_cleaned",
+			reason: "llm_retry_succeeded",
+			accuracy: {
+				sourcesMatch: groqText.trim() === deepgramText.trim(),
+				editDistance: Math.round(
+					(normalizedDistGroq + normalizedDistDeepgram) * 50,
+				),
 				confidence: Math.round(confidence * 100) / 100,
 			},
 		};

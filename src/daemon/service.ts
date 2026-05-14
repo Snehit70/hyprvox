@@ -30,6 +30,11 @@ import {
 	type MergeStrategy,
 	TranscriptMerger,
 } from "../transcribe/merger";
+import {
+	type TranscriptQualityReason,
+	type TranscriptQualityResult,
+	validateTranscript,
+} from "../transcribe/quality";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { errorIncludes, getErrorCode } from "../utils/errors";
 import { appendHistory } from "../utils/history";
@@ -51,46 +56,8 @@ const HALLUCINATION_PATTERNS = [
 	/hit the bell/i,
 ];
 
-// System prompt phrases that should never appear in output
-const PROMPT_LEAKAGE_PATTERNS = [
-	/when the speaker clearly dictates/i,
-	/the speaker clearly/i,
-	/prefer literal symbols/i,
-	/preserve spoken content/i,
-	/format as a headed numbered list/i,
-];
-
 function containsHallucination(text: string): boolean {
 	return HALLUCINATION_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-function containsPromptLeakage(text: string): boolean {
-	return PROMPT_LEAKAGE_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-function isGarbageTranscript(text: string): boolean {
-	// Check for non-Latin characters (Thai, Chinese, Arabic, etc.)
-	// eslint-disable-next-line no-control-regex
-	const nonLatinChars = text.match(/[^\u0020-\u007E\u00A0-\u00FF]/g);
-	if (nonLatinChars && nonLatinChars.length > text.length * 0.1) {
-		return true; // >10% non-Latin characters
-	}
-
-	// Check for excessive nonsense (words not in basic dictionary pattern)
-	const words = text.split(/\s+/);
-	const suspiciousWords = words.filter((word) => {
-		// Remove punctuation
-		const clean = word.replace(/[^\w]/g, "").toLowerCase();
-		// Flag words with unusual character patterns
-		return (
-			clean.length > 3 &&
-			(/\d{2,}/.test(clean) || // multiple digits in word
-				/[a-z]{15,}/.test(clean) || // extremely long word
-				/(.)\1{3,}/.test(clean)) // repeated character 4+ times
-		);
-	});
-
-	return suspiciousWords.length > words.length * 0.3; // >30% suspicious words
 }
 
 // --- Instrumentation types ---
@@ -120,6 +87,10 @@ interface TranscriptionMetrics {
 	audioFormatStrategy: AudioFormatStrategy;
 	mergeStrategy: MergeStrategy | "skip_no_speech" | "skip_hallucination";
 	mergeReason: MergeReason | null;
+	validationReasons: TranscriptQualityReason[];
+	validationRetryCount: number;
+	validationFallbackSource: "none" | "groq" | "deepgram";
+	trimmedHallucinationSuffix: boolean;
 	deepgramStopReason: StreamingStopReason | null;
 
 	// Deepgram early-stop observability
@@ -948,6 +919,10 @@ export class DaemonService {
 			audioFormatStrategy: "raw", // Will be set based on compression decision
 			mergeStrategy: "skip_no_speech",
 			mergeReason: null,
+			validationReasons: [],
+			validationRetryCount: 0,
+			validationFallbackSource: "none",
+			trimmedHallucinationSuffix: false,
 			deepgramStopReason: null,
 			deepgramStopWallMs: -1,
 			deepgramCriticalPathMs: -1,
@@ -1164,6 +1139,19 @@ export class DaemonService {
 			metrics.groqTextLength = groqText.length;
 			metrics.deepgramTextLength = deepgramText.length;
 
+			if (groqText) {
+				// Intentional: keep the raw Groq source text for replaying merge-quality comparisons.
+				logger.info(
+					{
+						provider: "groq",
+						text: groqText,
+						textLength: groqText.length,
+						recordingDurationMs: duration,
+					},
+					"Groq source transcript",
+				);
+			}
+
 			const handleTranscriptionError = (
 				err: unknown,
 				failedService: string,
@@ -1285,36 +1273,102 @@ export class DaemonService {
 				throw new Error("No transcription generated");
 			}
 
-			// --- Validation: Check for prompt leakage ---
-			if (containsPromptLeakage(finalText)) {
-				logger.error(
-					{ text: finalText.substring(0, 200) },
-					"System prompt leakage detected in output",
+			// --- Validation + recovery ---
+			let validation: TranscriptQualityResult = validateTranscript(finalText);
+			metrics.validationReasons = validation.reasons;
+			metrics.trimmedHallucinationSuffix = validation.trimmedSuffix;
+			finalText = validation.text;
+
+			if (!validation.valid && groqText && deepgramText) {
+				logger.warn(
+					{
+						reasons: validation.reasons,
+						text: finalText.substring(0, 200),
+					},
+					"Merged transcript failed validation; retrying repair",
 				);
-				notify(
-					"Transcription Error",
-					"Output validation failed. Please try again.",
-					"error",
-				);
-				throw new Error("System prompt leakage detected");
+
+				metrics.validationRetryCount = 1;
+				try {
+					const repairTimed = await timeAsync(() =>
+						this.merger.repairMerge(
+							groqText,
+							deepgramText,
+							finalText,
+							validation.reasons,
+						),
+					);
+					metrics.mergeMs += repairTimed.durationMs;
+					finalText = repairTimed.result.text;
+					accuracy = repairTimed.result.accuracy;
+					metrics.mergeStrategy = repairTimed.result.strategy;
+					metrics.mergeReason = repairTimed.result.reason;
+					validation = validateTranscript(finalText);
+					metrics.validationReasons = validation.reasons;
+					metrics.trimmedHallucinationSuffix = validation.trimmedSuffix;
+					finalText = validation.text;
+				} catch (error) {
+					logger.warn(
+						{ err: error, reasons: validation.reasons },
+						"Merged transcript repair failed; trying source fallback",
+					);
+				}
 			}
 
-			// --- Validation: Check for garbage transcript ---
-			if (isGarbageTranscript(finalText)) {
+			if (!validation.valid) {
+				const deepgramValidation = deepgramText
+					? validateTranscript(deepgramText)
+					: null;
+				const groqValidation = groqText ? validateTranscript(groqText) : null;
+
+				if (deepgramValidation?.valid && deepgramValidation.text) {
+					finalText = deepgramValidation.text;
+					validation = deepgramValidation;
+					metrics.validationFallbackSource = "deepgram";
+					metrics.mergeStrategy = "single_source";
+					metrics.mergeReason = "deepgram_only";
+				} else if (groqValidation?.valid && groqValidation.text) {
+					finalText = groqValidation.text;
+					validation = groqValidation;
+					metrics.validationFallbackSource = "groq";
+					metrics.mergeStrategy = "single_source";
+					metrics.mergeReason = "groq_only";
+				}
+
+				metrics.validationReasons = validation.reasons;
+				metrics.trimmedHallucinationSuffix = validation.trimmedSuffix;
+			}
+
+			if (!validation.valid) {
 				logger.error(
 					{
+						reasons: validation.reasons,
 						text: finalText.substring(0, 200),
 						textLength: finalText.length,
 						duration,
 					},
-					"Garbage transcript detected",
+					"Transcript validation failed after retry and fallback",
 				);
 				notify(
 					"Transcription Error",
 					"Output quality check failed. Please try again.",
 					"error",
 				);
-				throw new Error("Garbage transcript detected");
+				throw new Error(
+					`Transcript validation failed: ${validation.reasons.join(", ")}`,
+				);
+			}
+
+			if (metrics.validationReasons.length > 0) {
+				logger.info(
+					{
+						reasons: metrics.validationReasons,
+						retryCount: metrics.validationRetryCount,
+						fallbackSource: metrics.validationFallbackSource,
+						trimmedSuffix: metrics.trimmedHallucinationSuffix,
+					},
+					"Transcript validation recovered output",
+				);
 			}
 
 			// --- Stage: Clipboard ---
