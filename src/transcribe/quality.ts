@@ -69,7 +69,7 @@ export function trimHallucinationSuffix(text: string): {
 
 	for (const pattern of DETACHABLE_SUFFIX_PATTERNS) {
 		const next = trimmed.replace(pattern, "").trim();
-		if (next !== trimmed && next.length >= 20) {
+		if (next !== trimmed && next.length > 0) {
 			trimmed = next;
 			didTrim = true;
 		}
