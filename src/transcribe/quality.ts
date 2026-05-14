@@ -33,13 +33,14 @@ const DETACHABLE_SUFFIX_PATTERNS = [
 
 const NON_LATIN_SCRIPT_PATTERN =
 	/[\u0600-\u06FF\u0750-\u077F\u0E00-\u0E7F\u1100-\u11FF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
+const LATIN_SCRIPT_PATTERN = /\p{Script=Latin}/u;
 
 function hasPromptArtifact(text: string): boolean {
 	return PROMPT_ARTIFACT_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 function hasMixedScriptGarbage(text: string): boolean {
-	return NON_LATIN_SCRIPT_PATTERN.test(text);
+	return NON_LATIN_SCRIPT_PATTERN.test(text) && LATIN_SCRIPT_PATTERN.test(text);
 }
 
 function isGarbageTranscript(text: string): boolean {

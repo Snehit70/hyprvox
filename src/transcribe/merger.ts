@@ -256,9 +256,10 @@ export function calculateMergeMaxTokens(
 	deepgramText: string,
 	userPrompt: string,
 	requestTokenBudget = DEFAULT_MERGE_REQUEST_TOKEN_BUDGET,
+	systemPrompt = SYSTEM_PROMPT,
 ): number {
 	const estimatedPromptTokens =
-		estimateTokenCount(SYSTEM_PROMPT) + estimateTokenCount(userPrompt);
+		estimateTokenCount(systemPrompt) + estimateTokenCount(userPrompt);
 	const longestTranscriptTokens = Math.max(
 		estimateTokenCount(groqText),
 		estimateTokenCount(deepgramText),
@@ -687,6 +688,8 @@ ${deepgramText}
 			groqText,
 			deepgramText,
 			userPrompt,
+			DEFAULT_MERGE_REQUEST_TOKEN_BUDGET,
+			REPAIR_SYSTEM_PROMPT,
 		);
 
 		if (maxTokens < MIN_MERGE_COMPLETION_TOKENS) {

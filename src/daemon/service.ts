@@ -1287,6 +1287,7 @@ export class DaemonService {
 					"Merged transcript failed validation; retrying repair",
 				);
 
+				metrics.validationRetryCount = 1;
 				try {
 					const repairTimed = await timeAsync(() =>
 						this.merger.repairMerge(
@@ -1297,7 +1298,6 @@ export class DaemonService {
 						),
 					);
 					metrics.mergeMs += repairTimed.durationMs;
-					metrics.validationRetryCount = 1;
 					finalText = repairTimed.result.text;
 					accuracy = repairTimed.result.accuracy;
 					metrics.mergeStrategy = repairTimed.result.strategy;

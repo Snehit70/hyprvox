@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import Groq from "groq-sdk";
+import { logger } from "../src/utils/logger";
 
 type HistoryEntry = {
 	timestamp: string;
@@ -57,6 +59,16 @@ const DEFAULT_CASE_IDS = [120, 145, 158, 160, 203, 210];
 const DEFAULT_SLEEP_MS = 5_000;
 const START = new Date("2026-05-04T13:48:00.000Z");
 const END = new Date("2026-05-14T23:59:59.999Z");
+const DEFAULT_CONFIG_PATH = join(
+	homedir(),
+	".config",
+	"hypr",
+	"vox",
+	"config.json",
+);
+const NON_LATIN_SCRIPT_PATTERN =
+	/[\u0600-\u06FF\u0750-\u077F\u0E00-\u0E7F\u1100-\u11FF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
+const LATIN_SCRIPT_PATTERN = /\p{Script=Latin}/u;
 
 const SYSTEM_PROMPT = `You are merging speech-to-text transcripts into one faithful final transcript.
 Output only the final transcript.
@@ -83,13 +95,15 @@ function sleep(ms: number): Promise<void> {
 }
 
 function qualityFlags(text: string): QualityFlags {
+	const hasLatin = LATIN_SCRIPT_PATTERN.test(text);
+	const hasOtherScript = NON_LATIN_SCRIPT_PATTERN.test(text);
 	return {
 		preserveArtifact: /preserve the following/i.test(text),
 		outroSuffix:
 			/thank you for watching|thanks for watching|link in the description|software development process/i.test(
 				text,
 			),
-		mixedScript: [...text].some((char) => char.charCodeAt(0) > 127),
+		mixedScript: hasLatin && hasOtherScript,
 		mentionsTranscriptMeta:
 			/source_[ab]|source a|source b|transcript block/i.test(text),
 	};
@@ -118,7 +132,7 @@ function parseJsonLines(filePath: string): LogEvent[] {
 
 function buildCases(): EvalCase[] {
 	const config = JSON.parse(
-		readFileSync("/home/snehit/.config/hypr/vox/config.json", "utf8"),
+		readFileSync(getArg("config") ?? DEFAULT_CONFIG_PATH, "utf8"),
 	) as { paths: { logs: string; history: string } };
 	const history = (
 		JSON.parse(readFileSync(config.paths.history, "utf8")) as HistoryEntry[]
@@ -131,7 +145,7 @@ function buildCases(): EvalCase[] {
 		.filter((file) => /^hyprvox-2026-05-(0[4-9]|1[0-4])\.log$/.test(file))
 		.sort();
 
-	const sessions: Array<{ complete?: string; chunks: string[] }> = [];
+	const sessions: Array<{ complete: string; chunks: string[] }> = [];
 	let current: { chunks: string[] } | null = null;
 
 	for (const file of logFiles) {
@@ -153,8 +167,29 @@ function buildCases(): EvalCase[] {
 		}
 	}
 
+	const unmatchedSessions = [...sessions];
+
 	return history.map((entry, index) => {
-		const session = sessions[index];
+		const entryTime = new Date(entry.timestamp).getTime();
+		let sessionIndex = -1;
+		let nearestDelta = Number.POSITIVE_INFINITY;
+		for (const [candidateIndex, session] of unmatchedSessions.entries()) {
+			const delta = Math.abs(new Date(session.complete).getTime() - entryTime);
+			if (delta < nearestDelta) {
+				nearestDelta = delta;
+				sessionIndex = candidateIndex;
+			}
+		}
+		const session =
+			sessionIndex >= 0
+				? unmatchedSessions.splice(sessionIndex, 1)[0]
+				: undefined;
+		if (!session) {
+			logger.warn(
+				{ historyId: index + 1 },
+				"No log session matched history entry",
+			);
+		}
 		return {
 			id: index + 1,
 			timestamp: entry.timestamp,
@@ -181,7 +216,7 @@ ${testCase.deepgram}
 
 async function run(): Promise<void> {
 	const config = JSON.parse(
-		readFileSync("/home/snehit/.config/hypr/vox/config.json", "utf8"),
+		readFileSync(getArg("config") ?? DEFAULT_CONFIG_PATH, "utf8"),
 	) as { apiKeys: { groq: string } };
 	const client = new Groq({ apiKey: config.apiKeys.groq });
 	const outputPath = getArg("output") ?? "analysis.md";
@@ -228,15 +263,13 @@ async function run(): Promise<void> {
 					modelFlags: qualityFlags(text),
 					text,
 				});
-				console.log(
-					JSON.stringify({
-						caseId: testCase.id,
-						model,
-						ok: true,
-						timeMs: Date.now() - start,
-						outputChars: text.length,
-					}),
-				);
+				logger.info({
+					caseId: testCase.id,
+					model,
+					ok: true,
+					timeMs: Date.now() - start,
+					outputChars: text.length,
+				});
 			} catch (error) {
 				results.push({
 					caseId: testCase.id,
@@ -248,13 +281,14 @@ async function run(): Promise<void> {
 					qwenFlags: qualityFlags(testCase.qwenFinal),
 					error: error instanceof Error ? error.message : String(error),
 				});
-				console.log(
-					JSON.stringify({
+				logger.error(
+					{
+						err: error,
 						caseId: testCase.id,
 						model,
 						ok: false,
-						error: error instanceof Error ? error.message : String(error),
-					}),
+					},
+					"Merge model evaluation failed",
 				);
 			}
 			await sleep(sleepMs);
@@ -350,6 +384,6 @@ ${caseSections}
 }
 
 run().catch((error) => {
-	console.error(error);
+	logger.error({ err: error }, "Merge model evaluation crashed");
 	process.exit(1);
 });
