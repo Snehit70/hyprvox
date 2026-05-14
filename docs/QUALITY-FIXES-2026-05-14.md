@@ -92,7 +92,11 @@ Performance logs now include validation observability:
 - `validationFallbackSource`
 - `trimmedHallucinationSuffix`
 
-Groq source transcript logging is also enabled so future model comparisons can replay exact Groq + Deepgram source pairs.
+Groq source transcript logging is intentionally enabled so future model comparisons can replay exact Groq + Deepgram source pairs.
+
+### Source Replay Logging
+
+The daemon logs the raw Groq transcript text at info level on purpose. This supports replaying merge-quality comparisons against exact source text from production runs. The log entry is tagged as `Groq source transcript` and should be treated as analysis data, not user-facing output.
 
 ---
 

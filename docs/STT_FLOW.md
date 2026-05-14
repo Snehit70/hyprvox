@@ -77,6 +77,8 @@ To minimize latency and maximize accuracy, `hyprvox` executes requests to two se
 
 **Fallback Logic**: If one service fails, the daemon automatically uses the result from the successful one. If both fail, a critical error notification is shown.
 
+**Replay Logging**: The daemon also logs the raw Groq source transcript at info level so merge-quality experiments can replay exact source pairs later.
+
 ### 5. LLM-Based Merging
 If both Groq and Deepgram return results, they are sent to **Llama 3.3 70B** on Groq Cloud.
 

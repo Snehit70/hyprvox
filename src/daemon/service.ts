@@ -1140,6 +1140,7 @@ export class DaemonService {
 			metrics.deepgramTextLength = deepgramText.length;
 
 			if (groqText) {
+				// Intentional: keep the raw Groq source text for replaying merge-quality comparisons.
 				logger.info(
 					{
 						provider: "groq",
