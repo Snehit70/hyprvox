@@ -1164,6 +1164,18 @@ export class DaemonService {
 			metrics.groqTextLength = groqText.length;
 			metrics.deepgramTextLength = deepgramText.length;
 
+			if (groqText) {
+				logger.info(
+					{
+						provider: "groq",
+						text: groqText,
+						textLength: groqText.length,
+						recordingDurationMs: duration,
+					},
+					"Groq source transcript",
+				);
+			}
+
 			const handleTranscriptionError = (
 				err: unknown,
 				failedService: string,
