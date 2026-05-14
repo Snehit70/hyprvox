@@ -75,6 +75,7 @@ describe("recoverTranscriptQuality", () => {
 		expect(result.validationFallbackSource).toBe("deepgram");
 		expect(result.mergeStrategy).toBe("single_source");
 		expect(result.mergeReason).toBe("deepgram_only");
+		expect(result.accuracy).toBeUndefined();
 	});
 
 	it("falls back to Groq when Deepgram source is invalid", async () => {
@@ -94,6 +95,7 @@ describe("recoverTranscriptQuality", () => {
 		expect(result.validationFallbackSource).toBe("groq");
 		expect(result.mergeStrategy).toBe("single_source");
 		expect(result.mergeReason).toBe("groq_only");
+		expect(result.accuracy).toBeUndefined();
 	});
 
 	it("keeps failure when merge, repair, and sources are invalid", async () => {

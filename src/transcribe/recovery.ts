@@ -87,12 +87,14 @@ export async function recoverTranscriptQuality({
 			validationFallbackSource = "deepgram";
 			recoveredStrategy = "single_source";
 			recoveredReason = "deepgram_only";
+			recoveredAccuracy = undefined;
 		} else if (groqValidation?.valid && groqValidation.text) {
 			recoveredText = groqValidation.text;
 			validation = groqValidation;
 			validationFallbackSource = "groq";
 			recoveredStrategy = "single_source";
 			recoveredReason = "groq_only";
+			recoveredAccuracy = undefined;
 		}
 	}
 

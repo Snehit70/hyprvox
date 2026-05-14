@@ -44,6 +44,12 @@ export const promptArtifactFixtures: QualityFixture[] = [
 		expectedValid: false,
 		expectedReasons: ["prompt_artifact"],
 	},
+	{
+		name: "multiline transcript labels leaked",
+		input: "Transcript 1:\nUse AGENTS.md.\n\nTranscript 2:\nUse agents dot MD.",
+		expectedValid: false,
+		expectedReasons: ["prompt_artifact"],
+	},
 ];
 
 export const promptArtifactFalsePositiveFixtures: QualityFixture[] = [

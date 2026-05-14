@@ -22,7 +22,7 @@ const PROMPT_ARTIFACT_PATTERNS = [
 	/format\s+as\s+a\s+headed\s+numbered\s+list/i,
 	/merge\s+the\s+two\s+transcripts/i,
 	/output\s+only\s+the\s+final\s+transcript/i,
-	/transcript\s+1\b.*\btranscript\s+2\b/i,
+	/transcript\s+1\b[\s\S]*\btranscript\s+2\b/i,
 ];
 
 const DETACHABLE_SUFFIX_PATTERNS = [
