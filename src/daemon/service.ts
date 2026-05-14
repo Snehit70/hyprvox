@@ -30,11 +30,8 @@ import {
 	type MergeStrategy,
 	TranscriptMerger,
 } from "../transcribe/merger";
-import {
-	type TranscriptQualityReason,
-	type TranscriptQualityResult,
-	validateTranscript,
-} from "../transcribe/quality";
+import type { TranscriptQualityReason } from "../transcribe/quality";
+import { recoverTranscriptQuality } from "../transcribe/recovery";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { errorIncludes, getErrorCode } from "../utils/errors";
 import { appendHistory } from "../utils/history";
@@ -1274,75 +1271,52 @@ export class DaemonService {
 			}
 
 			// --- Validation + recovery ---
-			let validation: TranscriptQualityResult = validateTranscript(finalText);
-			metrics.validationReasons = validation.reasons;
-			metrics.trimmedHallucinationSuffix = validation.trimmedSuffix;
-			finalText = validation.text;
+			const recovery = await recoverTranscriptQuality({
+				finalText,
+				groqText,
+				deepgramText,
+				mergeStrategy: metrics.mergeStrategy,
+				mergeReason: metrics.mergeReason,
+				accuracy,
+				repairMerge: async (groq, deepgram, failed, reasons) => {
+					const repairTimed = await timeAsync(() =>
+						this.merger.repairMerge(groq, deepgram, failed, reasons),
+					);
+					metrics.mergeMs += repairTimed.durationMs;
+					return repairTimed.result;
+				},
+			});
 
-			if (!validation.valid && groqText && deepgramText) {
+			if (recovery.repairAttempted) {
 				logger.warn(
 					{
-						reasons: validation.reasons,
+						reasons: recovery.initialValidation.reasons,
 						text: finalText.substring(0, 200),
 					},
 					"Merged transcript failed validation; retrying repair",
 				);
-
-				metrics.validationRetryCount = 1;
-				try {
-					const repairTimed = await timeAsync(() =>
-						this.merger.repairMerge(
-							groqText,
-							deepgramText,
-							finalText,
-							validation.reasons,
-						),
-					);
-					metrics.mergeMs += repairTimed.durationMs;
-					finalText = repairTimed.result.text;
-					accuracy = repairTimed.result.accuracy;
-					metrics.mergeStrategy = repairTimed.result.strategy;
-					metrics.mergeReason = repairTimed.result.reason;
-					validation = validateTranscript(finalText);
-					metrics.validationReasons = validation.reasons;
-					metrics.trimmedHallucinationSuffix = validation.trimmedSuffix;
-					finalText = validation.text;
-				} catch (error) {
-					logger.warn(
-						{ err: error, reasons: validation.reasons },
-						"Merged transcript repair failed; trying source fallback",
-					);
-				}
 			}
 
-			if (!validation.valid) {
-				const deepgramValidation = deepgramText
-					? validateTranscript(deepgramText)
-					: null;
-				const groqValidation = groqText ? validateTranscript(groqText) : null;
-
-				if (deepgramValidation?.valid && deepgramValidation.text) {
-					finalText = deepgramValidation.text;
-					validation = deepgramValidation;
-					metrics.validationFallbackSource = "deepgram";
-					metrics.mergeStrategy = "single_source";
-					metrics.mergeReason = "deepgram_only";
-				} else if (groqValidation?.valid && groqValidation.text) {
-					finalText = groqValidation.text;
-					validation = groqValidation;
-					metrics.validationFallbackSource = "groq";
-					metrics.mergeStrategy = "single_source";
-					metrics.mergeReason = "groq_only";
-				}
-
-				metrics.validationReasons = validation.reasons;
-				metrics.trimmedHallucinationSuffix = validation.trimmedSuffix;
+			if (recovery.repairFailed) {
+				logger.warn(
+					{ reasons: recovery.validation.reasons },
+					"Merged transcript repair failed; trying source fallback",
+				);
 			}
 
-			if (!validation.valid) {
+			finalText = recovery.finalText;
+			accuracy = recovery.accuracy;
+			metrics.mergeStrategy = recovery.mergeStrategy;
+			metrics.mergeReason = recovery.mergeReason;
+			metrics.validationReasons = recovery.validation.reasons;
+			metrics.validationRetryCount = recovery.validationRetryCount;
+			metrics.validationFallbackSource = recovery.validationFallbackSource;
+			metrics.trimmedHallucinationSuffix = recovery.validation.trimmedSuffix;
+
+			if (!recovery.validation.valid) {
 				logger.error(
 					{
-						reasons: validation.reasons,
+						reasons: recovery.validation.reasons,
 						text: finalText.substring(0, 200),
 						textLength: finalText.length,
 						duration,
@@ -1355,7 +1329,7 @@ export class DaemonService {
 					"error",
 				);
 				throw new Error(
-					`Transcript validation failed: ${validation.reasons.join(", ")}`,
+					`Transcript validation failed: ${recovery.validation.reasons.join(", ")}`,
 				);
 			}
 
