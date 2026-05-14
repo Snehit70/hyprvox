@@ -251,10 +251,11 @@ describe("MergeStrategy types", () => {
 			"minor_diff",
 			"single_word_match",
 			"llm",
+			"llm_retry_cleaned",
 			"llm_fallback",
 			"empty",
 		];
-		expect(strategies).toHaveLength(9);
+		expect(strategies).toHaveLength(10);
 	});
 });
 
@@ -272,9 +273,10 @@ describe("MergeReason types", () => {
 			"diff_above_threshold",
 			"single_word_close_match",
 			"llm_succeeded",
+			"llm_retry_succeeded",
 			"llm_error_fallback",
 		];
-		expect(reasons).toHaveLength(12);
+		expect(reasons).toHaveLength(13);
 	});
 });
 
