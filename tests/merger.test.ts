@@ -8,6 +8,7 @@ import {
 	type MergeReason,
 	type MergeStrategy,
 } from "../src/transcribe/merger";
+import { exactTokenFixtures } from "./fixtures/transcript-quality";
 
 describe("decideMerge", () => {
 	describe("exact match", () => {
@@ -128,6 +129,21 @@ describe("decideMerge", () => {
 			expect(result.strategy).toBe("minor_diff");
 			expect(result.reason).toBe("diff_below_threshold");
 			expect(result.text).toBe("update config path");
+		});
+	});
+
+	describe("exact token preservation routing", () => {
+		it.each(
+			exactTokenFixtures,
+		)("routes exact-token disagreement to LLM: $name", ({
+			groqText,
+			deepgramText,
+		}) => {
+			const result = decideMerge(groqText, deepgramText);
+
+			expect(result.strategy).toBe("llm");
+			expect(result.reason).toBe("diff_above_threshold");
+			expect(result.text).toBeUndefined();
 		});
 	});
 
