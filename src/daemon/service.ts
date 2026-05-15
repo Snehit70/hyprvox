@@ -25,6 +25,7 @@ import {
 } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
 import { buildContextLexicon } from "../transcribe/lexicon";
+import { assessLongRecordingQuality } from "../transcribe/long-recording";
 import {
 	type MergeReason,
 	type MergeResult,
@@ -32,6 +33,7 @@ import {
 	TranscriptMerger,
 } from "../transcribe/merger";
 import type { TranscriptQualityReason } from "../transcribe/quality";
+import { validateTranscript } from "../transcribe/quality";
 import { recoverTranscriptQuality } from "../transcribe/recovery";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { errorIncludes, getErrorCode } from "../utils/errors";
@@ -90,6 +92,9 @@ interface TranscriptionMetrics {
 	validationRetryCount: number;
 	validationFallbackSource: "none" | "groq" | "deepgram";
 	trimmedHallucinationSuffix: boolean;
+	longRecordingMode: boolean;
+	longRecordingFallbackSource: "none" | "groq" | "deepgram";
+	suspiciousMergeExpansion: boolean;
 	deepgramStopReason: StreamingStopReason | null;
 
 	// Deepgram early-stop observability
@@ -959,6 +964,9 @@ export class DaemonService {
 			validationRetryCount: 0,
 			validationFallbackSource: "none",
 			trimmedHallucinationSuffix: false,
+			longRecordingMode: false,
+			longRecordingFallbackSource: "none",
+			suspiciousMergeExpansion: false,
 			deepgramStopReason: null,
 			deepgramStopWallMs: -1,
 			deepgramCriticalPathMs: -1,
@@ -1347,15 +1355,54 @@ export class DaemonService {
 			accuracy = recovery.accuracy;
 			metrics.mergeStrategy = recovery.mergeStrategy;
 			metrics.mergeReason = recovery.mergeReason;
-			metrics.validationReasons = recovery.validation.reasons;
+			let finalValidation = recovery.validation;
+			metrics.validationReasons = finalValidation.reasons;
 			metrics.validationRetryCount = recovery.validationRetryCount;
 			metrics.validationFallbackSource = recovery.validationFallbackSource;
-			metrics.trimmedHallucinationSuffix = recovery.validation.trimmedSuffix;
+			metrics.trimmedHallucinationSuffix = finalValidation.trimmedSuffix;
 
-			if (!recovery.validation.valid) {
+			const longRecordingQuality = assessLongRecordingQuality({
+				recordingDurationMs: duration,
+				finalText,
+				groqText,
+				deepgramText,
+			});
+			metrics.longRecordingMode = longRecordingQuality.isLongRecording;
+			metrics.suspiciousMergeExpansion =
+				longRecordingQuality.suspiciousMergeExpansion;
+			metrics.longRecordingFallbackSource = longRecordingQuality.fallbackSource;
+
+			if (
+				longRecordingQuality.suspiciousMergeExpansion &&
+				longRecordingQuality.fallbackText
+			) {
+				logger.warn(
+					{
+						fallbackSource: longRecordingQuality.fallbackSource,
+						finalTextLength: finalText.length,
+						groqTextLength: groqText.length,
+						deepgramTextLength: deepgramText.length,
+						duration,
+					},
+					"Long recording merge expanded beyond source transcripts; using source fallback",
+				);
+				finalText = longRecordingQuality.fallbackText;
+				finalValidation = validateTranscript(finalText);
+				finalText = finalValidation.text;
+				accuracy = undefined;
+				metrics.mergeStrategy = "single_source";
+				metrics.mergeReason =
+					longRecordingQuality.fallbackSource === "groq"
+						? "groq_only"
+						: "deepgram_only";
+				metrics.validationReasons = finalValidation.reasons;
+				metrics.trimmedHallucinationSuffix = finalValidation.trimmedSuffix;
+			}
+
+			if (!finalValidation.valid) {
 				logger.error(
 					{
-						reasons: recovery.validation.reasons,
+						reasons: finalValidation.reasons,
 						text: finalText.substring(0, 200),
 						textLength: finalText.length,
 						duration,
@@ -1368,7 +1415,7 @@ export class DaemonService {
 					"error",
 				);
 				throw new Error(
-					`Transcript validation failed: ${recovery.validation.reasons.join(", ")}`,
+					`Transcript validation failed: ${finalValidation.reasons.join(", ")}`,
 				);
 			}
 
