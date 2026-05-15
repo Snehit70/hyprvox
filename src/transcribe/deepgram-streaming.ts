@@ -46,8 +46,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	private connectionStartTime: number = 0;
 	private chunksSent: number = 0;
 	private audioBuffer: Buffer[] = [];
-	private receivedFinalChunk: boolean = false;
-	private hadSpeechFinal: boolean = false;
+	private stopWindowReceivedFinalChunk: boolean = false;
+	private stopWindowHadSpeechFinal: boolean = false;
 	private static readonly MAX_BUFFER_CHUNKS = 100;
 	private static readonly ENDPOINTING_MS = 300;
 
@@ -75,8 +75,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			this.connectionStartTime = 0;
 			this.chunksSent = 0;
 			this.audioBuffer = [];
-			this.receivedFinalChunk = false;
-			this.hadSpeechFinal = false;
+			this.stopWindowReceivedFinalChunk = false;
+			this.stopWindowHadSpeechFinal = false;
 
 			const keyterms = sanitizeDeepgramKeyterms(boostWords);
 			const options: LiveSchema = {
@@ -113,13 +113,6 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 
 			this.connection.on(LiveTranscriptionEvents.Transcript, (data) => {
 				const transcript = data.channel?.alternatives?.[0]?.transcript;
-				if (data.is_final) {
-					this.receivedFinalChunk = true;
-				}
-				if (data.speech_final) {
-					this.hadSpeechFinal = true;
-				}
-
 				if (transcript && transcript.trim().length > 0) {
 					if (data.speech_final) {
 						this.transcriptChunks.push(transcript.trim());
@@ -127,14 +120,20 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 							{ transcript: transcript.trim(), isFinal: true },
 							"Deepgram chunk finalized (speech_final)",
 						);
-						this.emit("transcript", transcript.trim());
+						this.emit("transcript", transcript.trim(), {
+							isFinal: data.is_final,
+							speechFinal: data.speech_final,
+						});
 					} else if (data.is_final) {
 						this.transcriptChunks.push(transcript.trim());
 						logger.debug(
 							{ transcript: transcript.trim(), isFinal: data.is_final },
 							"Deepgram chunk finalized (is_final)",
 						);
-						this.emit("transcript", transcript.trim());
+						this.emit("transcript", transcript.trim(), {
+							isFinal: data.is_final,
+							speechFinal: data.speech_final,
+						});
 					}
 				}
 			});
@@ -305,6 +304,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 		let stopReason: StreamingStopReason = "not_connected";
 		let finalizeWaitMs = 0;
 		let closeWaitMs = 0;
+		let receivedFinalChunk = false;
+		let hadSpeechFinal = false;
 
 		if (this.connection) {
 			try {
@@ -321,13 +322,23 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 						resolve("finalize_timeout");
 					}, DeepgramStreamingTranscriber.FINALIZE_TIMEOUT_MS);
 
-					const transcriptHandler = () => {
+					const transcriptHandler = (
+						_text: string,
+						transcriptData?: {
+							isFinal?: boolean;
+							speechFinal?: boolean;
+						},
+					) => {
+						receivedFinalChunk ||= transcriptData?.isFinal ?? false;
+						hadSpeechFinal ||= transcriptData?.speechFinal ?? false;
 						clearTimeout(timeout);
 						resolve("finalize_transcript");
 					};
 					this.once("transcript", transcriptHandler);
 				});
 				finalizeWaitMs = Date.now() - finalizeStart;
+				this.stopWindowReceivedFinalChunk = receivedFinalChunk;
+				this.stopWindowHadSpeechFinal = hadSpeechFinal;
 
 				// Now close the connection
 				this.connection.requestClose();
@@ -379,8 +390,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				finalizeWaitMs,
 				closeWaitMs,
 				endpointingMs: DeepgramStreamingTranscriber.ENDPOINTING_MS,
-				receivedFinalChunk: this.receivedFinalChunk,
-				hadSpeechFinal: this.hadSpeechFinal,
+				receivedFinalChunk: this.stopWindowReceivedFinalChunk,
+				hadSpeechFinal: this.stopWindowHadSpeechFinal,
 			},
 			"Deepgram streaming transcription complete",
 		);
@@ -392,8 +403,8 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			finalizeWaitMs,
 			closeWaitMs,
 			endpointingMs: DeepgramStreamingTranscriber.ENDPOINTING_MS,
-			receivedFinalChunk: this.receivedFinalChunk,
-			hadSpeechFinal: this.hadSpeechFinal,
+			receivedFinalChunk: this.stopWindowReceivedFinalChunk,
+			hadSpeechFinal: this.stopWindowHadSpeechFinal,
 		};
 	}
 }
