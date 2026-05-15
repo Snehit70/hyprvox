@@ -25,6 +25,7 @@ import {
 } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
 import { buildContextLexicon } from "../transcribe/lexicon";
+import { assessLongRecordingQuality } from "../transcribe/long-recording";
 import {
 	type MergeReason,
 	type MergeResult,
@@ -90,6 +91,9 @@ interface TranscriptionMetrics {
 	validationRetryCount: number;
 	validationFallbackSource: "none" | "groq" | "deepgram";
 	trimmedHallucinationSuffix: boolean;
+	longRecordingMode: boolean;
+	longRecordingFallbackSource: "none" | "groq" | "deepgram";
+	suspiciousMergeExpansion: boolean;
 	deepgramStopReason: StreamingStopReason | null;
 
 	// Deepgram early-stop observability
@@ -959,6 +963,9 @@ export class DaemonService {
 			validationRetryCount: 0,
 			validationFallbackSource: "none",
 			trimmedHallucinationSuffix: false,
+			longRecordingMode: false,
+			longRecordingFallbackSource: "none",
+			suspiciousMergeExpansion: false,
 			deepgramStopReason: null,
 			deepgramStopWallMs: -1,
 			deepgramCriticalPathMs: -1,
@@ -1351,6 +1358,40 @@ export class DaemonService {
 			metrics.validationRetryCount = recovery.validationRetryCount;
 			metrics.validationFallbackSource = recovery.validationFallbackSource;
 			metrics.trimmedHallucinationSuffix = recovery.validation.trimmedSuffix;
+
+			const longRecordingQuality = assessLongRecordingQuality({
+				recordingDurationMs: duration,
+				finalText,
+				groqText,
+				deepgramText,
+			});
+			metrics.longRecordingMode = longRecordingQuality.isLongRecording;
+			metrics.suspiciousMergeExpansion =
+				longRecordingQuality.suspiciousMergeExpansion;
+			metrics.longRecordingFallbackSource = longRecordingQuality.fallbackSource;
+
+			if (
+				longRecordingQuality.suspiciousMergeExpansion &&
+				longRecordingQuality.fallbackText
+			) {
+				logger.warn(
+					{
+						fallbackSource: longRecordingQuality.fallbackSource,
+						finalTextLength: finalText.length,
+						groqTextLength: groqText.length,
+						deepgramTextLength: deepgramText.length,
+						duration,
+					},
+					"Long recording merge expanded beyond source transcripts; using source fallback",
+				);
+				finalText = longRecordingQuality.fallbackText;
+				accuracy = undefined;
+				metrics.mergeStrategy = "single_source";
+				metrics.mergeReason =
+					longRecordingQuality.fallbackSource === "groq"
+						? "groq_only"
+						: "deepgram_only";
+			}
 
 			if (!recovery.validation.valid) {
 				logger.error(
