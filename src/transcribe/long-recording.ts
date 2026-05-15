@@ -1,3 +1,5 @@
+import { validateTranscript } from "./quality";
+
 const LONG_RECORDING_DURATION_MS = 90_000;
 const LONG_RECORDING_WORDS = 150;
 const MERGE_EXPANSION_RATIO = 1.35;
@@ -27,13 +29,23 @@ function chooseFallbackSource(
 	groqText: string,
 	deepgramText: string,
 ): { source: LongRecordingFallbackSource; text: string } {
-	if (!groqText && !deepgramText) return { source: "none", text: "" };
-	if (!groqText) return { source: "deepgram", text: deepgramText };
-	if (!deepgramText) return { source: "groq", text: groqText };
+	const candidates = [
+		{
+			source: "deepgram" as const,
+			validation: validateTranscript(deepgramText),
+		},
+		{ source: "groq" as const, validation: validateTranscript(groqText) },
+	].filter(
+		(candidate) => candidate.validation.valid && candidate.validation.text,
+	);
 
-	return deepgramText.length >= groqText.length
-		? { source: "deepgram", text: deepgramText }
-		: { source: "groq", text: groqText };
+	if (candidates.length === 0) return { source: "none", text: "" };
+
+	const fallback = candidates.sort(
+		(a, b) => b.validation.text.length - a.validation.text.length,
+	)[0];
+	if (!fallback) return { source: "none", text: "" };
+	return { source: fallback.source, text: fallback.validation.text };
 }
 
 export function assessLongRecordingQuality({

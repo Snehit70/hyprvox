@@ -33,7 +33,7 @@ describe("assessLongRecordingQuality", () => {
 		expect(result.isLongRecording).toBe(true);
 		expect(result.suspiciousMergeExpansion).toBe(true);
 		expect(result.fallbackSource).toBe("deepgram");
-		expect(result.fallbackText).toBe(source);
+		expect(result.fallbackText).toBe(source.trim());
 	});
 
 	it("does not flag small expansion in long recordings", () => {
@@ -63,5 +63,23 @@ describe("assessLongRecordingQuality", () => {
 		});
 
 		expect(result.isLongRecording).toBe(true);
+	});
+
+	it("prefers a validated fallback source over a longer invalid source", () => {
+		const validSource =
+			"Update the daemon service and keep the existing clipboard behavior. ".repeat(
+				8,
+			);
+		const invalidLongerSource = `${validSource} ${"Preserve the following terms. ".repeat(8)}`;
+		const result = assessLongRecordingQuality({
+			recordingDurationMs: LONG_RECORDING_DURATION_MS,
+			finalText: `${invalidLongerSource} ${"This invented bridge sentence was not in either source. ".repeat(8)}`,
+			groqText: validSource,
+			deepgramText: invalidLongerSource,
+		});
+
+		expect(result.suspiciousMergeExpansion).toBe(true);
+		expect(result.fallbackSource).toBe("groq");
+		expect(result.fallbackText).toBe(validSource.trim());
 	});
 });
