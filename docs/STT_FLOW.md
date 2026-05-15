@@ -68,7 +68,7 @@ sequenceDiagram
 ### 4. Parallel Transcription
 To minimize latency and maximize accuracy, `hyprvox` executes requests to two separate providers simultaneously using `Promise.all`:
 
-Before provider calls, the daemon builds a local project lexicon from configured boost words, common technical terms, and repo filenames. This improves exact tokens such as `AGENTS.md`, `CRUD`, `SSE`, and `CodeRabbit`.
+Before provider calls, the daemon builds technical-term hints from configured boost words, common technical terms, and repo filenames. Configured boost words are preserved for provider hints, while a smaller computed project lexicon is cached for merge-context hints. This improves exact tokens such as `AGENTS.md`, `CRUD`, `SSE`, and `CodeRabbit`.
 
 1.  **Groq (Whisper Large V3)**:
     - **Strength**: Unrivaled technical accuracy and word recognition.
@@ -79,7 +79,7 @@ Before provider calls, the daemon builds a local project lexicon from configured
 
 **Fallback Logic**: If one service fails, the daemon automatically uses the result from the successful one. If both fail, a critical error notification is shown.
 
-**Technical Term Preservation**: Groq always receives the computed lexicon as prompt terms. Deepgram receives it as `keyterm` hints when `transcription.deepgramBoosting` is enabled.
+**Technical Term Preservation**: Groq always receives provider boost terms as prompt hints. Deepgram receives those terms as `keyterm` hints when `transcription.deepgramBoosting` is enabled. The merge prompt receives the capped project lexicon plus exact tokens found in either source transcript.
 
 **Replay Logging**: The daemon also logs the raw Groq source transcript at info level so merge-quality experiments can replay exact source pairs later.
 
