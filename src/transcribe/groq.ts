@@ -11,13 +11,40 @@ const BASE_TRANSCRIPTION_PROMPT = [
 	"When the speaker clearly dictates structure, prefer literal symbols for braces, brackets, parentheses, colons, commas, quotes, and slashes.",
 	"Preserve numbered list cues like first, second, and third when spoken.",
 ].join(" ");
+const MAX_TRANSCRIPTION_PROMPT_CHARS = 896;
+
+function fitBoostWordsInPrompt(boostWords: string[]): string[] {
+	const prefix = `${BASE_TRANSCRIPTION_PROMPT} Prefer these terms: `;
+	const suffix = ".";
+	const availableChars =
+		MAX_TRANSCRIPTION_PROMPT_CHARS - prefix.length - suffix.length;
+	if (availableChars <= 0) return [];
+
+	const terms: string[] = [];
+	let usedChars = 0;
+
+	for (const word of boostWords) {
+		const term = word.trim().replace(/\s+/g, " ");
+		if (!term) continue;
+
+		const separatorLength = terms.length === 0 ? 0 : 2;
+		const nextLength = separatorLength + term.length;
+		if (usedChars + nextLength > availableChars) break;
+
+		terms.push(term);
+		usedChars += nextLength;
+	}
+
+	return terms;
+}
 
 function buildTranscriptionPrompt(boostWords: string[]): string {
-	if (boostWords.length === 0) {
+	const fittedBoostWords = fitBoostWordsInPrompt(boostWords);
+	if (fittedBoostWords.length === 0) {
 		return BASE_TRANSCRIPTION_PROMPT;
 	}
 
-	return `${BASE_TRANSCRIPTION_PROMPT} Prefer these terms: ${boostWords.join(", ")}.`;
+	return `${BASE_TRANSCRIPTION_PROMPT} Prefer these terms: ${fittedBoostWords.join(", ")}.`;
 }
 
 function getErrorStatus(error: unknown): number | undefined {
@@ -28,6 +55,8 @@ function getErrorStatus(error: unknown): number | undefined {
 	const { status } = error as { status?: unknown };
 	return typeof status === "number" ? status : undefined;
 }
+
+export { buildTranscriptionPrompt, MAX_TRANSCRIPTION_PROMPT_CHARS };
 
 function getErrorMessage(error: unknown): string | undefined {
 	if (typeof error !== "object" || error === null || !("message" in error)) {

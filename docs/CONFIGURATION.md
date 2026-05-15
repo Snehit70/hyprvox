@@ -196,7 +196,7 @@ The `streaming` option controls whether transcription happens in real-time durin
 
 #### Boost Words (Custom Vocabulary)
 
-The `boostWords` array is used to improve the detection of specific terms like names, acronyms, or technical jargon. Hyprvox also builds a computed project lexicon from boost words, common technical terms, and local repo filenames. That lexicon is passed to Groq, optionally to Deepgram keyterms, and to the merge prompt.
+The `boostWords` array is used to improve the detection of specific terms like names, acronyms, or technical jargon. Hyprvox also builds a computed project lexicon from boost words, common technical terms, and local repo filenames. Provider transcription hints preserve configured boost words and add lexicon terms; the merge prompt receives a smaller capped lexicon plus exact tokens found in the source transcripts.
 
 **Format and Limits:**
 - **Data Type**: Array of strings. Each entry can be a single word or a phrase.
