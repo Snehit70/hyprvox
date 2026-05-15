@@ -173,6 +173,7 @@ const defaultTranscription = {
 	streaming: false,
 	deepgramBoosting: false,
 	mergeModel: "qwen/qwen3-32b",
+	formattingMode: "clean",
 } as const;
 
 const defaultAudio = {
@@ -242,6 +243,9 @@ export const TranscriptionSchema = z.object({
 	streaming: z.boolean().default(defaultTranscription.streaming),
 	deepgramBoosting: z.boolean().default(defaultTranscription.deepgramBoosting),
 	mergeModel: z.string().default(defaultTranscription.mergeModel),
+	formattingMode: z
+		.enum(["verbatim", "clean", "structured"])
+		.default(defaultTranscription.formattingMode),
 });
 
 export const OverlaySchema = z

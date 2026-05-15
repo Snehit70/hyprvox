@@ -8,6 +8,7 @@ import {
 	isRequestTooLargeError,
 	type MergeReason,
 	type MergeStrategy,
+	shouldRouteFormattingToLlm,
 	TranscriptMerger,
 } from "../src/transcribe/merger";
 import { exactTokenFixtures } from "./fixtures/transcript-quality";
@@ -29,6 +30,15 @@ describe("decideMerge", () => {
 			expect(result.strategy).toBe("llm");
 			expect(result.reason).toBe("structured_formatting_cues");
 			expect(result.text).toBeUndefined();
+		});
+
+		it("keeps enumerated prose on the deterministic path in verbatim mode", () => {
+			const text =
+				"the first example is good and the second example is confusing";
+			const result = decideMerge(text, text, "verbatim");
+
+			expect(result.strategy).toBe("exact_match");
+			expect(result.text).toBe(text);
 		});
 	});
 
@@ -259,6 +269,30 @@ describe("hasStructuredFormattingIntent", () => {
 	});
 });
 
+describe("shouldRouteFormattingToLlm", () => {
+	it("routes list-like dictation in clean and structured modes", () => {
+		const text = "the first issue is config and the second issue is auth";
+
+		expect(shouldRouteFormattingToLlm("clean", text)).toBe(true);
+		expect(shouldRouteFormattingToLlm("structured", text)).toBe(true);
+	});
+
+	it("does not route ordinal prose in verbatim mode", () => {
+		expect(
+			shouldRouteFormattingToLlm(
+				"verbatim",
+				"the first example is good and the second example is confusing",
+			),
+		).toBe(false);
+	});
+
+	it("still routes literal symbol dictation in verbatim mode", () => {
+		expect(
+			shouldRouteFormattingToLlm("verbatim", "open curly bracket foo"),
+		).toBe(true);
+	});
+});
+
 describe("extractExactTokenHints", () => {
 	it("extracts filenames, acronyms, camel-case names, ports, URLs, and headers", () => {
 		const tokens = extractExactTokenHints(
@@ -316,6 +350,19 @@ describe("buildMergeUserPrompt", () => {
 		);
 
 		expect(prompt).toContain("Known project terms: AGENTS.md, CodeRabbit.");
+	});
+
+	it("includes the selected formatting mode instruction", () => {
+		const prompt = buildMergeUserPrompt(
+			"first issue config second issue auth",
+			"first issue config second issue auth",
+			["enumeration/list structure"],
+			[],
+			"structured",
+		);
+
+		expect(prompt).toContain("Formatting mode: structured");
+		expect(prompt).toContain("format them as a readable list");
 	});
 
 	it("omits exact-token section for ordinary prose", () => {

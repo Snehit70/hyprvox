@@ -88,6 +88,7 @@ If both Groq and Deepgram return results, they are sent to **Llama 3.3 70B** on 
 
 - **Prompting**: The LLM is instructed to trust Groq for words/technical terms and Deepgram for punctuation/formatting.
 - **Lexicon Hints**: The merge prompt includes known project terms and exact tokens found in either source transcript.
+- **Formatting Mode**: `transcription.formattingMode` controls whether the merge stays close to spoken prose (`verbatim`), lightly cleans sentence boundaries (`clean`), or formats clearly dictated multi-item speech as lists (`structured`).
 - **Deduplication**: Automatically removes hallucinations or repeated phrases common in Whisper models.
 - **Latency**: Highly optimized (typically <500ms).
 - **Fallback**: If the LLM call fails or times out, the system defaults to the Deepgram result (for better formatting) or Groq.
