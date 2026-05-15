@@ -309,36 +309,41 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 
 		if (this.connection) {
 			try {
+				const transcriptMetricsHandler = (
+					_text: string,
+					transcriptData?: {
+						isFinal?: boolean;
+						speechFinal?: boolean;
+					},
+				) => {
+					receivedFinalChunk ||= transcriptData?.isFinal ?? false;
+					hadSpeechFinal ||= transcriptData?.speechFinal ?? false;
+				};
+
 				// Flush any buffered audio before closing
+				this.on("transcript", transcriptMetricsHandler);
 				this.connection.finalize();
 				logger.debug("Sent finalize signal to Deepgram");
 
 				// Wait for final transcript after finalize
 				const finalizeStart = Date.now();
 				stopReason = await new Promise<StreamingStopReason>((resolve) => {
+					let settled = false;
 					const timeout = setTimeout(() => {
 						logger.debug("Finalize wait timeout, proceeding");
-						this.off("transcript", transcriptHandler);
+						settled = true;
 						resolve("finalize_timeout");
 					}, DeepgramStreamingTranscriber.FINALIZE_TIMEOUT_MS);
 
-					const transcriptHandler = (
-						_text: string,
-						transcriptData?: {
-							isFinal?: boolean;
-							speechFinal?: boolean;
-						},
-					) => {
-						receivedFinalChunk ||= transcriptData?.isFinal ?? false;
-						hadSpeechFinal ||= transcriptData?.speechFinal ?? false;
+					const finalizeHandler = () => {
+						if (settled) return;
+						settled = true;
 						clearTimeout(timeout);
 						resolve("finalize_transcript");
 					};
-					this.once("transcript", transcriptHandler);
+					this.once("transcript", finalizeHandler);
 				});
 				finalizeWaitMs = Date.now() - finalizeStart;
-				this.stopWindowReceivedFinalChunk = receivedFinalChunk;
-				this.stopWindowHadSpeechFinal = hadSpeechFinal;
 
 				// Now close the connection
 				this.connection.requestClose();
@@ -365,6 +370,9 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				if (!closeClean) {
 					stopReason = `${stopReason}+close_timeout` as StreamingStopReason;
 				}
+				this.off("transcript", transcriptMetricsHandler);
+				this.stopWindowReceivedFinalChunk = receivedFinalChunk;
+				this.stopWindowHadSpeechFinal = hadSpeechFinal;
 			} catch (error) {
 				logError("Error finishing Deepgram streaming", error);
 			} finally {
