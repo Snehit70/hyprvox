@@ -2,164 +2,131 @@
 
 [![Build Status](https://github.com/Snehit70/hyprvox/actions/workflows/test.yml/badge.svg)](https://github.com/Snehit70/hyprvox/actions)
 
-Voice input for AI workflows on Linux.
-
-`hyprvox` is published on the npm registry as `hyprvox`.
+**Press a key. Speak. Paste.**  
+Voice-to-text for Linux, built for AI workflows.
 
 <!-- DEMO PLACEHOLDER: Add a GIF showing the full workflow -->
 
-## The Problem
+---
 
-You're deep in a session with a coding agent. You know exactly what you want to ask — a complex refactor, a debugging question, a feature request. But now you have to type it all out.
+## Why
 
-By the time you're done, you've lost the thread.
+You're deep in a session with a coding agent. You know exactly what to say — a complex refactor, a debugging question, a long feature spec. But now you have to type it all out.
 
-Context switching kills flow. And typing at 40 WPM when you can speak at 150 WPM is a bottleneck you don't need.
+By the time you finish, the thought is gone.
 
-## The Solution
+Typing at 40 WPM when you speak at 150 WPM is a bottleneck you don't need. `hyprvox` closes that gap.
 
-Press a key. Speak. Press again. Paste.
+---
 
-hyprvox is a voice-to-text daemon for Linux. It runs in the background, transcribes when you need it, and puts the result on your clipboard — ready to paste into Claude, Copilot, or whatever agent you're working with.
+## How It Works
 
-Built for Hyprland/Wayland first. Works on X11 too.
+`hyprvox` is a background daemon. Hold a key, speak, release — your words land on the clipboard, ready to paste into Claude, Copilot, or any agent.
+
+Under the hood:
+
+| Engine | Model | Role |
+|--------|-------|------|
+| Groq | Whisper V3 | Speed |
+| Deepgram | Nova-3 | Accuracy |
+| LLM merge | — | Best-of-both result |
+
+Both engines run **in parallel**. Results merge with an LLM. If one fails, the other carries on. The merged text is validated before it ever reaches your clipboard — hallucinated outros trimmed, garbage blocked, technical terms preserved.
+
+**Median latency: 882ms.** 39× faster than real-time.
+
+---
 
 ## Quick Start
 
-### Prerequisites
+### 1 — Prerequisites
 
 ```bash
-# Install Bun (if not already installed)
-curl -fsSL https://bun.sh/install | bash
+# Fedora / RHEL
+sudo dnf install -y unzip ffmpeg alsa-utils
 
-# Install ffmpeg (required for Opus audio conversion)
-# Arch:   sudo pacman -S ffmpeg
-# Ubuntu: sudo apt install ffmpeg
-# Fedora: sudo dnf install ffmpeg
+# Arch
+sudo pacman -S ffmpeg alsa-utils
+
+# Ubuntu / Debian
+sudo apt install ffmpeg alsa-utils unzip
+
+# Clipboard
+# Wayland:
+sudo pacman -S wl-clipboard   # or dnf / apt equivalent
+# X11:
+sudo pacman -S xclip
 ```
 
-On RHEL/Amazon Linux/Fedora-style systems, install `unzip` before the Bun installer:
+Then install Bun:
 
 ```bash
-sudo dnf install -y unzip
 curl -fsSL https://bun.sh/install | bash
-source ~/.bash_profile
+source ~/.bash_profile   # or ~/.zshrc
 ```
 
-`hyprvox` is currently published as a Bun-executed CLI. Even when you install it from npm, the `hyprvox` command still requires Bun to be present on the target machine.
-
-### Installation
+### 2 — Install
 
 ```bash
 git clone https://github.com/Snehit70/hyprvox.git
 cd hyprvox
 bun install
-
-bun run index.ts config init   # Set up API keys (Groq + Deepgram)
-bun run index.ts install       # Install as systemd service
 ```
 
-If you want to install the published CLI from npm instead of building from source:
+Or from npm (Bun still required on the machine):
 
 ```bash
 npm install -g hyprvox
-```
-
-Then make sure Bun is installed and on `PATH`:
-
-```bash
-curl -fsSL https://bun.sh/install | bash
-source ~/.bash_profile
-```
-
-Or install with Bun directly:
-
-```bash
+# or
 bun add -g hyprvox
 ```
 
-If you install from npm on a fresh Linux machine, this is the minimum working sequence:
+### 3 — Configure
 
 ```bash
-sudo dnf install -y unzip ffmpeg alsa-utils
-curl -fsSL https://bun.sh/install | bash
-source ~/.bash_profile
-npm install -g hyprvox
-hyprvox --help
+hyprvox config init   # Enter your Groq + Deepgram API keys
 ```
 
-Press Right Ctrl to record. Press again to stop. Paste anywhere.
+| Key | Get one at |
+|-----|-----------|
+| Groq | [console.groq.com](https://console.groq.com/keys) |
+| Deepgram | [console.deepgram.com](https://console.deepgram.com) |
 
-> **Works on both Wayland and X11.** On X11/GNOME/KDE, the built-in hotkey works out of the box. On Wayland (Hyprland, Sway), see [compositor keybind setup](#hyprland-setup) for reliable system-wide hotkeys.
+### 4 — Start the daemon
 
-### For AI Agents
-
-<details>
-<summary>Click to expand setup prompt</summary>
-
-Copy this prompt to your coding agent:
-
-```
-Install and configure hyprvox on this Linux system:
-
-1. Clone: git clone https://github.com/Snehit70/hyprvox.git
-2. Install: cd hyprvox && bun install
-3. Run `bun run index.ts config init` — I'll provide API keys when prompted:
-   - Groq API key (get from console.groq.com)
-   - Deepgram API key (get from console.deepgram.com)
-4. Install service: bun run index.ts install
-5. For Hyprland, add keybind to ~/.config/hypr/hyprland.conf:
-    bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle
-    # code:105 = Right Control (use `wev` to find other key codes)
-6. For Hyprland overlay, add to ~/.config/hypr/UserConfigs/WindowRules.conf:
-    windowrule = match:class hyprvox-overlay, float on
-    windowrule = match:class hyprvox-overlay, pin on
-    windowrule = match:class hyprvox-overlay, no_focus on
-    windowrule = match:class hyprvox-overlay, no_shadow on
-    windowrule = match:class hyprvox-overlay, no_anim on
-    windowrule = match:class hyprvox-overlay, move ((monitor_w-window_w)*0.5) (monitor_h-window_h-50)
-7. Reload: hyprctl reload
-8. Verify: bun run index.ts health
+```bash
+hyprvox install   # Installs as a systemd user service
+hyprvox health    # Verify everything is wired up
 ```
 
-</details>
+---
 
-## How It Works
+## Keybinds
 
-**Dual-engine transcription.** Audio goes to both Groq (Whisper V3) and Deepgram (Nova-3) in parallel. Results are merged with an LLM for better accuracy. If one fails, the other continues.
+### Hyprland / Wayland
 
-**Quality guardrails.** Merged text is validated before it reaches your clipboard. Hyprvox detects prompt artifacts, trims detachable outro hallucinations, blocks mixed-script garbage in English mode, and falls back to a clean source transcript when the merge is unsafe.
+Add to `~/.config/hypr/hyprland.conf`:
 
-**Technical dictation support.** Configured boost words, a computed local lexicon, and exact-token preservation help keep filenames, commands, acronyms, branch names, and tool names intact.
+```conf
+bind = , code:105, exec, hyprvox toggle
+# code:105 = Right Control — use `wev | grep -A5 "key event"` to find others
+```
 
-**Faithful formatting modes.** Choose `verbatim`, `clean`, or `structured` output depending on whether you want near-literal prose, light cleanup, or clearly dictated lists.
+### X11 / GNOME / KDE
 
-**Streaming or batch.** Streaming mode is optimized for low stop-to-clipboard latency. Batch mode remains available when you prefer full-file Deepgram transcription.
+The built-in Right Ctrl hotkey works out of the box.
 
-**Runs as a daemon.** Systemd service starts on login. Always ready when you need it.
-
-## Performance
-
-| Metric | Value |
-|--------|-------|
-| **Median latency** | 882ms |
-| **Real-time factor** | 39x faster than real-time |
-| **Dual-engine success** | 93.5% |
-| **Streaming stop metrics** | Logged per session |
-| **LLM merge overhead** | Often skipped for near-identical transcripts |
-
-Performance varies by recording length, streaming mode, and whether the merge path uses deterministic selection, LLM merge, retry, or source fallback. Recent builds log Deepgram finalization timing and source transcript lengths so tuning decisions can be based on real usage data.
+---
 
 ## The Overlay
 
-A small waveform appears at the bottom of your screen while recording — visual feedback that it's listening.
+A waveform appears at the bottom of your screen while recording — visible confirmation it's listening.
 
 ![Overlay showing waveform during recording](assets/overlay.png)
 
-For Hyprland, add these window rules:
+For Hyprland, add to `~/.config/hypr/UserConfigs/WindowRules.conf`:
 
 ```conf
-# ~/.config/hypr/UserConfigs/WindowRules.conf
 windowrule = match:class hyprvox-overlay, float on
 windowrule = match:class hyprvox-overlay, pin on
 windowrule = match:class hyprvox-overlay, no_focus on
@@ -168,70 +135,26 @@ windowrule = match:class hyprvox-overlay, no_anim on
 windowrule = match:class hyprvox-overlay, move ((monitor_w-window_w)*0.5) (monitor_h-window_h-50)
 ```
 
-## Installation
+---
 
-### Dependencies
-
-<details>
-<summary>Click to expand</summary>
-
-**Audio** — `alsa-utils`
-- Arch: `sudo pacman -S alsa-utils`
-- Ubuntu: `sudo apt install alsa-utils`
-- Fedora/RHEL/Amazon Linux: `sudo dnf install alsa-utils`
-
-**Audio encoding** — `ffmpeg`
-- Arch: `sudo pacman -S ffmpeg`
-- Ubuntu: `sudo apt install ffmpeg`
-- Fedora/RHEL/Amazon Linux: `sudo dnf install ffmpeg`
-
-**Bun installer helper** — `unzip`
-- Arch: usually already present, otherwise `sudo pacman -S unzip`
-- Ubuntu: `sudo apt install unzip`
-- Fedora/RHEL/Amazon Linux: `sudo dnf install unzip`
-
-**Clipboard**
-- Wayland: `wl-clipboard`
-- X11: `xclip` or `xsel`
-
-**Notifications**
-- Wayland/X11 desktop sessions: `libnotify`
-- Fedora/RHEL/Amazon Linux: `sudo dnf install libnotify`
-- Ubuntu/Debian: `sudo apt install libnotify-bin`
-
-**Permissions**
-```bash
-sudo usermod -aG audio,input $USER
-# Log out and back in
-```
-
-</details>
-
-### API Keys
-
-| Provider | Purpose | Link |
-|----------|---------|------|
-| Groq | Whisper V3 (fast) | [console.groq.com](https://console.groq.com/keys) |
-| Deepgram | Nova-3 (accurate) | [console.deepgram.com](https://console.deepgram.com/) |
-
-Run `bun run index.ts config init` or `hyprvox config init` to set them up.
-
-## Usage
+## Commands
 
 ```bash
-bun run index.ts status      # Check daemon status
-bun run index.ts health      # Test system setup
-bun run index.ts toggle      # Start/stop recording
-bun run index.ts history     # View past transcriptions
-bun run index.ts logs        # Tail daemon logs
-bun run index.ts errors      # Show last error
-bun run index.ts config init # Set up API keys
-bun run index.ts boost add   # Add custom vocabulary
+hyprvox toggle       # Start / stop recording
+hyprvox status       # Daemon status
+hyprvox health       # Full system check
+hyprvox history      # Past transcriptions
+hyprvox logs         # Tail daemon logs
+hyprvox errors       # Last error
+hyprvox boost add    # Add custom vocabulary
+hyprvox config init  # Reconfigure API keys
 ```
+
+---
 
 ## Configuration
 
-Config file: `~/.config/hypr/vox/config.json`
+Config lives at `~/.config/hypr/vox/config.json`:
 
 ```json
 {
@@ -244,64 +167,66 @@ Config file: `~/.config/hypr/vox/config.json`
 }
 ```
 
-**Streaming mode** — lower stop-to-clipboard latency with Deepgram chunks streamed during recording.
-**Batch mode** — sends complete audio after stop.
-**Formatting mode** — `verbatim`, `clean`, or `structured` merge behavior.
-**Boost words** — improves recognition for technical terms and seeds the local lexicon.
+| Option | Values | Effect |
+|--------|--------|--------|
+| `streaming` | `true` / `false` | Stream Deepgram during recording for lower latency |
+| `formattingMode` | `verbatim` `clean` `structured` | How the merged output is shaped |
+| `boostWords` | string list | Improves recognition of technical terms |
 
-Full options: [Configuration Guide](docs/CONFIGURATION.md)
+Full reference → [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
 
-## Hyprland Setup
-
-Add keybind for global hotkey:
-
-```conf
-# ~/.config/hypr/hyprland.conf
-bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle
-# code:105 = Right Control
-```
-
-Use `wev | grep -A5 "key event"` to find key codes.
-
-This bypasses XWayland limitations.
-
-Full guide: [Wayland Support](docs/WAYLAND.md)
+---
 
 ## Troubleshooting
 
-If you're testing on a headless server such as EC2, some health checks will fail by design:
-- no clipboard tool installed
-- no desktop notification service
-- no microphone devices attached
-- no API keys configured yet
-
-The install is still valid if `hyprvox --help` works. Full transcription requires a machine with audio input, clipboard support, and configured API keys.
-
-| Problem | Fix |
+| Symptom | Fix |
 |---------|-----|
-| Hotkey not working | Add user to `input` group; use compositor binds on Wayland |
-| No audio | Add user to `audio` group |
-| Empty recording after restart | Try one more recording; if it repeats, test `arecord -D default -f S16_LE -r 16000 -c 1 -d 1 /tmp/mic.wav` |
-| Clipboard issues | Install `wl-clipboard` (Wayland) or `xclip` (X11) |
-| Service won't start | Check logs: `journalctl --user -u hyprvox -f` |
+| Hotkey not firing (Wayland) | Use compositor bind — see [Hyprland Setup](#keybinds) |
+| Hotkey not firing (X11) | Add user to `input` group, re-login |
+| No audio captured | `sudo usermod -aG audio $USER` then re-login |
+| Empty recording after restart | Run one more recording; if it repeats, test with `arecord -D default -f S16_LE -r 16000 -c 1 -d 1 /tmp/mic.wav` |
+| Clipboard not updating | Install `wl-clipboard` (Wayland) or `xclip` (X11) |
+| Service won't start | `journalctl --user -u hyprvox -f` |
 
-Full guide: [Troubleshooting](docs/TROUBLESHOOTING.md)
+> **Headless servers (EC2, etc.):** health checks for clipboard, notifications, and mic will fail by design. The install is valid if `hyprvox --help` works — full transcription needs a machine with audio input.
 
-## Documentation
+Full guide → [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
-- [Architecture](docs/ARCHITECTURE.md) — How it works under the hood
-- [STT Flow](docs/STT_FLOW.md) — End-to-end transcription and quality pipeline
-- [Configuration](docs/CONFIGURATION.md) — All options explained
-- [CLI Commands](docs/CLI_COMMANDS.md) — Every command and flag
-- [Wayland Support](docs/WAYLAND.md) — Platform-specific setup
+---
 
-## Release Workflow
+## For AI Agents
 
-- Use Conventional Commits on branches merged into `main`; `feat:` triggers a minor bump and `fix:` triggers a patch bump.
-- `.github/workflows/release-please.yml` opens or updates the release PR, and `.github/workflows/release.yml` publishes tagged releases after tests pass.
-- The root CLI package is also published to npm as `hyprvox`.
-- Release Please uses `release-please-config.json` and `.release-please-manifest.json` to track the root package version.
-- Set repository Actions permissions to `Read and write`, and enable `Allow GitHub Actions to create and approve pull requests` or provide a `RELEASE_PLEASE_TOKEN` secret with repo scope.
+<details>
+<summary>Setup prompt — click to expand</summary>
+
+```
+Install and configure hyprvox on this Linux system:
+
+1. Install deps: sudo dnf install -y unzip ffmpeg alsa-utils wl-clipboard
+2. Install Bun: curl -fsSL https://bun.sh/install | bash && source ~/.bash_profile
+3. Clone: git clone https://github.com/Snehit70/hyprvox.git && cd hyprvox && bun install
+4. Configure: bun run index.ts config init  (I'll provide Groq + Deepgram keys when prompted)
+5. Install service: bun run index.ts install
+6. For Hyprland, add to ~/.config/hypr/hyprland.conf:
+     bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle
+7. Add overlay window rules to ~/.config/hypr/UserConfigs/WindowRules.conf (see README)
+8. Reload: hyprctl reload
+9. Verify: bun run index.ts health
+```
+
+</details>
+
+---
+
+## Docs
+
+- [Architecture](docs/ARCHITECTURE.md) — internals and data flow
+- [STT Flow](docs/STT_FLOW.md) — transcription and quality pipeline end-to-end
+- [Configuration](docs/CONFIGURATION.md) — every option
+- [CLI Commands](docs/CLI_COMMANDS.md) — every command and flag
+- [Wayland Support](docs/WAYLAND.md) — platform-specific setup
+
+---
 
 ## License
 
