@@ -45,8 +45,9 @@ The transcription cycle follows a strictly orchestrated path (see [STT Flow Deta
 2. **Record**: `AudioRecorder` starts `arecord` via `node-record-lpcm16`. Audio chunks are streamed into a buffer.
 3. **Conversion**: Audio is converted to optimal format (16kHz WAV Mono) for API consumption.
 4. **Parallel Execution**: Audio is sent simultaneously to **Groq (Whisper V3)** and **Deepgram (Nova-3)**.
-5. **LLM Merge**: If both APIs return results, an LLM (`src/transcribe/merger.ts`) merges them to combine Groq's technical accuracy with Deepgram's formatting. Model is configurable via `transcription.mergeModel`.
-6. **Output**:
+5. **Merge/Select**: `src/transcribe/merger.ts` either uses deterministic source selection for near-identical transcripts or calls the configured merge model when synthesis is needed.
+6. **Quality Guard**: `src/transcribe/quality.ts`, `src/transcribe/recovery.ts`, and `src/transcribe/long-recording.ts` validate, repair, trim, or fall back before text reaches output.
+7. **Output**:
    - **Clipboard**: Final text is appended to the system clipboard (Wayland via `wl-copy`, X11 via `clipboardy`).
    - **History**: Transcription is logged to `~/.config/hyprvox/history.json`.
    - **Notification**: Desktop notification is sent via `notify-send`.
@@ -78,6 +79,12 @@ For details on using these modules programmatically, see the [Programmatic API R
 ### ☁️ Transcription Services (`src/transcribe/`)
 - **`groq.ts`**: Integration with Groq Cloud SDK.
 - **`deepgram.ts`**: Integration with Deepgram SDK.
+- **`deepgram-streaming.ts`**: WebSocket streaming path with finalize/close timing metrics.
+- **`merger.ts`**: Deterministic and LLM-backed transcript merge logic, including formatting modes.
+- **`quality.ts`**: Transcript validation for prompt artifacts, hallucination suffixes, mixed-script garbage, and garbage fragments.
+- **`recovery.ts`**: Repair and source-fallback policy after validation failure.
+- **`lexicon.ts`**: Local technical-term lexicon used for provider hints and merge context.
+- **`long-recording.ts`**: Long-recording merge expansion guard and validated source fallback selection.
 
 ### 🛠️ Utilities (`src/utils/`)
 - **`logger.ts`**: Structured JSON logging with daily rotation.
@@ -86,6 +93,8 @@ For details on using these modules programmatically, see the [Programmatic API R
 
 ## Error Handling & Resilience
 - **API Fallback**: If one transcription service fails, the other is used automatically.
+- **Quality Recovery**: Invalid merged output is repaired once when possible, then falls back to a clean source transcript.
+- **Long Recording Guard**: Suspicious long-recording merge expansion falls back to the longest valid source transcript.
 - **Fail Fast**: Prioritizes speed over exhaustive retries (max 2 attempts).
 - **Audio Validation**: Automatically rejects recordings shorter than 0.6s and warns on silent audio.
 - **Safety**: Never overwrites clipboard content; always appends to history.

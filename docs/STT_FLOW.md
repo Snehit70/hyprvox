@@ -12,7 +12,8 @@ sequenceDiagram
     participant Audio as Audio Recorder
     participant ffmpeg as FFmpeg Converter
     participant APIs as Groq & Deepgram
-    participant LLM as Llama 3.3 (Merger)
+    participant Quality as Quality Guard
+    participant LLM as Merge Model
     participant Output as Clipboard & Notifications
 
     User->>Hotkey: Press Right Control
@@ -31,9 +32,10 @@ sequenceDiagram
     Note over APIs: Whisper V3 (Groq) + Nova-3 (Deepgram)
     APIs-->>Daemon: Return Transcripts
     
-    Daemon->>LLM: Merge Transcripts (Llama 3.3 70B)
-    Note over LLM: Combine accuracy + formatting
-    LLM-->>Daemon: Final Perfect Transcript
+    Daemon->>LLM: Merge or deterministic select
+    Note over LLM: Combine accuracy + formatting when needed
+    LLM-->>Quality: Candidate Transcript
+    Quality-->>Daemon: Validated, repaired, or fallback transcript
     
     Daemon->>Output: Append to Clipboard
     Daemon->>Output: Show Success Notification
@@ -85,16 +87,19 @@ Before provider calls, the daemon builds technical-term hints from configured bo
 
 **Deepgram Finalization Metrics**: In streaming mode, each session records `deepgramFinalizeWaitMs`, `deepgramCloseWaitMs`, `deepgramEndpointingMs`, `deepgramReceivedFinalChunk`, and `deepgramHadSpeechFinal`. These explain whether stop latency came from waiting for the final transcript, closing the WebSocket, or missing Deepgram finalization signals.
 
-### 5. LLM-Based Merging
-If both Groq and Deepgram return results, they are sent to **Llama 3.3 70B** on Groq Cloud.
+### 5. Merge And Quality Pipeline
+If both Groq and Deepgram return results, Hyprvox first decides whether deterministic selection is enough or whether an LLM merge is needed. The merge model is configured by `transcription.mergeModel`.
 
-- **Prompting**: The LLM is instructed to trust Groq for words/technical terms and Deepgram for punctuation/formatting.
+- **Prompting**: When an LLM merge is needed, the model is instructed to trust Groq for words/technical terms and Deepgram for punctuation/formatting.
 - **Lexicon Hints**: The merge prompt includes known project terms and exact tokens found in either source transcript.
 - **Formatting Mode**: `transcription.formattingMode` controls whether the merge stays close to spoken prose (`verbatim`), lightly cleans sentence boundaries (`clean`), or formats clearly dictated multi-item speech as lists (`structured`).
-- **Long Recording Guard**: For recordings over 90 seconds or transcripts over 150 words, Hyprvox flags merge outputs that expand far beyond both source transcripts and falls back to the fuller source transcript instead of saving likely invented bridge text.
-- **Deduplication**: Automatically removes hallucinations or repeated phrases common in Whisper models.
-- **Latency**: Highly optimized (typically <500ms).
-- **Fallback**: If the LLM call fails or times out, the system defaults to the Deepgram result (for better formatting) or Groq.
+- **Validation**: Candidate output is checked for prompt artifacts, detachable hallucination suffixes, mixed-script garbage in English mode, and obvious garbage fragments.
+- **Repair**: If a merged output fails validation and both source transcripts exist, Hyprvox retries the merge once with a stricter repair prompt.
+- **Source Fallback**: If repair fails, Hyprvox chooses a clean source transcript instead of saving unsafe merged text.
+- **Long Recording Guard**: For recordings over 90 seconds or transcripts over 150 words, Hyprvox flags merge outputs that expand far beyond both source transcripts and falls back to the longest valid source transcript instead of saving likely invented bridge text.
+- **Fallback**: If the LLM call fails or times out, the system defaults to source fallback behavior rather than blocking a clean transcript.
+
+Current rollout note: endpoint tuning is intentionally paused after adding Deepgram finalization metrics. Collect fresh usage data before changing `endpointing` or finalize timeout behavior.
 
 ### 6. Output Generation
 The final text follows three paths:
@@ -114,4 +119,5 @@ The final text follows three paths:
 ## Performance Metrics
 - **Avg. Time to Clipboard**: 1.2s - 2.5s (depending on audio length).
 - **Audio processing overhead**: <100ms.
-- **LLM Merging overhead**: 300ms - 600ms.
+- **LLM Merging overhead**: skipped on deterministic paths; otherwise model-dependent.
+- **Deepgram stop metrics**: streaming sessions log finalize wait, close wait, endpointing, final chunk, and speech-final signals.

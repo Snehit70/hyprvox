@@ -1,58 +1,41 @@
 # AGENTS.md
 
-This file provides minimal, durable context for automated agents working in this repo. It intentionally avoids duplicating existing documentation; see referenced sources for details.
+Lean repo guide for automated agents.
 
-## Project Summary
-- `hyprvox` is a Linux speech-to-text daemon with a CLI, global hotkey trigger, and clipboard history output.
-- Transcription uses parallel Groq (Whisper V3) + Deepgram (Nova-3) and merges results with an LLM.
+## Source Of Truth
+- `docs/ARCHITECTURE.md`
+- `docs/STT_FLOW.md`
+- `docs/CONFIGURATION.md`
+- `docs/CLI_COMMANDS.md`
+- `PRD.md`
 
-**Source of truth:**
-- Architecture: `docs/ARCHITECTURE.md`
-- End-to-end flow: `docs/STT_FLOW.md`
-- Configuration: `docs/CONFIGURATION.md`
-- CLI usage: `docs/CLI_COMMANDS.md`
-- Product requirements: `PRD.md`
+## Stack
+- Bun runtime and package manager
+- Strict TypeScript
+- pino logs with daily rotation
+- Electron overlay sidecar over local IPC
 
-## Runtime & Stack
-- Runtime: Bun (package manager + runtime)
-- Language: TypeScript (strict)
-- Logging: pino w/ daily rotated log files
-- Overlay: Electron sidecar started by the daemon over local IPC
+## Current Product State
+- Hyprvox uses parallel Groq + Deepgram transcription with merge/validation/recovery.
+- Quality guardrails now validate prompt artifacts, suffix hallucinations, mixed-script garbage, and long-recording merge expansion.
+- Deepgram streaming exposes finalize/close timing metrics for future tuning.
+- Endpoint/model tuning is paused until at least one week of fresh usage data is collected.
 
-**Details:** `package.json`, `docs/ARCHITECTURE.md`
+## Where To Look First
+- `src/daemon/service.ts`
+- `src/transcribe/`
+- `docs/STT_FLOW.md`
+- `docs/CONFIGURATION.md`
+- `docs/ARCHITECTURE.md`
 
-## Key Modules
-- `src/daemon/`: daemon supervisor + service lifecycle
-- `src/audio/`: recording + conversion
-- `src/transcribe/`: Groq + Deepgram + merger
-- `src/output/`: clipboard + notifications
-- `src/config/`: config schema/loader
-
-**Details:** `docs/ARCHITECTURE.md`
-
-## LLM Merge
-- Merge logic is in `src/transcribe/merger.ts`.
-- Uses Groq LLM to merge transcripts from Groq Whisper and Deepgram Nova-3.
-- Model is configurable via `transcription.mergeModel` (default: `llama-3.3-70b-versatile`).
-
-**Log files:** use `paths.logs` from config; current local config writes to `~/.config/voice-cli/logs/`
-
-## Where to Find Operational Data
-- Config dir: `~/.config/hypr/vox/`
-- Logs: configured by `paths.logs` in `~/.config/hypr/vox/config.json` (current local config uses `~/.config/voice-cli/logs/`)
-- History: `~/.config/voice-cli/history.json`
+## Operational Data
 - Config: `~/.config/hypr/vox/config.json`
+- Logs: `paths.logs` from config
+- History: `~/.config/voice-cli/history.json`
 - IPC socket: `~/.config/hypr/vox/daemon.sock`
 - Overlay PID file: `~/.config/hypr/vox/overlay.pid`
 
-## Known Workflows
-- Hotkey toggle: Right Control (default). Recording starts on first press, stops on second.
-- In Hyprland setups, the built-in hotkey is often disabled and a compositor binding calls `hyprvox toggle` instead.
-- Output: text appended to clipboard + notification; history entry stored.
-
-## Overlay Notes
-- Overlay process is launched by `src/daemon/service.ts` and connects to the daemon over IPC.
-- If transcription still works but visual feedback disappears, check overlay status separately from daemon status.
-- First places to inspect are `bun run index.ts health`, `bun run index.ts overlay`, `journalctl --user -u hyprvox.service`, and the configured log directory from `paths.logs`.
-
-**Details:** `docs/STT_FLOW.md`, `docs/CONFIGURATION.md`
+## Workflow Notes
+- Default hotkey: Right Control; Hyprland users often bind `hyprvox toggle` in the compositor.
+- `bun run index.ts health` is the first check for setup/debugging.
+- Keep `plan.md` untracked.

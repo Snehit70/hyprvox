@@ -228,6 +228,21 @@ hyprvox boost lexicon
 - `clean`: Default. Improves punctuation and sentence boundaries while using normal prose unless multiple list items are clearly dictated.
 - `structured`: Formats clearly dictated steps, issues, tasks, or points as readable lists while preserving spoken wording.
 
+#### Quality And Observability Notes
+
+Transcript quality checks are not currently configurable. The daemon always validates candidate output for prompt artifacts, detachable hallucination suffixes, mixed-script garbage in English mode, and obvious garbage fragments before saving text to clipboard/history.
+
+In streaming mode, performance logs include Deepgram finalization observability:
+
+- `deepgramStopReason`
+- `deepgramFinalizeWaitMs`
+- `deepgramCloseWaitMs`
+- `deepgramEndpointingMs`
+- `deepgramReceivedFinalChunk`
+- `deepgramHadSpeechFinal`
+
+These fields are for analysis and future tuning. Do not treat a frequent `finalize_timeout` by itself as proof that endpointing should change; compare the final transcript quality and late finalization signals first.
+
 #### Language Options
 
 For **v1.0**, `hyprvox` is optimized for and officially supports **English only**.

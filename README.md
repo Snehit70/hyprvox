@@ -128,7 +128,13 @@ Install and configure hyprvox on this Linux system:
 
 **Dual-engine transcription.** Audio goes to both Groq (Whisper V3) and Deepgram (Nova-3) in parallel. Results are merged with an LLM for better accuracy. If one fails, the other continues.
 
-**Streaming or batch.** ~500ms latency in streaming mode. Higher accuracy in batch mode. Your choice.
+**Quality guardrails.** Merged text is validated before it reaches your clipboard. Hyprvox detects prompt artifacts, trims detachable outro hallucinations, blocks mixed-script garbage in English mode, and falls back to a clean source transcript when the merge is unsafe.
+
+**Technical dictation support.** Configured boost words, a computed local lexicon, and exact-token preservation help keep filenames, commands, acronyms, branch names, and tool names intact.
+
+**Faithful formatting modes.** Choose `verbatim`, `clean`, or `structured` output depending on whether you want near-literal prose, light cleanup, or clearly dictated lists.
+
+**Streaming or batch.** Streaming mode is optimized for low stop-to-clipboard latency. Batch mode remains available when you prefer full-file Deepgram transcription.
 
 **Runs as a daemon.** Systemd service starts on login. Always ready when you need it.
 
@@ -139,10 +145,10 @@ Install and configure hyprvox on this Linux system:
 | **Median latency** | 882ms |
 | **Real-time factor** | 39x faster than real-time |
 | **Dual-engine success** | 93.5% |
-| **Filler words removed** | 12.3% (by LLM cleanup) |
-| **LLM merge overhead** | ~280ms |
+| **Streaming stop metrics** | Logged per session |
+| **LLM merge overhead** | Often skipped for near-identical transcripts |
 
-The LLM doesn't just merge — it removes filler words ("um", "uh"), false starts, and self-corrections automatically.
+Performance varies by recording length, streaming mode, and whether the merge path uses deterministic selection, LLM merge, retry, or source fallback. Recent builds log Deepgram finalization timing and source transcript lengths so tuning decisions can be based on real usage data.
 
 ## The Overlay
 
@@ -232,14 +238,16 @@ Config file: `~/.config/hypr/vox/config.json`
   "apiKeys": { "groq": "...", "deepgram": "..." },
   "transcription": {
     "streaming": true,
+    "formattingMode": "clean",
     "boostWords": ["Hyprland", "WebSocket", "refactor"]
   }
 }
 ```
 
-**Streaming mode** — ~500ms latency, slightly lower accuracy.
-**Batch mode** — 2-8 seconds, higher accuracy.
-**Boost words** — Improve recognition for technical terms.
+**Streaming mode** — lower stop-to-clipboard latency with Deepgram chunks streamed during recording.
+**Batch mode** — sends complete audio after stop.
+**Formatting mode** — `verbatim`, `clean`, or `structured` merge behavior.
+**Boost words** — improves recognition for technical terms and seeds the local lexicon.
 
 Full options: [Configuration Guide](docs/CONFIGURATION.md)
 
@@ -273,6 +281,7 @@ The install is still valid if `hyprvox --help` works. Full transcription require
 |---------|-----|
 | Hotkey not working | Add user to `input` group; use compositor binds on Wayland |
 | No audio | Add user to `audio` group |
+| Empty recording after restart | Try one more recording; if it repeats, test `arecord -D default -f S16_LE -r 16000 -c 1 -d 1 /tmp/mic.wav` |
 | Clipboard issues | Install `wl-clipboard` (Wayland) or `xclip` (X11) |
 | Service won't start | Check logs: `journalctl --user -u hyprvox -f` |
 
@@ -281,6 +290,7 @@ Full guide: [Troubleshooting](docs/TROUBLESHOOTING.md)
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — How it works under the hood
+- [STT Flow](docs/STT_FLOW.md) — End-to-end transcription and quality pipeline
 - [Configuration](docs/CONFIGURATION.md) — All options explained
 - [CLI Commands](docs/CLI_COMMANDS.md) — Every command and flag
 - [Wayland Support](docs/WAYLAND.md) — Platform-specific setup
