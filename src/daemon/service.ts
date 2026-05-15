@@ -104,6 +104,9 @@ interface TranscriptionMetrics {
 	deepgramStartedEarly: boolean;
 	deepgramFinalizeWaitMs: number;
 	deepgramCloseWaitMs: number;
+	deepgramEndpointingMs: number;
+	deepgramReceivedFinalChunk: boolean;
+	deepgramHadSpeechFinal: boolean;
 
 	// Outcome
 	engine: string;
@@ -974,6 +977,9 @@ export class DaemonService {
 			deepgramStartedEarly: false,
 			deepgramFinalizeWaitMs: -1,
 			deepgramCloseWaitMs: -1,
+			deepgramEndpointingMs: -1,
+			deepgramReceivedFinalChunk: false,
+			deepgramHadSpeechFinal: false,
 			engine: "",
 			textLength: 0,
 			groqTextLength: 0,
@@ -1010,6 +1016,9 @@ export class DaemonService {
 					stopReason: StreamingStopReason;
 					finalizeWaitMs: number;
 					closeWaitMs: number;
+					endpointingMs: number;
+					receivedFinalChunk: boolean;
+					hadSpeechFinal: boolean;
 				};
 				durationMs: number;
 			};
@@ -1026,6 +1035,9 @@ export class DaemonService {
 							stopReason: "not_connected" as const,
 							finalizeWaitMs: -1,
 							closeWaitMs: -1,
+							endpointingMs: -1,
+							receivedFinalChunk: false,
+							hadSpeechFinal: false,
 						};
 					}),
 				);
@@ -1113,6 +1125,9 @@ export class DaemonService {
 				const streamingResult = deepgramTimed.result;
 				metrics.deepgramFinalizeWaitMs = streamingResult.finalizeWaitMs;
 				metrics.deepgramCloseWaitMs = streamingResult.closeWaitMs;
+				metrics.deepgramEndpointingMs = streamingResult.endpointingMs;
+				metrics.deepgramReceivedFinalChunk = streamingResult.receivedFinalChunk;
+				metrics.deepgramHadSpeechFinal = streamingResult.hadSpeechFinal;
 				const deepgramPostConversionTailMs = Math.max(
 					0,
 					deepgramTimed.durationMs - metrics.conversionMs,

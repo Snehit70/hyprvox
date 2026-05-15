@@ -23,6 +23,9 @@ export interface StreamingResult {
 	stopReason: StreamingStopReason;
 	finalizeWaitMs: number;
 	closeWaitMs: number;
+	endpointingMs: number;
+	receivedFinalChunk: boolean;
+	hadSpeechFinal: boolean;
 }
 
 export interface StreamingFailureReason {
@@ -43,7 +46,10 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	private connectionStartTime: number = 0;
 	private chunksSent: number = 0;
 	private audioBuffer: Buffer[] = [];
+	private stopWindowReceivedFinalChunk: boolean = false;
+	private stopWindowHadSpeechFinal: boolean = false;
 	private static readonly MAX_BUFFER_CHUNKS = 100;
+	private static readonly ENDPOINTING_MS = 300;
 
 	// Finalize wait: how long to wait for a final transcript after sending
 	// the finalize signal to Deepgram.  Lower values reduce stop latency
@@ -69,12 +75,14 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			this.connectionStartTime = 0;
 			this.chunksSent = 0;
 			this.audioBuffer = [];
+			this.stopWindowReceivedFinalChunk = false;
+			this.stopWindowHadSpeechFinal = false;
 
 			const keyterms = sanitizeDeepgramKeyterms(boostWords);
 			const options: LiveSchema = {
 				model: "nova-3",
 				interim_results: true,
-				endpointing: 300,
+				endpointing: DeepgramStreamingTranscriber.ENDPOINTING_MS,
 				vad_events: true,
 				smart_format: true,
 				encoding: "linear16",
@@ -105,7 +113,6 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 
 			this.connection.on(LiveTranscriptionEvents.Transcript, (data) => {
 				const transcript = data.channel?.alternatives?.[0]?.transcript;
-
 				if (transcript && transcript.trim().length > 0) {
 					if (data.speech_final) {
 						this.transcriptChunks.push(transcript.trim());
@@ -113,14 +120,20 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 							{ transcript: transcript.trim(), isFinal: true },
 							"Deepgram chunk finalized (speech_final)",
 						);
-						this.emit("transcript", transcript.trim());
+						this.emit("transcript", transcript.trim(), {
+							isFinal: data.is_final,
+							speechFinal: data.speech_final,
+						});
 					} else if (data.is_final) {
 						this.transcriptChunks.push(transcript.trim());
 						logger.debug(
 							{ transcript: transcript.trim(), isFinal: data.is_final },
 							"Deepgram chunk finalized (is_final)",
 						);
-						this.emit("transcript", transcript.trim());
+						this.emit("transcript", transcript.trim(), {
+							isFinal: data.is_final,
+							speechFinal: data.speech_final,
+						});
 					}
 				}
 			});
@@ -291,27 +304,44 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 		let stopReason: StreamingStopReason = "not_connected";
 		let finalizeWaitMs = 0;
 		let closeWaitMs = 0;
+		let receivedFinalChunk = false;
+		let hadSpeechFinal = false;
 
 		if (this.connection) {
 			try {
+				const transcriptMetricsHandler = (
+					_text: string,
+					transcriptData?: {
+						isFinal?: boolean;
+						speechFinal?: boolean;
+					},
+				) => {
+					receivedFinalChunk ||= transcriptData?.isFinal ?? false;
+					hadSpeechFinal ||= transcriptData?.speechFinal ?? false;
+				};
+
 				// Flush any buffered audio before closing
+				this.on("transcript", transcriptMetricsHandler);
 				this.connection.finalize();
 				logger.debug("Sent finalize signal to Deepgram");
 
 				// Wait for final transcript after finalize
 				const finalizeStart = Date.now();
 				stopReason = await new Promise<StreamingStopReason>((resolve) => {
+					let settled = false;
 					const timeout = setTimeout(() => {
 						logger.debug("Finalize wait timeout, proceeding");
-						this.off("transcript", transcriptHandler);
+						settled = true;
 						resolve("finalize_timeout");
 					}, DeepgramStreamingTranscriber.FINALIZE_TIMEOUT_MS);
 
-					const transcriptHandler = () => {
+					const finalizeHandler = () => {
+						if (settled) return;
+						settled = true;
 						clearTimeout(timeout);
 						resolve("finalize_transcript");
 					};
-					this.once("transcript", transcriptHandler);
+					this.once("transcript", finalizeHandler);
 				});
 				finalizeWaitMs = Date.now() - finalizeStart;
 
@@ -340,6 +370,9 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				if (!closeClean) {
 					stopReason = `${stopReason}+close_timeout` as StreamingStopReason;
 				}
+				this.off("transcript", transcriptMetricsHandler);
+				this.stopWindowReceivedFinalChunk = receivedFinalChunk;
+				this.stopWindowHadSpeechFinal = hadSpeechFinal;
 			} catch (error) {
 				logError("Error finishing Deepgram streaming", error);
 			} finally {
@@ -364,6 +397,9 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				stopReason,
 				finalizeWaitMs,
 				closeWaitMs,
+				endpointingMs: DeepgramStreamingTranscriber.ENDPOINTING_MS,
+				receivedFinalChunk: this.stopWindowReceivedFinalChunk,
+				hadSpeechFinal: this.stopWindowHadSpeechFinal,
 			},
 			"Deepgram streaming transcription complete",
 		);
@@ -374,6 +410,9 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			stopReason,
 			finalizeWaitMs,
 			closeWaitMs,
+			endpointingMs: DeepgramStreamingTranscriber.ENDPOINTING_MS,
+			receivedFinalChunk: this.stopWindowReceivedFinalChunk,
+			hadSpeechFinal: this.stopWindowHadSpeechFinal,
 		};
 	}
 }
