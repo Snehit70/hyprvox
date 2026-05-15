@@ -33,6 +33,7 @@ import {
 	TranscriptMerger,
 } from "../transcribe/merger";
 import type { TranscriptQualityReason } from "../transcribe/quality";
+import { validateTranscript } from "../transcribe/quality";
 import { recoverTranscriptQuality } from "../transcribe/recovery";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { errorIncludes, getErrorCode } from "../utils/errors";
@@ -1354,10 +1355,11 @@ export class DaemonService {
 			accuracy = recovery.accuracy;
 			metrics.mergeStrategy = recovery.mergeStrategy;
 			metrics.mergeReason = recovery.mergeReason;
-			metrics.validationReasons = recovery.validation.reasons;
+			let finalValidation = recovery.validation;
+			metrics.validationReasons = finalValidation.reasons;
 			metrics.validationRetryCount = recovery.validationRetryCount;
 			metrics.validationFallbackSource = recovery.validationFallbackSource;
-			metrics.trimmedHallucinationSuffix = recovery.validation.trimmedSuffix;
+			metrics.trimmedHallucinationSuffix = finalValidation.trimmedSuffix;
 
 			const longRecordingQuality = assessLongRecordingQuality({
 				recordingDurationMs: duration,
@@ -1385,18 +1387,22 @@ export class DaemonService {
 					"Long recording merge expanded beyond source transcripts; using source fallback",
 				);
 				finalText = longRecordingQuality.fallbackText;
+				finalValidation = validateTranscript(finalText);
+				finalText = finalValidation.text;
 				accuracy = undefined;
 				metrics.mergeStrategy = "single_source";
 				metrics.mergeReason =
 					longRecordingQuality.fallbackSource === "groq"
 						? "groq_only"
 						: "deepgram_only";
+				metrics.validationReasons = finalValidation.reasons;
+				metrics.trimmedHallucinationSuffix = finalValidation.trimmedSuffix;
 			}
 
-			if (!recovery.validation.valid) {
+			if (!finalValidation.valid) {
 				logger.error(
 					{
-						reasons: recovery.validation.reasons,
+						reasons: finalValidation.reasons,
 						text: finalText.substring(0, 200),
 						textLength: finalText.length,
 						duration,
@@ -1409,7 +1415,7 @@ export class DaemonService {
 					"error",
 				);
 				throw new Error(
-					`Transcript validation failed: ${recovery.validation.reasons.join(", ")}`,
+					`Transcript validation failed: ${finalValidation.reasons.join(", ")}`,
 				);
 			}
 
