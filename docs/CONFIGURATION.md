@@ -61,6 +61,7 @@ The configuration is a JSON file structured into several sections.
   },
   "transcription": {
     "language": "en",
+    "formattingMode": "clean",
     "boostWords": [
       "hyprvox",
       "Groq",
@@ -161,6 +162,7 @@ Settings related to the speech-to-text engine.
 | `streaming` | Boolean | `false` | Enable real-time streaming transcription during recording. | N/A |
 | `boostWords` | Array | `[]` | List of words to prioritize for better accuracy (e.g., names, jargon). | Max 450 words total. |
 | `mergeModel` | String | `"llama-3.3-70b-versatile"` | Groq model used to merge transcripts from Groq Whisper and Deepgram. | Must be a valid Groq model ID. |
+| `formattingMode` | String | `"clean"` | Controls how aggressively the merger formats dictated text. | `"verbatim"`, `"clean"`, or `"structured"`. |
 
 #### Streaming Mode
 
@@ -217,6 +219,14 @@ You can inspect the computed lexicon with:
 ```bash
 hyprvox boost lexicon
 ```
+
+#### Formatting Mode
+
+`formattingMode` controls output shape during the merge step:
+
+- `verbatim`: Minimal punctuation cleanup. Preserves sentence flow and avoids adding bullets/headings unless they were explicitly dictated.
+- `clean`: Default. Improves punctuation and sentence boundaries while using normal prose unless multiple list items are clearly dictated.
+- `structured`: Formats clearly dictated steps, issues, tasks, or points as readable lists while preserving spoken wording.
 
 #### Language Options
 

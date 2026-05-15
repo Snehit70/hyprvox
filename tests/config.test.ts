@@ -167,6 +167,38 @@ describe("Config Loader", () => {
 		expect(config.transcription.deepgramBoosting).toBe(true);
 	});
 
+	test("should validate formatting mode", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+			transcription: {
+				formattingMode: "verbatim",
+				language: "en",
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		const config = loadConfig(CONFIG_FILE);
+		expect(config.transcription.formattingMode).toBe("verbatim");
+	});
+
+	test("should default formatting mode to clean", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		const config = loadConfig(CONFIG_FILE);
+		expect(config.transcription.formattingMode).toBe("clean");
+	});
+
 	test("should reject boost words exceeding limit", () => {
 		// Generate 451 words
 		const manyWords = Array(451).fill("word");
