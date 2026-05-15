@@ -23,6 +23,9 @@ export interface StreamingResult {
 	stopReason: StreamingStopReason;
 	finalizeWaitMs: number;
 	closeWaitMs: number;
+	endpointingMs: number;
+	receivedFinalChunk: boolean;
+	hadSpeechFinal: boolean;
 }
 
 export interface StreamingFailureReason {
@@ -43,7 +46,10 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 	private connectionStartTime: number = 0;
 	private chunksSent: number = 0;
 	private audioBuffer: Buffer[] = [];
+	private receivedFinalChunk: boolean = false;
+	private hadSpeechFinal: boolean = false;
 	private static readonly MAX_BUFFER_CHUNKS = 100;
+	private static readonly ENDPOINTING_MS = 300;
 
 	// Finalize wait: how long to wait for a final transcript after sending
 	// the finalize signal to Deepgram.  Lower values reduce stop latency
@@ -69,12 +75,14 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			this.connectionStartTime = 0;
 			this.chunksSent = 0;
 			this.audioBuffer = [];
+			this.receivedFinalChunk = false;
+			this.hadSpeechFinal = false;
 
 			const keyterms = sanitizeDeepgramKeyterms(boostWords);
 			const options: LiveSchema = {
 				model: "nova-3",
 				interim_results: true,
-				endpointing: 300,
+				endpointing: DeepgramStreamingTranscriber.ENDPOINTING_MS,
 				vad_events: true,
 				smart_format: true,
 				encoding: "linear16",
@@ -105,6 +113,12 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 
 			this.connection.on(LiveTranscriptionEvents.Transcript, (data) => {
 				const transcript = data.channel?.alternatives?.[0]?.transcript;
+				if (data.is_final) {
+					this.receivedFinalChunk = true;
+				}
+				if (data.speech_final) {
+					this.hadSpeechFinal = true;
+				}
 
 				if (transcript && transcript.trim().length > 0) {
 					if (data.speech_final) {
@@ -364,6 +378,9 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 				stopReason,
 				finalizeWaitMs,
 				closeWaitMs,
+				endpointingMs: DeepgramStreamingTranscriber.ENDPOINTING_MS,
+				receivedFinalChunk: this.receivedFinalChunk,
+				hadSpeechFinal: this.hadSpeechFinal,
 			},
 			"Deepgram streaming transcription complete",
 		);
@@ -374,6 +391,9 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 			stopReason,
 			finalizeWaitMs,
 			closeWaitMs,
+			endpointingMs: DeepgramStreamingTranscriber.ENDPOINTING_MS,
+			receivedFinalChunk: this.receivedFinalChunk,
+			hadSpeechFinal: this.hadSpeechFinal,
 		};
 	}
 }

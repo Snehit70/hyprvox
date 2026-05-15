@@ -83,6 +83,8 @@ Before provider calls, the daemon builds technical-term hints from configured bo
 
 **Replay Logging**: The daemon also logs the raw Groq source transcript at info level so merge-quality experiments can replay exact source pairs later.
 
+**Deepgram Finalization Metrics**: In streaming mode, each session records `deepgramFinalizeWaitMs`, `deepgramCloseWaitMs`, `deepgramEndpointingMs`, `deepgramReceivedFinalChunk`, and `deepgramHadSpeechFinal`. These explain whether stop latency came from waiting for the final transcript, closing the WebSocket, or missing Deepgram finalization signals.
+
 ### 5. LLM-Based Merging
 If both Groq and Deepgram return results, they are sent to **Llama 3.3 70B** on Groq Cloud.
 
