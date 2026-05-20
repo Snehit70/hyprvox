@@ -29,6 +29,7 @@ type EvalCase = {
 	timestamp: string;
 	durationMs: number;
 	issue: string;
+	groq: string;
 	deepgram: string;
 	qwenFinal: string;
 };
@@ -43,6 +44,7 @@ type EvalResult = {
 	outputChars?: number;
 	qwenFlags: QualityFlags;
 	modelFlags?: QualityFlags;
+	qualityScore?: number;
 	text?: string;
 	error?: string;
 };
@@ -52,13 +54,25 @@ type QualityFlags = {
 	outroSuffix: boolean;
 	mixedScript: boolean;
 	mentionsTranscriptMeta: boolean;
+	cotLeak: boolean;
 };
 
-const DEFAULT_MODELS = ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"];
-const DEFAULT_CASE_IDS = [120, 145, 158, 160, 203, 210];
-const DEFAULT_SLEEP_MS = 5_000;
-const START = new Date("2026-05-04T13:48:00.000Z");
-const END = new Date("2026-05-14T23:59:59.999Z");
+type QualityBreakdown = {
+	precision: number;
+	recall: number;
+	f1: number;
+	lengthRatio: number;
+	score: number;
+};
+
+const DEFAULT_MODELS = [
+	"qwen/qwen3-32b",
+	"llama-3.3-70b-versatile",
+	"openai/gpt-oss-120b",
+];
+const DEFAULT_SLEEP_MS = 1_500;
+const START = new Date("2026-05-15T00:00:00.000Z");
+const END = new Date("2026-05-21T00:00:00.000Z");
 const DEFAULT_CONFIG_PATH = join(
 	homedir(),
 	".config",
@@ -106,6 +120,90 @@ function qualityFlags(text: string): QualityFlags {
 		mixedScript: hasLatin && hasOtherScript,
 		mentionsTranscriptMeta:
 			/source_[ab]|source a|source b|transcript block/i.test(text),
+		cotLeak:
+			/<\s*think\s*>|<\s*\/\s*think\s*>|the user wants me to|first, i need to check/i.test(
+				text,
+			),
+	};
+}
+
+function tokenize(text: string): string[] {
+	return text
+		.toLowerCase()
+		.replace(/[^\p{L}\p{M}\p{N}._\-/\s]/gu, " ")
+		.split(/\s+/u)
+		.filter(Boolean);
+}
+
+function toFreq(tokens: string[]): Map<string, number> {
+	const freq = new Map<string, number>();
+	for (const token of tokens) {
+		freq.set(token, (freq.get(token) ?? 0) + 1);
+	}
+	return freq;
+}
+
+function qualityScore(
+	testCase: EvalCase,
+	output: string,
+	flags: QualityFlags,
+): QualityBreakdown {
+	const outputTokens = tokenize(output);
+	const outputFreq = toFreq(outputTokens);
+
+	const sourceScores = [testCase.groq, testCase.deepgram]
+		.filter(Boolean)
+		.map((source) => {
+			const sourceTokens = tokenize(source);
+			const sourceFreq = toFreq(sourceTokens);
+
+			let overlap = 0;
+			for (const [token, outCount] of outputFreq.entries()) {
+				overlap += Math.min(outCount, sourceFreq.get(token) ?? 0);
+			}
+
+			const precision =
+				outputTokens.length > 0 ? overlap / outputTokens.length : 0;
+			const recall =
+				sourceTokens.length > 0 ? overlap / sourceTokens.length : 0;
+			const f1 =
+				precision + recall > 0
+					? (2 * precision * recall) / (precision + recall)
+					: 0;
+
+			return { precision, recall, f1 };
+		});
+
+	const bestScore = sourceScores.reduce(
+		(best, candidate) => (candidate.f1 > best.f1 ? candidate : best),
+		sourceScores[0] ?? { precision: 0, recall: 0, f1: 0 },
+	);
+
+	const sourceLen = Math.max(testCase.groq.length, testCase.deepgram.length, 1);
+	const lengthRatio = output.length / sourceLen;
+
+	let score = bestScore.f1 * 100;
+	if (flags.cotLeak) score -= 60;
+	if (flags.preserveArtifact) score -= 35;
+	if (flags.outroSuffix) score -= 20;
+	if (flags.mixedScript) score -= 20;
+	if (flags.mentionsTranscriptMeta) score -= 20;
+
+	if (lengthRatio > 2.5) {
+		score -= 30;
+	} else if (lengthRatio > 1.8) {
+		score -= 15;
+	}
+
+	if (bestScore.precision < 0.6) score -= 20;
+
+	const bounded = Math.max(0, Math.min(100, score));
+	return {
+		precision: bestScore.precision,
+		recall: bestScore.recall,
+		f1: bestScore.f1,
+		lengthRatio,
+		score: bounded,
 	};
 }
 
@@ -142,11 +240,13 @@ function buildCases(): EvalCase[] {
 	});
 
 	const logFiles = readdirSync(config.paths.logs)
-		.filter((file) => /^hyprvox-2026-05-(0[4-9]|1[0-4])\.log$/.test(file))
+		.filter((file) => /^hyprvox-2026-05-(1[5-9]|20)\.log$/.test(file))
 		.sort();
 
-	const sessions: Array<{ complete: string; chunks: string[] }> = [];
+	const sessions: Array<{ complete: string; chunks: string[]; groq: string }> =
+		[];
 	let current: { chunks: string[] } | null = null;
+	let currentGroq = "";
 
 	for (const file of logFiles) {
 		for (const event of parseJsonLines(join(config.paths.logs, file))) {
@@ -155,14 +255,22 @@ function buildCases(): EvalCase[] {
 
 			if (event.msg === "Recording started") {
 				current = { chunks: [] };
+				currentGroq = "";
 			} else if (
 				current &&
 				event.msg === "Received streaming transcript chunk"
 			) {
 				current.chunks.push(event.text ?? "");
+			} else if (current && event.msg === "Groq source transcript") {
+				currentGroq = event.text ?? "";
 			} else if (current && event.msg === "Transcription complete") {
-				sessions.push({ complete: event.time, chunks: current.chunks });
+				sessions.push({
+					complete: event.time,
+					chunks: current.chunks,
+					groq: currentGroq,
+				});
 				current = null;
+				currentGroq = "";
 			}
 		}
 	}
@@ -195,6 +303,7 @@ function buildCases(): EvalCase[] {
 			timestamp: entry.timestamp,
 			durationMs: entry.duration,
 			issue: detectIssue(entry.text),
+			groq: session?.groq ?? "",
 			deepgram: session?.chunks.join(" ") ?? "",
 			qwenFinal: entry.text,
 		};
@@ -204,6 +313,10 @@ function buildCases(): EvalCase[] {
 function makeUserPrompt(testCase: EvalCase): string {
 	return `Case ${testCase.id}
 Observed issue in current Qwen output: ${testCase.issue}
+
+<groq_source_transcript>
+${testCase.groq}
+</groq_source_transcript>
 
 <current_qwen_final>
 ${testCase.qwenFinal}
@@ -223,17 +336,26 @@ async function run(): Promise<void> {
 	const sleepMs = Number(getArg("sleep-ms") ?? DEFAULT_SLEEP_MS);
 	const limit = Number(getArg("limit") ?? 0);
 	const smoke = hasFlag("smoke");
+	const issuesOnly = hasFlag("issues-only");
+	const caseIds = getArg("case-ids")
+		?.split(",")
+		.map((value) => Number(value.trim()))
+		.filter(Number.isFinite);
 	const models = (getArg("models")?.split(",") ?? DEFAULT_MODELS).map((model) =>
 		model.trim(),
 	);
-	const caseIds = (
-		getArg("case-ids")?.split(",").map(Number) ?? DEFAULT_CASE_IDS
-	)
-		.filter(Number.isFinite)
-		.slice(0, limit > 0 ? limit : undefined);
 	const allCases = buildCases();
-	const cases = allCases.filter((testCase) => caseIds.includes(testCase.id));
-	const selectedCases = smoke ? cases.slice(0, 1) : cases;
+	const candidateCases = issuesOnly
+		? allCases.filter((testCase) =>
+				Object.values(qualityFlags(testCase.qwenFinal)).some(Boolean),
+			)
+		: allCases;
+	const scopedCases =
+		caseIds && caseIds.length > 0
+			? candidateCases.filter((testCase) => caseIds.includes(testCase.id))
+			: candidateCases;
+	const limitedCases = limit > 0 ? scopedCases.slice(0, limit) : scopedCases;
+	const selectedCases = smoke ? limitedCases.slice(0, 3) : limitedCases;
 	const results: EvalResult[] = [];
 
 	for (const testCase of selectedCases) {
@@ -251,6 +373,8 @@ async function run(): Promise<void> {
 					max_tokens: 1200,
 				});
 				const text = completion.choices[0]?.message?.content?.trim() ?? "";
+				const modelFlags = qualityFlags(text);
+				const breakdown = qualityScore(testCase, text, modelFlags);
 				results.push({
 					caseId: testCase.id,
 					issue: testCase.issue,
@@ -260,7 +384,8 @@ async function run(): Promise<void> {
 					inputChars: userPrompt.length,
 					outputChars: text.length,
 					qwenFlags: qualityFlags(testCase.qwenFinal),
-					modelFlags: qualityFlags(text),
+					modelFlags,
+					qualityScore: breakdown.score,
 					text,
 				});
 				logger.info({
@@ -321,8 +446,45 @@ function renderMarkdown(cases: EvalCase[], results: EvalResult[]): string {
 			).length;
 			const outros = okRows.filter((row) => row.modelFlags?.outroSuffix).length;
 			const mixed = okRows.filter((row) => row.modelFlags?.mixedScript).length;
-			return `| ${model} | ${okRows.length}/${rows.length} | ${avgTime} | ${artifacts} | ${outros} | ${mixed} |`;
+			const meta = okRows.filter(
+				(row) => row.modelFlags?.mentionsTranscriptMeta,
+			).length;
+			const cot = okRows.filter((row) => row.modelFlags?.cotLeak).length;
+			const avgQualityNum = okRows.length
+				? okRows.reduce((sum, row) => sum + (row.qualityScore ?? 0), 0) /
+					okRows.length
+				: 0;
+			const avgQuality = avgQualityNum.toFixed(1);
+			return `| ${model} | ${okRows.length}/${rows.length} | ${avgTime} | ${avgQuality} | ${artifacts} | ${outros} | ${mixed} | ${meta} | ${cot} |`;
 		})
+		.join("\n");
+
+	const ranking = [...byModel.entries()]
+		.map(([model, rows]) => {
+			const okRows = rows.filter((row) => row.ok);
+			const avgQuality =
+				okRows.length > 0
+					? okRows.reduce((sum, row) => sum + (row.qualityScore ?? 0), 0) /
+						okRows.length
+					: 0;
+			const avgTime =
+				okRows.length > 0
+					? okRows.reduce((sum, row) => sum + row.timeMs, 0) / okRows.length
+					: Number.POSITIVE_INFINITY;
+			const successRate = rows.length > 0 ? okRows.length / rows.length : 0;
+			return { model, avgQuality, avgTime, successRate };
+		})
+		.sort((a, b) => {
+			if (b.avgQuality !== a.avgQuality) return b.avgQuality - a.avgQuality;
+			if (b.successRate !== a.successRate) return b.successRate - a.successRate;
+			return a.avgTime - b.avgTime;
+		});
+
+	const rankingRows = ranking
+		.map(
+			(item, idx) =>
+				`| ${idx + 1} | ${item.model} | ${(item.avgQuality || 0).toFixed(1)} | ${(item.successRate * 100).toFixed(1)}% | ${Math.round(item.avgTime)} |`,
+		)
 		.join("\n");
 
 	const caseSections = cases
@@ -335,7 +497,7 @@ function renderMarkdown(cases: EvalCase[], results: EvalResult[]): string {
 					if (!result.ok) {
 						return `#### ${result.model}\n\nFailed: ${result.error}\n`;
 					}
-					return `#### ${result.model}\n\nTime: ${result.timeMs}ms  \nFlags: ${JSON.stringify(result.modelFlags)}\n\n${result.text}\n`;
+					return `#### ${result.model}\n\nTime: ${result.timeMs}ms  \nQuality score: ${(result.qualityScore ?? 0).toFixed(1)} / 100  \nFlags: ${JSON.stringify(result.modelFlags)}\n\n${result.text}\n`;
 				})
 				.join("\n");
 
@@ -343,7 +505,7 @@ function renderMarkdown(cases: EvalCase[], results: EvalResult[]): string {
 
 Timestamp: ${testCase.timestamp}  
 Duration: ${Math.round(testCase.durationMs / 1000)}s  
-Input chars: Qwen ${testCase.qwenFinal.length}, Deepgram ${testCase.deepgram.length}
+Input chars: Groq ${testCase.groq.length}, Qwen ${testCase.qwenFinal.length}, Deepgram ${testCase.deepgram.length}
 
 #### Current Qwen Final
 
@@ -360,20 +522,26 @@ ${resultText}`;
 **Generated:** ${now}  
 **Models tested:** ${[...byModel.keys()].join(", ")}  
 **Cases tested:** ${cases.map((testCase) => testCase.id).join(", ")}  
-**Method:** Compare current saved Qwen output against model outputs generated from current Qwen final text plus reconstructed Deepgram streaming chunks. Full Groq/Whisper source text is not available in historical logs because current code logs only Groq text length.
+**Method:** Replay with real production source pairs from the current monitoring window using logged Groq source transcript + Deepgram streaming chunks + saved final transcript.
 
 ## Summary
 
-| Model | Successful calls | Avg time ms | Preserve artifacts | Outro suffixes | Mixed script |
-|---|---:|---:|---:|---:|---:|
+| Model | Successful calls | Avg time ms | Avg quality score | Preserve artifacts | Outro suffixes | Mixed script | Transcript meta | CoT leak |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
 ${modelRows}
 
 Successful calls: ${successful.length}/${results.length}
 
+## Ranked Recommendation
+
+| Rank | Model | Avg quality score | Success rate | Avg time ms |
+|---:|---|---:|---:|---:|
+${rankingRows}
+
 ## Notes
 
-- This is not a perfect replay of the original merge because historical logs do not contain full Groq/Whisper text.
-- Deepgram chunks and current Qwen final outputs are real production data.
+- Groq source text and Deepgram chunks are from real production sessions in this window.
+- The saved final transcript is used as the baseline reference for comparison.
 - The script intentionally uses minimal Groq parameters: model, messages, temperature, and max_tokens.
 - Calls are throttled with sleep between requests to avoid rate limits.
 

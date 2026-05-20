@@ -78,6 +78,23 @@ describe("recoverTranscriptQuality", () => {
 		expect(result.accuracy).toBeUndefined();
 	});
 
+	it("falls back when repair returns chain-of-thought leakage", async () => {
+		const result = await recoverTranscriptQuality({
+			finalText: "<think>I should reason about this.</think> Update the docs.",
+			groqText: "Update the docs.",
+			deepgramText: "Update the docs.",
+			mergeStrategy: "llm",
+			mergeReason: "llm_succeeded",
+			repairMerge: async () =>
+				repairResult("The user wants me to output update the docs."),
+		});
+
+		expect(result.initialValidation.reasons).toContain("cot_meta");
+		expect(result.finalText).toBe("Update the docs.");
+		expect(result.validation.valid).toBe(true);
+		expect(result.validationFallbackSource).toBe("deepgram");
+	});
+
 	it("falls back to Groq when Deepgram source is invalid", async () => {
 		const result = await recoverTranscriptQuality({
 			finalText: "Transcript 1 is better. Transcript 2 is worse.",

@@ -172,7 +172,7 @@ const defaultTranscription = {
 	language: "en",
 	streaming: false,
 	deepgramBoosting: false,
-	mergeModel: "qwen/qwen3-32b",
+	mergeModel: "llama-3.3-70b-versatile",
 	formattingMode: "clean",
 } as const;
 
@@ -186,6 +186,13 @@ export const ApiKeysSchema = z.object({
 		.string()
 		.startsWith("gsk_", { message: "Groq API key must start with 'gsk_'" })
 		.min(10, { message: "Groq API key is too short" }),
+	groqFallback: z
+		.string()
+		.startsWith("gsk_", {
+			message: "Fallback Groq API key must start with 'gsk_'",
+		})
+		.min(10, { message: "Fallback Groq API key is too short" })
+		.optional(),
 	deepgram: z
 		.string()
 		.min(32, { message: "Deepgram API key is too short" })

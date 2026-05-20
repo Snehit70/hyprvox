@@ -1,5 +1,7 @@
 export type TranscriptQualityReason =
 	| "prompt_artifact"
+	| "cot_meta"
+	| "token_injection"
 	| "hallucination_suffix"
 	| "mixed_script"
 	| "garbage";
@@ -25,6 +27,18 @@ const PROMPT_ARTIFACT_PATTERNS = [
 	/transcript\s+1\b[\s\S]*\btranscript\s+2\b/i,
 ];
 
+const COT_META_PATTERNS = [
+	/<\/?think\b/i,
+	/\b(?:we need to|i need to|i should|let me)\s+(?:answer|analyze|reason|think|figure out)\b/i,
+	/\bthe user (?:wants|asked|is asking|requested)(?:(?:\s*[:,-])|(?:\s+that\b)|(?:\s+me\s+to\b))?/i,
+	/\b(?:my|the) (?:reasoning|analysis|thought process)\b/i,
+	/\bas an ai(?: language model)?\b/i,
+	/\bi(?:'|’)ll provide (?:the )?(?:final )?(?:answer|transcript)\b/i,
+];
+
+const TECHNICAL_TOKEN_PATTERN =
+	/\b(?:[\w.-]+\.(?:ts|tsx|js|jsx|json|md|yml|yaml|toml|py|rs|go|sh|env|log|mp3|wav|m4a)|(?:bun|npm|pnpm|yarn|git|docker|kubectl|terraform|node)\s+[a-z][\w:-]*|[a-z][\w-]*(?:-audio|-test|-benchmark)[\w.-]*)\b/gi;
+
 const DETACHABLE_SUFFIX_PATTERNS = [
 	/\s*(?:thank you for watching|thanks for watching)[.!?\s]*$/i,
 	/\s*(?:please subscribe|like and subscribe|don't forget to like|hit the bell)[.!?\s]*$/i,
@@ -38,6 +52,37 @@ const LATIN_SCRIPT_PATTERN = /\p{Script=Latin}/u;
 
 function hasPromptArtifact(text: string): boolean {
 	return PROMPT_ARTIFACT_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function hasCotMetaLeakage(text: string): boolean {
+	return COT_META_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function hasInjectedTechnicalTokenBurst(text: string): boolean {
+	const matches = [...text.matchAll(TECHNICAL_TOKEN_PATTERN)];
+	if (matches.length < 2) return false;
+
+	const words = text.split(/\s+/).filter(Boolean);
+	const suspiciousTokenCount = matches.filter((match) =>
+		/(?:audio|benchmark|test-audio|\.(?:mp3|wav|m4a)\b)/i.test(match[0]),
+	).length;
+	const repeatedTechnicalTokens = new Set<string>();
+	for (const match of matches) {
+		const token = match[0].toLowerCase();
+		if (
+			matches.filter((candidate) => candidate[0].toLowerCase() === token)
+				.length > 1
+		) {
+			repeatedTechnicalTokens.add(token);
+		}
+	}
+
+	return (
+		(suspiciousTokenCount >= 2 && matches.length >= 3) ||
+		(repeatedTechnicalTokens.size > 0 && matches.length >= 4) ||
+		(matches.length >= Math.max(6, Math.ceil(words.length * 0.25)) &&
+			(suspiciousTokenCount > 0 || repeatedTechnicalTokens.size > 0))
+	);
 }
 
 function hasMixedScriptGarbage(text: string): boolean {
@@ -88,6 +133,12 @@ export function validateTranscript(text: string): TranscriptQualityResult {
 	}
 	if (hasPromptArtifact(trimmed.text)) {
 		reasons.push("prompt_artifact");
+	}
+	if (hasCotMetaLeakage(trimmed.text)) {
+		reasons.push("cot_meta");
+	}
+	if (hasInjectedTechnicalTokenBurst(trimmed.text)) {
+		reasons.push("token_injection");
 	}
 	if (hasMixedScriptGarbage(trimmed.text)) {
 		reasons.push("mixed_script");

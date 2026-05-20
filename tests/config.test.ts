@@ -15,8 +15,9 @@ describe("Config Loader", () => {
 		if (!require("node:fs").existsSync(TEST_DIR)) {
 			mkdirSync(TEST_DIR, { recursive: true });
 		}
-		process.env.GROQ_API_KEY = "";
-		process.env.DEEPGRAM_API_KEY = "";
+		delete process.env.GROQ_API_KEY;
+		delete process.env.GROQ_FALLBACK_API_KEY;
+		delete process.env.DEEPGRAM_API_KEY;
 		vi.clearAllMocks();
 	});
 
@@ -30,6 +31,7 @@ describe("Config Loader", () => {
 		const configData = {
 			apiKeys: {
 				groq: "gsk_1234567890",
+				groqFallback: "gsk_abcdefghij",
 				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
 			},
 		};
@@ -38,9 +40,25 @@ describe("Config Loader", () => {
 
 		const config = loadConfig(CONFIG_FILE);
 		expect(config.apiKeys.groq).toBe("gsk_1234567890");
+		expect(config.apiKeys.groqFallback).toBe("gsk_abcdefghij");
 		expect(config.apiKeys.deepgram).toBe(
 			"4b5c1234-5678-90ab-cdef-1234567890ab",
 		);
+	});
+
+	test("should load fallback Groq API key from env if missing in file", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+		process.env.GROQ_FALLBACK_API_KEY = "gsk_env_fallback_12345";
+
+		const config = loadConfig(CONFIG_FILE, true);
+		expect(config.apiKeys.groqFallback).toBe("gsk_env_fallback_12345");
 	});
 
 	test("should load config when file does not exist (env fallback)", () => {

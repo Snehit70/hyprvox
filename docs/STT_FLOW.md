@@ -79,7 +79,7 @@ Before provider calls, the daemon builds technical-term hints from configured bo
     - **Strength**: Exceptional punctuation, capitalization, and formatting.
     - **Usage**: Primary source for structure.
 
-**Fallback Logic**: If one service fails, the daemon automatically uses the result from the successful one. If both fail, a critical error notification is shown.
+**Fallback Logic**: If one service fails, the daemon automatically uses the result from the successful one. If both fail, a critical error notification is shown. Merge calls can also use `apiKeys.groqFallback` only when the primary Groq merge key hits rate/quota limits.
 
 **Technical Term Preservation**: Groq always receives provider boost terms as prompt hints. Deepgram receives those terms as `keyterm` hints when `transcription.deepgramBoosting` is enabled. The merge prompt receives the capped project lexicon plus exact tokens found in either source transcript.
 
@@ -93,7 +93,7 @@ If both Groq and Deepgram return results, Hyprvox first decides whether determin
 - **Prompting**: When an LLM merge is needed, the model is instructed to trust Groq for words/technical terms and Deepgram for punctuation/formatting.
 - **Lexicon Hints**: The merge prompt includes known project terms and exact tokens found in either source transcript.
 - **Formatting Mode**: `transcription.formattingMode` controls whether the merge stays close to spoken prose (`verbatim`), lightly cleans sentence boundaries (`clean`), or formats clearly dictated multi-item speech as lists (`structured`).
-- **Validation**: Candidate output is checked for prompt artifacts, detachable hallucination suffixes, mixed-script garbage in English mode, and obvious garbage fragments.
+- **Validation**: Candidate output is checked for prompt artifacts, CoT/meta leakage, injected filename/command token bursts, detachable hallucination suffixes, mixed-script garbage in English mode, and obvious garbage fragments.
 - **Repair**: If a merged output fails validation and both source transcripts exist, Hyprvox retries the merge once with a stricter repair prompt.
 - **Source Fallback**: If repair fails, Hyprvox chooses a clean source transcript instead of saving unsafe merged text.
 - **Long Recording Guard**: For recordings over 90 seconds or transcripts over 150 words, Hyprvox flags merge outputs that expand far beyond both source transcripts and falls back to the longest valid source transcript instead of saving likely invented bridge text.
