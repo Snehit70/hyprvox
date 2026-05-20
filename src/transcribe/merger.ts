@@ -551,6 +551,47 @@ export class TranscriptMerger {
 	private _cachedApiKey: string | null = null;
 	private contextLexicon: string[] = [];
 
+	private isRateLimitOrQuotaError(error: unknown): boolean {
+		if (!(error instanceof Error)) {
+			return false;
+		}
+		return /rate_limit|quota|429|tokens per day|limit reached/i.test(
+			error.message,
+		);
+	}
+
+	private async createCompletionWithFallback(
+		primaryApiKey: string,
+		fallbackApiKey: string | undefined,
+		request: Parameters<Groq["chat"]["completions"]["create"]>[0],
+		signal?: AbortSignal,
+	) {
+		try {
+			return this.getClient(primaryApiKey).chat.completions.create(request, {
+				signal,
+				timeout: 30000,
+				maxRetries: 0,
+			});
+		} catch (error) {
+			if (!fallbackApiKey || !this.isRateLimitOrQuotaError(error)) {
+				throw error;
+			}
+
+			logger.warn(
+				{
+					reason: error instanceof Error ? error.message : String(error),
+				},
+				"Primary Groq merge key rate-limited; retrying merge with fallback key",
+			);
+
+			return this.getClient(fallbackApiKey).chat.completions.create(request, {
+				signal,
+				timeout: 30000,
+				maxRetries: 0,
+			});
+		}
+	}
+
 	private getClient(apiKey: string): Groq {
 		if (!this._client || this._cachedApiKey !== apiKey) {
 			this._client = new Groq({ apiKey });
@@ -576,6 +617,7 @@ export class TranscriptMerger {
 		const mergeModel = config.transcription.mergeModel;
 		const formattingMode = config.transcription.formattingMode;
 		const apiKey = config.apiKeys.groq;
+		const fallbackApiKey = config.apiKeys.groqFallback;
 		const sourcesMatch = groqText.trim() === deepgramText.trim();
 		const groqIsEmpty = groqText.trim().length === 0;
 		const deepgramIsEmpty = deepgramText.trim().length === 0;
@@ -688,7 +730,9 @@ export class TranscriptMerger {
 
 			const completion = await withRetry(
 				async (signal) => {
-					return await this.getClient(apiKey).chat.completions.create(
+					return await this.createCompletionWithFallback(
+						apiKey,
+						fallbackApiKey,
 						{
 							model: mergeModel,
 							messages: [
@@ -701,7 +745,7 @@ export class TranscriptMerger {
 							reasoning_effort: "none",
 							include_reasoning: false,
 						},
-						{ signal, timeout: 30000, maxRetries: 0 },
+						signal,
 					);
 				},
 				{
@@ -715,7 +759,12 @@ export class TranscriptMerger {
 				},
 			);
 
-			finalText = completion.choices[0]?.message?.content?.trim() || "";
+			finalText =
+				(
+					completion as {
+						choices?: Array<{ message?: { content?: string } }>;
+					}
+				).choices?.[0]?.message?.content?.trim() || "";
 			const timeMs = Date.now() - startTime;
 
 			logger.debug(
@@ -773,6 +822,7 @@ export class TranscriptMerger {
 		const config = loadConfig();
 		const mergeModel = config.transcription.mergeModel;
 		const apiKey = config.apiKeys.groq;
+		const fallbackApiKey = config.apiKeys.groqFallback;
 		const startTime = Date.now();
 		const userPrompt = `Validation failed for reasons: ${reasons.join(", ")}.
 
@@ -803,7 +853,9 @@ ${deepgramText}
 
 		const completion = await withRetry(
 			async (signal) => {
-				return await this.getClient(apiKey).chat.completions.create(
+				return await this.createCompletionWithFallback(
+					apiKey,
+					fallbackApiKey,
 					{
 						model: mergeModel,
 						messages: [
@@ -814,7 +866,7 @@ ${deepgramText}
 						max_tokens: maxTokens,
 						seed: 42,
 					},
-					{ signal, timeout: 30000, maxRetries: 0 },
+					signal,
 				);
 			},
 			{
@@ -828,7 +880,12 @@ ${deepgramText}
 			},
 		);
 
-		const finalText = completion.choices[0]?.message?.content?.trim() || "";
+		const finalText =
+			(
+				completion as {
+					choices?: Array<{ message?: { content?: string } }>;
+				}
+			).choices?.[0]?.message?.content?.trim() || "";
 		logger.debug(
 			{
 				model: mergeModel,

@@ -20,6 +20,7 @@ The application supports the following environment variables:
 ### API Key Fallbacks
 If an API key is missing from `config.json`, the application will fall back to these:
 - `GROQ_API_KEY`: Fallback for `apiKeys.groq`
+- `GROQ_FALLBACK_API_KEY`: Fallback for `apiKeys.groqFallback`
 - `DEEPGRAM_API_KEY`: Fallback for `apiKeys.deepgram`
 
 ### Logging
@@ -42,6 +43,7 @@ The configuration is a JSON file structured into several sections.
 {
   "apiKeys": {
     "groq": "gsk_...",
+    "groqFallback": "gsk_...",
     "deepgram": "00000000-0000-0000-0000-000000000000"
   },
   "behavior": {
@@ -82,6 +84,7 @@ Authentication credentials for the transcription services.
 | Option | Type | Default | Description | Validation Rules | Acquisition URL |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | `groq` | String | N/A | API key for Groq (Whisper V3). | Must start with `gsk_`. | [Groq Console](https://console.groq.com/keys) |
+| `groqFallback` | String | Optional | Secondary Groq API key used only when the primary merge key is rate-limited/quota-limited. | Must start with `gsk_` if provided. | [Groq Console](https://console.groq.com/keys) |
 | `deepgram` | String | N/A | API key for Deepgram (Nova-3). | 40-char hex string or UUID. | [Deepgram Console](https://console.deepgram.com/) |
 
 #### How to obtain API Keys

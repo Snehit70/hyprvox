@@ -126,6 +126,7 @@ export const loadConfig = (
 	const envConfig = {
 		apiKeys: {
 			groq: process.env.GROQ_API_KEY,
+			groqFallback: process.env.GROQ_FALLBACK_API_KEY,
 			deepgram: process.env.DEEPGRAM_API_KEY,
 		},
 	};
@@ -138,6 +139,9 @@ export const loadConfig = (
 		...parsedFileConfig,
 		apiKeys: {
 			groq: parsedFileConfig.apiKeys?.groq ?? envConfig.apiKeys.groq,
+			groqFallback:
+				parsedFileConfig.apiKeys?.groqFallback ??
+				envConfig.apiKeys.groqFallback,
 			deepgram:
 				parsedFileConfig.apiKeys?.deepgram ?? envConfig.apiKeys.deepgram,
 		},
