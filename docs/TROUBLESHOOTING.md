@@ -19,14 +19,14 @@ This guide covers common issues and their solutions for `hyprvox`.
 - **Symptom**: `Error: Daemon is already running (PID: XXXX)`
 - **Fix**: 
   - Stop the existing daemon: `hyprvox stop`.
-  - If the PID file is stale (process is dead), delete it: `rm ~/.config/hyprvox/daemon.pid`.
+  - If the PID file is stale (process is dead), delete it: `rm ~/.config/hypr/vox/daemon.pid`.
 
 ### Configuration Validation Failed
 - **Symptom**: `Config validation failed: ...`
 - **Fix**: 
   - Ensure API keys are present and correctly formatted (Groq starts with `gsk_`, Deepgram is a UUID).
-  - Check `~/.config/hyprvox/config.json` for syntax errors.
-  - Reset config if needed: `rm ~/.config/hyprvox/config.json && hyprvox config init`.
+  - Check `~/.config/hypr/vox/config.json` for syntax errors.
+  - Reset config if needed: `rm ~/.config/hypr/vox/config.json && hyprvox config init`.
 
 ### Permission Denied (Input/Hotkey)
 - **Symptom**: "Failed to bind global hotkey" or native errors related to `/dev/input/`.
@@ -38,7 +38,7 @@ This guide covers common issues and their solutions for `hyprvox`.
 - **Symptom**: `Daemon has crashed too many times and will not auto-restart.`
 - **Fix**: 
   - This happens if the daemon crashes 3 times in 5 minutes.
-  - Check logs for the root cause: `journalctl --user -u hyprvox -f` or `cat ~/.config/hyprvox/logs/daemon.log`.
+  - Check logs for the root cause: `journalctl --user -u hyprvox -f` or `cat ~/.config/hypr/vox/logs/daemon.log`.
   - Fix the underlying issue and restart manually.
 
 ---
@@ -50,7 +50,7 @@ This guide covers common issues and their solutions for `hyprvox`.
 - **Fix**: 
   - Ensure your key starts with `gsk_`.
   - Obtain a new key at the [Groq Cloud Console](https://console.groq.com/keys).
-  - Verify it is correctly placed in `~/.config/hyprvox/config.json`.
+  - Verify it is correctly placed in `~/.config/hypr/vox/config.json`.
 
 ### Deepgram API Key Invalid
 - **Symptom**: "Deepgram API key is invalid or missing" or "Deepgram: Invalid API Key" in logs.
@@ -133,7 +133,7 @@ This guide covers common issues and their solutions for `hyprvox`.
 - **Fix**:
   - **Wayland**: Install `wl-clipboard`.
   - **X11**: Install `xclip` or `xsel`.
-  - Check the fallback file at `~/.config/hyprvox/transcriptions.txt` to see if the transcript was saved there.
+  - Check the fallback file at `~/.config/hypr/vox/transcriptions.txt` to see if the transcript was saved there.
 
 ### Clipboard Access Denied
 - **Symptom**: "Clipboard access denied" notification.
@@ -177,4 +177,4 @@ This guide covers common issues and their solutions for `hyprvox`.
 
 ### Accuracy is Poor
 - **Symptom**: Transcripts contain errors for specific names or terms.
-- **Fix**: Add those terms to the `boostWords` array in `~/.config/hyprvox/config.json`. Note the 450-word limit.
+- **Fix**: Add those terms to the `boostWords` array in `~/.config/hypr/vox/config.json`. Note the 450-word limit.

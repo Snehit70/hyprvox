@@ -50,7 +50,7 @@ arecord -D YOUR_DEVICE_ID -f S16_LE -r 16000 -c 1 -d 5 test.wav
 
 ## 3. Configuring the Device
 
-Once you have identified the correct device ID, update your `config.json` file located at `~/.config/hyprvox/config.json`.
+Once you have identified the correct device ID, update your `config.json` file located at `~/.config/hypr/vox/config.json`.
 
 Add or modify the `audioDevice` field under the `behavior` section:
 

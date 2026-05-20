@@ -29,9 +29,9 @@ Under the hood:
 |--------|-------|------|
 | Groq | Whisper V3 | Speed |
 | Deepgram | Nova-3 | Accuracy |
-| LLM merge | — | Best-of-both result |
+| LLM merge | Llama 3.3 70B | Best-of-both result |
 
-Both engines run **in parallel**. Results merge with an LLM. If one fails, the other carries on. The merged text is validated before it ever reaches your clipboard — hallucinated outros trimmed, garbage blocked, technical terms preserved.
+Both engines run **in parallel**. Results merge with an LLM. If one fails, the other carries on. The merged text is validated before it ever reaches your clipboard: hallucinated outros are trimmed, prompt artifacts and reasoning leakage are blocked, injected filename/command bursts are rejected, and technical terms are preserved.
 
 **Median latency: 882ms.** 39× faster than real-time.
 
@@ -158,7 +158,7 @@ Config lives at `~/.config/hypr/vox/config.json`:
 
 ```json
 {
-  "apiKeys": { "groq": "...", "deepgram": "..." },
+  "apiKeys": { "groq": "...", "groqFallback": "...", "deepgram": "..." },
   "transcription": {
     "streaming": true,
     "formattingMode": "clean",
@@ -170,6 +170,7 @@ Config lives at `~/.config/hypr/vox/config.json`:
 | Option | Values | Effect |
 |--------|--------|--------|
 | `streaming` | `true` / `false` | Stream Deepgram during recording for lower latency |
+| `mergeModel` | Groq model ID | LLM used for transcript merge; default is `llama-3.3-70b-versatile` |
 | `formattingMode` | `verbatim` `clean` `structured` | How the merged output is shaped |
 | `boostWords` | string list | Improves recognition of technical terms |
 

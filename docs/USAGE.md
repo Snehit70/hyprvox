@@ -123,7 +123,7 @@ bun run index.ts list-mics
 For more information, see the **[Audio Device Selection Guide](AUDIO_DEVICES.md)**.
 
 ### Viewing Logs
-`hyprvox` stores logs in `~/.config/hyprvox/logs/`. You can view them via the CLI:
+`hyprvox` stores logs in `~/.config/hypr/vox/logs/` by default. You can view them via the CLI:
 ```bash
 # See recent logs
 bun run index.ts logs

@@ -5,12 +5,12 @@ This document provides a detailed overview of the configuration options availabl
 ## Configuration File
 
 The default configuration file is located at:
-`~/.config/hyprvox/config.json`
+`~/.config/hypr/vox/config.json`
 
 ### Security Requirement
 Since the configuration file contains sensitive API keys, it **must** have restricted file permissions.
 ```bash
-chmod 600 ~/.config/hyprvox/config.json
+chmod 600 ~/.config/hypr/vox/config.json
 ```
 
 ## Environment Variables
@@ -58,8 +58,8 @@ The configuration is a JSON file structured into several sections.
     "audioDevice": "default"
   },
   "paths": {
-    "logs": "~/.config/hyprvox/logs/",
-    "history": "~/.config/hyprvox/history.json"
+    "logs": "~/.config/hypr/vox/logs/",
+    "history": "~/.config/hypr/vox/history.json"
   },
   "transcription": {
     "language": "en",
@@ -150,8 +150,8 @@ File system locations for logs and history. Supports `~` for home directory expa
 
 | Option | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `logs` | String | `"~/.config/hyprvox/logs/"` | Directory where structured log files are stored. |
-| `history` | String | `"~/.config/hyprvox/history.json"` | Path to the transcription history JSON file. |
+| `logs` | String | `"~/.config/hypr/vox/logs/"` | Directory where structured log files are stored. |
+| `history` | String | `"~/.config/hypr/vox/history.json"` | Path to the transcription history JSON file. |
 
 ---
 
@@ -233,7 +233,7 @@ hyprvox boost lexicon
 
 #### Quality And Observability Notes
 
-Transcript quality checks are not currently configurable. The daemon always validates candidate output for prompt artifacts, detachable hallucination suffixes, mixed-script garbage in English mode, and obvious garbage fragments before saving text to clipboard/history.
+Transcript quality checks are not currently configurable. The daemon always validates candidate output for prompt artifacts, CoT/meta leakage, injected filename/command token bursts, detachable hallucination suffixes, mixed-script garbage in English mode, and obvious garbage fragments before saving text to clipboard/history.
 
 In streaming mode, performance logs include Deepgram finalization observability:
 

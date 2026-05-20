@@ -49,7 +49,7 @@ The transcription cycle follows a strictly orchestrated path (see [STT Flow Deta
 6. **Quality Guard**: `src/transcribe/quality.ts`, `src/transcribe/recovery.ts`, and `src/transcribe/long-recording.ts` validate, repair, trim, or fall back before text reaches output.
 7. **Output**:
    - **Clipboard**: Final text is appended to the system clipboard (Wayland via `wl-copy`, X11 via `clipboardy`).
-   - **History**: Transcription is logged to `~/.config/hyprvox/history.json`.
+   - **History**: Transcription is logged to `~/.config/hypr/vox/history.json`.
    - **Notification**: Desktop notification is sent via `notify-send`.
 
 ## Feature Modules
@@ -80,8 +80,8 @@ For details on using these modules programmatically, see the [Programmatic API R
 - **`groq.ts`**: Integration with Groq Cloud SDK.
 - **`deepgram.ts`**: Integration with Deepgram SDK.
 - **`deepgram-streaming.ts`**: WebSocket streaming path with finalize/close timing metrics.
-- **`merger.ts`**: Deterministic and LLM-backed transcript merge logic, including formatting modes.
-- **`quality.ts`**: Transcript validation for prompt artifacts, hallucination suffixes, mixed-script garbage, and garbage fragments.
+- **`merger.ts`**: Deterministic and LLM-backed transcript merge logic, including formatting modes and rate-limit fallback for merge calls.
+- **`quality.ts`**: Transcript validation for prompt artifacts, CoT/meta leakage, injected technical-token bursts, hallucination suffixes, mixed-script garbage, and garbage fragments.
 - **`recovery.ts`**: Repair and source-fallback policy after validation failure.
 - **`lexicon.ts`**: Local technical-term lexicon used for provider hints and merge context.
 - **`long-recording.ts`**: Long-recording merge expansion guard and validated source fallback selection.
@@ -93,6 +93,7 @@ For details on using these modules programmatically, see the [Programmatic API R
 
 ## Error Handling & Resilience
 - **API Fallback**: If one transcription service fails, the other is used automatically.
+- **Merge-Key Fallback**: If the primary Groq merge key is rate-limited or quota-limited, merge and repair calls can retry with `apiKeys.groqFallback`.
 - **Quality Recovery**: Invalid merged output is repaired once when possible, then falls back to a clean source transcript.
 - **Long Recording Guard**: Suspicious long-recording merge expansion falls back to the longest valid source transcript.
 - **Fail Fast**: Prioritizes speed over exhaustive retries (max 2 attempts).
