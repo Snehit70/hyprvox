@@ -72,7 +72,7 @@ const DEFAULT_MODELS = [
 ];
 const DEFAULT_SLEEP_MS = 1_500;
 const START = new Date("2026-05-15T00:00:00.000Z");
-const END = new Date("2026-05-20T00:00:00.000Z");
+const END = new Date("2026-05-21T00:00:00.000Z");
 const DEFAULT_CONFIG_PATH = join(
 	homedir(),
 	".config",
@@ -130,8 +130,8 @@ function qualityFlags(text: string): QualityFlags {
 function tokenize(text: string): string[] {
 	return text
 		.toLowerCase()
-		.replace(/[^a-z0-9._\-/\s]/g, " ")
-		.split(/\s+/)
+		.replace(/[^\p{L}\p{M}\p{N}._\-/\s]/gu, " ")
+		.split(/\s+/u)
 		.filter(Boolean);
 }
 
@@ -148,28 +148,41 @@ function qualityScore(
 	output: string,
 	flags: QualityFlags,
 ): QualityBreakdown {
-	const source = `${testCase.groq} ${testCase.deepgram}`.trim();
-	const sourceTokens = tokenize(source);
 	const outputTokens = tokenize(output);
-	const sourceFreq = toFreq(sourceTokens);
 	const outputFreq = toFreq(outputTokens);
 
-	let overlap = 0;
-	for (const [token, outCount] of outputFreq.entries()) {
-		overlap += Math.min(outCount, sourceFreq.get(token) ?? 0);
-	}
+	const sourceScores = [testCase.groq, testCase.deepgram]
+		.filter(Boolean)
+		.map((source) => {
+			const sourceTokens = tokenize(source);
+			const sourceFreq = toFreq(sourceTokens);
 
-	const precision = outputTokens.length > 0 ? overlap / outputTokens.length : 0;
-	const recall = sourceTokens.length > 0 ? overlap / sourceTokens.length : 0;
-	const f1 =
-		precision + recall > 0
-			? (2 * precision * recall) / (precision + recall)
-			: 0;
+			let overlap = 0;
+			for (const [token, outCount] of outputFreq.entries()) {
+				overlap += Math.min(outCount, sourceFreq.get(token) ?? 0);
+			}
+
+			const precision =
+				outputTokens.length > 0 ? overlap / outputTokens.length : 0;
+			const recall =
+				sourceTokens.length > 0 ? overlap / sourceTokens.length : 0;
+			const f1 =
+				precision + recall > 0
+					? (2 * precision * recall) / (precision + recall)
+					: 0;
+
+			return { precision, recall, f1 };
+		});
+
+	const bestScore = sourceScores.reduce(
+		(best, candidate) => (candidate.f1 > best.f1 ? candidate : best),
+		sourceScores[0] ?? { precision: 0, recall: 0, f1: 0 },
+	);
 
 	const sourceLen = Math.max(testCase.groq.length, testCase.deepgram.length, 1);
 	const lengthRatio = output.length / sourceLen;
 
-	let score = f1 * 100;
+	let score = bestScore.f1 * 100;
 	if (flags.cotLeak) score -= 60;
 	if (flags.preserveArtifact) score -= 35;
 	if (flags.outroSuffix) score -= 20;
@@ -182,10 +195,16 @@ function qualityScore(
 		score -= 15;
 	}
 
-	if (precision < 0.6) score -= 20;
+	if (bestScore.precision < 0.6) score -= 20;
 
 	const bounded = Math.max(0, Math.min(100, score));
-	return { precision, recall, f1, lengthRatio, score: bounded };
+	return {
+		precision: bestScore.precision,
+		recall: bestScore.recall,
+		f1: bestScore.f1,
+		lengthRatio,
+		score: bounded,
+	};
 }
 
 function detectIssue(text: string): string {
@@ -327,8 +346,8 @@ async function run(): Promise<void> {
 	);
 	const allCases = buildCases();
 	const candidateCases = issuesOnly
-		? allCases.filter(
-				(testCase) => detectIssue(testCase.qwenFinal) !== "quality_issue",
+		? allCases.filter((testCase) =>
+				Object.values(qualityFlags(testCase.qwenFinal)).some(Boolean),
 			)
 		: allCases;
 	const scopedCases =

@@ -30,7 +30,7 @@ const PROMPT_ARTIFACT_PATTERNS = [
 const COT_META_PATTERNS = [
 	/<\/?think\b/i,
 	/\b(?:we need to|i need to|i should|let me)\s+(?:answer|analyze|reason|think|figure out)\b/i,
-	/\bthe user (?:wants|asked|is asking|requested)\b/i,
+	/\bthe user (?:wants|asked|is asking|requested)(?:(?:\s*[:,-])|(?:\s+that\b)|(?:\s+me\s+to\b))?/i,
 	/\b(?:my|the) (?:reasoning|analysis|thought process)\b/i,
 	/\bas an ai(?: language model)?\b/i,
 	/\bi(?:'|’)ll provide (?:the )?(?:final )?(?:answer|transcript)\b/i,
@@ -79,8 +79,9 @@ function hasInjectedTechnicalTokenBurst(text: string): boolean {
 
 	return (
 		(suspiciousTokenCount >= 2 && matches.length >= 3) ||
-		matches.length >= Math.max(4, Math.ceil(words.length * 0.2)) ||
-		(repeatedTechnicalTokens.size > 0 && matches.length >= 4)
+		(repeatedTechnicalTokens.size > 0 && matches.length >= 4) ||
+		(matches.length >= Math.max(6, Math.ceil(words.length * 0.25)) &&
+			(suspiciousTokenCount > 0 || repeatedTechnicalTokens.size > 0))
 	);
 }
 

@@ -29,13 +29,13 @@ Per-range reviewer tallies:
 
 - Cases `1-33`: llama `20`, openai `11`, qwen `2`
 - Cases `34-66`: llama `22`, openai `11`, qwen `0`
-- Cases `67-98`: llama `18`, openai `11`, qwen `2`
+- Cases `67-98`: llama `18`, openai `12`, qwen `2`
 - Cases `99-130`: llama `17`, openai `12`, qwen `3`
 
 Total across 130 cases:
 
 - **llama-3.3-70b-versatile: 77 wins**
-- **openai/gpt-oss-120b: 45 wins**
+- **openai/gpt-oss-120b: 46 wins**
 - **qwen/qwen3-32b: 7 wins**
 
 ## Safety Findings
