@@ -96,6 +96,32 @@ describe("transcript quality validation", () => {
 		expect(result.reasons).toContain("mixed_script");
 	});
 
+	it("detects chain-of-thought and meta leakage", () => {
+		const result = validateTranscript(
+			"<think>We need to analyze the user request.</think> The final transcript is update the docs.",
+		);
+
+		expect(result.valid).toBe(false);
+		expect(result.reasons).toContain("cot_meta");
+	});
+
+	it("detects injected file and command token bursts", () => {
+		const result = validateTranscript(
+			"Let's run the review and update the plan. test-audio.mp3 benchmark-audio.ts test-audio.mp3",
+		);
+
+		expect(result.valid).toBe(false);
+		expect(result.reasons).toContain("token_injection");
+	});
+
+	it("allows ordinary technical tokens in dictated instructions", () => {
+		const result = validateTranscript(
+			"Open AGENTS.md, update README.md, and run bun test after the change.",
+		);
+
+		expect(result.valid).toBe(true);
+	});
+
 	it.each(mixedScriptFixtures)("detects mixed-script fixture: $name", ({
 		input,
 		expectedReasons,
