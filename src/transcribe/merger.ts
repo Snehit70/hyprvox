@@ -567,11 +567,14 @@ export class TranscriptMerger {
 		signal?: AbortSignal,
 	) {
 		try {
-			return this.getClient(primaryApiKey).chat.completions.create(request, {
-				signal,
-				timeout: 30000,
-				maxRetries: 0,
-			});
+			return await this.getClient(primaryApiKey).chat.completions.create(
+				request,
+				{
+					signal,
+					timeout: 30000,
+					maxRetries: 0,
+				},
+			);
 		} catch (error) {
 			if (!fallbackApiKey || !this.isRateLimitOrQuotaError(error)) {
 				throw error;
@@ -584,11 +587,14 @@ export class TranscriptMerger {
 				"Primary Groq merge key rate-limited; retrying merge with fallback key",
 			);
 
-			return this.getClient(fallbackApiKey).chat.completions.create(request, {
-				signal,
-				timeout: 30000,
-				maxRetries: 0,
-			});
+			return await this.getClient(fallbackApiKey).chat.completions.create(
+				request,
+				{
+					signal,
+					timeout: 30000,
+					maxRetries: 0,
+				},
+			);
 		}
 	}
 
