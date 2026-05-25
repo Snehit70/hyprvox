@@ -78,12 +78,10 @@ function Section({
 
 function StatApp({
 	loadSummary,
-	onCommand,
 	onQuit,
 	startedAtMs,
 }: {
 	loadSummary: () => Promise<StatsSummary>;
-	onCommand: (cmd: "health" | "logs" | "errors") => void;
 	onQuit: () => void;
 	startedAtMs: number;
 }) {
@@ -92,6 +90,7 @@ function StatApp({
 	const [frame, setFrame] = useState(0);
 	const [autoRefresh, setAutoRefresh] = useState(true);
 	const [showHelp, setShowHelp] = useState(false);
+	const [activeView, setActiveView] = useState<"stats" | "health" | "logs" | "errors">("stats");
 	const [lastRefreshAt, setLastRefreshAt] = useState(Date.now());
 	const [ttfpMs, setTtfpMs] = useState<number | null>(null);
 
@@ -127,15 +126,15 @@ function StatApp({
 			if (key === "q" || key === "\u0003") onQuit();
 			if (key === "a") setAutoRefresh((current) => !current);
 			if (key === "?") setShowHelp((current) => !current);
+			if (key === "h") setActiveView((view) => (view === "health" ? "stats" : "health"));
+			if (key === "l") setActiveView((view) => (view === "logs" ? "stats" : "logs"));
+			if (key === "e") setActiveView((view) => (view === "errors" ? "stats" : "errors"));
 			if (key === "r") {
 				void loadSummary().then((data) => {
 					setSummary(data);
 					setLastRefreshAt(Date.now());
 				});
 			}
-			if (key === "h") onCommand("health");
-			if (key === "l") onCommand("logs");
-			if (key === "e") onCommand("errors");
 		};
 		process.stdin.setRawMode?.(true);
 		process.stdin.resume();
@@ -143,7 +142,7 @@ function StatApp({
 		return () => {
 			process.stdin.off("data", onKey);
 		};
-	}, [loadSummary, onCommand, onQuit]);
+	}, [loadSummary, onQuit]);
 
 	const spin = SPINNER_FRAMES[frame % SPINNER_FRAMES.length] ?? "•";
 	const latencyHealth = latencyState(summary?.latency.p95Ms ?? null);
@@ -192,7 +191,8 @@ function StatApp({
 				<text fg={colors.muted}>
 					{spin} {autoRefresh ? "auto:on" : "auto:off"} updated{" "}
 					{new Date(summary.generatedAt).toLocaleTimeString()}{" "}
-					{ttfpMs !== null ? `ttfp ${ttfpMs}ms` : ""}
+					{ttfpMs !== null ? `ttfp ${ttfpMs}ms` : ""}{" "}
+					{activeView !== "stats" ? `view:${activeView}` : ""}
 				</text>
 			</box>
 
@@ -265,7 +265,18 @@ function StatApp({
 							})}
 					</Section>
 
-					<Section title="Runtime" height={10}>
+					<Section
+						title={
+							activeView === "health"
+								? "Health Detail"
+								: activeView === "logs"
+									? "Logs Detail"
+									: activeView === "errors"
+										? "Errors Detail"
+										: "Runtime"
+						}
+						height={10}
+					>
 						<text fg={colors.text}>
 							Daemon: {summary.daemon.status}
 							{summary.daemon.pid ? ` (${summary.daemon.pid})` : ""}
@@ -288,6 +299,21 @@ function StatApp({
 						<text fg={colors.muted}>
 							Config: {truncate(summary.paths.config, Math.max(16, rightWidth - 12))}
 						</text>
+						{activeView === "health" ? (
+							<text fg={colors.text}>
+								Status {daemonState(summary.daemon.status)} | latency {latencyState(summary.latency.p95Ms)} | errors {errorState(summary.errors.count)}
+							</text>
+						) : null}
+						{activeView === "logs" ? (
+							<text fg={colors.text}>
+								Log path: {truncate(summary.paths.logs ?? "not configured", Math.max(16, rightWidth - 12))}
+							</text>
+						) : null}
+						{activeView === "errors" ? (
+							<text fg={colors.text}>
+								Error trend: {summary.errors.recent.length} recent entries
+							</text>
+						) : null}
 					</Section>
 
 					<Section title="Controls" height={showHelp ? 9 : 5}>
@@ -295,7 +321,7 @@ function StatApp({
 						<text fg={colors.muted}>h health l logs      e errors</text>
 						<text fg={colors.muted}>? help</text>
 						{showHelp ? (
-							<text fg={colors.text}>Live view with auto-refresh and command jumps.</text>
+							<text fg={colors.text}>Live view. h/l/e toggle internal detail views (no shell exit).</text>
 						) : null}
 					</Section>
 				</box>
@@ -313,13 +339,6 @@ export async function runStatsTui(loadSummary: () => Promise<StatsSummary>): Pro
 		openConsoleOnError: true,
 	});
 
-	const runAndExit = (cmd: "health" | "logs" | "errors") => {
-		renderer.destroy();
-		Bun.spawn([process.argv[0], process.argv[1] ?? "index.ts", cmd], {
-			stdio: ["inherit", "inherit", "inherit"],
-		});
-	};
-
 	const quit = () => {
 		renderer.destroy();
 		process.exit(0);
@@ -329,7 +348,6 @@ export async function runStatsTui(loadSummary: () => Promise<StatsSummary>): Pro
 	createRoot(renderer).render(
 		<StatApp
 			loadSummary={loadSummary}
-			onCommand={runAndExit}
 			onQuit={quit}
 			startedAtMs={startedAtMs}
 		/>,
