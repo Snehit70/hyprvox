@@ -35,6 +35,7 @@ export interface StatsSummary {
 	errors: {
 		count: number;
 		latest: string | null;
+		recent: Array<{ timestamp: string; message: string }>;
 	};
 	paths: {
 		config: string;
@@ -99,10 +100,13 @@ function readDaemonState(): StatsSummary["daemon"] {
 }
 
 function readErrorSummary(logDir: string | null): StatsSummary["errors"] {
-	if (!logDir || !existsSync(logDir)) return { count: 0, latest: null };
+	if (!logDir || !existsSync(logDir))
+		return { count: 0, latest: null, recent: [] };
 
 	let count = 0;
 	let latest: string | null = null;
+	const recent: Array<{ timestamp: string; message: string }> = [];
+	const seen = new Set<string>();
 	for (const file of readdirSync(logDir)
 		.filter((name) => name.startsWith("hyprvox-") && name.endsWith(".log"))
 		.sort()) {
@@ -113,7 +117,18 @@ function readErrorSummary(logDir: string | null): StatsSummary["errors"] {
 				const entry = JSON.parse(line);
 				if (entry.level === 50) {
 					count += 1;
-					latest = entry.msg ?? entry.err?.message ?? "Unknown error";
+					const message = entry.msg ?? entry.err?.message ?? "Unknown error";
+					latest = message;
+					const timestamp =
+						typeof entry.time === "string"
+							? entry.time
+							: new Date().toISOString();
+					const key = `${timestamp}|${message}`;
+					if (!seen.has(key)) {
+						seen.add(key);
+						recent.push({ timestamp, message });
+						if (recent.length > 3) recent.shift();
+					}
 				}
 			} catch {
 				// Ignore malformed log lines.
@@ -121,7 +136,7 @@ function readErrorSummary(logDir: string | null): StatsSummary["errors"] {
 		}
 	}
 
-	return { count, latest };
+	return { count, latest, recent };
 }
 
 export async function buildStatsSummary(): Promise<StatsSummary> {

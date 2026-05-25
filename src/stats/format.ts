@@ -24,6 +24,12 @@ export function formatStatsSummary(summary: StatsSummary): string {
 			return `  - ${time} | ${item.engine} | ${formatMs(item.processingTime)} | ${text}`;
 		})
 		.join("\n");
+	const recentErrors = summary.errors.recent
+		.map((item) => {
+			const ts = new Date(item.timestamp).toLocaleTimeString();
+			return `  - ${ts} | ${item.message}`;
+		})
+		.join("\n");
 
 	return [
 		colors.bold(colors.cyan("Hyprvox Stats")),
@@ -40,6 +46,9 @@ export function formatStatsSummary(summary: StatsSummary): string {
 		"",
 		colors.bold("Recent"),
 		recentRows || "  No recent transcriptions.",
+		"",
+		colors.bold("Recent Errors"),
+		recentErrors || "  No recent errors.",
 		"",
 		colors.dim(`Config: ${summary.paths.config}`),
 		summary.paths.history

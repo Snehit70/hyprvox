@@ -80,10 +80,12 @@ function StatApp({
 	loadSummary,
 	onCommand,
 	onQuit,
+	startedAtMs,
 }: {
 	loadSummary: () => Promise<StatsSummary>;
 	onCommand: (cmd: "health" | "logs" | "errors") => void;
 	onQuit: () => void;
+	startedAtMs: number;
 }) {
 	const { width, height } = useTerminalDimensions();
 	const [summary, setSummary] = useState<StatsSummary | null>(null);
@@ -91,6 +93,7 @@ function StatApp({
 	const [autoRefresh, setAutoRefresh] = useState(true);
 	const [showHelp, setShowHelp] = useState(false);
 	const [lastRefreshAt, setLastRefreshAt] = useState(Date.now());
+	const [ttfpMs, setTtfpMs] = useState<number | null>(null);
 
 	useEffect(() => {
 		void loadSummary().then((data) => {
@@ -152,6 +155,11 @@ function StatApp({
 		return recentLatencySparkline(summary, 24);
 	}, [summary]);
 
+	useEffect(() => {
+		if (!summary || ttfpMs !== null) return;
+		setTtfpMs(Date.now() - startedAtMs);
+	}, [summary, ttfpMs, startedAtMs]);
+
 	if (!summary) {
 		return (
 			<box width={width} height={height} backgroundColor={colors.bg} paddingLeft={2} paddingTop={1}>
@@ -162,7 +170,10 @@ function StatApp({
 		);
 	}
 
-	const { left: leftWidth, right: rightWidth } = computePaneWidths(width);
+	const { left: computedLeft, right: computedRight } = computePaneWidths(width);
+	const isNarrow = width < 110;
+	const leftWidth = isNarrow ? Math.max(40, width - 4) : computedLeft;
+	const rightWidth = isNarrow ? Math.max(40, width - 4) : computedRight;
 
 	return (
 		<box width={width} height={height} backgroundColor={colors.bg} flexDirection="column">
@@ -180,11 +191,20 @@ function StatApp({
 				</text>
 				<text fg={colors.muted}>
 					{spin} {autoRefresh ? "auto:on" : "auto:off"} updated{" "}
-					{new Date(summary.generatedAt).toLocaleTimeString()}
+					{new Date(summary.generatedAt).toLocaleTimeString()}{" "}
+					{ttfpMs !== null ? `ttfp ${ttfpMs}ms` : ""}
 				</text>
 			</box>
 
-			<box flexDirection="row" flexGrow={1} paddingLeft={1} paddingRight={1} paddingTop={1} paddingBottom={1} gap={1}>
+			<box
+				flexDirection={isNarrow ? "column" : "row"}
+				flexGrow={1}
+				paddingLeft={1}
+				paddingRight={1}
+				paddingTop={1}
+				paddingBottom={1}
+				gap={1}
+			>
 				<box width={leftWidth} flexDirection="column" gap={1}>
 					<Section title="Overview" height={8}>
 						<text fg={colors.text}>
@@ -201,7 +221,7 @@ function StatApp({
 						</text>
 					</Section>
 
-					<Section title="Recent Transcriptions" height={height - 16}>
+					<Section title="Recent Transcriptions" height={isNarrow ? 11 : height - 16}>
 						<text fg={colors.muted}>Time      Engine        Latency  Text</text>
 						{summary.recent.slice(0, 8).map((item, index) => {
 							const time = new Date(item.timestamp).toLocaleTimeString([], {
@@ -245,7 +265,7 @@ function StatApp({
 							})}
 					</Section>
 
-					<Section title="Runtime" height={8}>
+					<Section title="Runtime" height={10}>
 						<text fg={colors.text}>
 							Daemon: {summary.daemon.status}
 							{summary.daemon.pid ? ` (${summary.daemon.pid})` : ""}
@@ -254,6 +274,17 @@ function StatApp({
 						<text fg={colors.muted}>
 							Latest: {truncate(summary.errors.latest ?? "none", Math.max(16, rightWidth - 12))}
 						</text>
+						{summary.errors.recent.length > 0 ? (
+							<text fg={colors.muted}>Recent:</text>
+						) : null}
+						{summary.errors.recent.map((item, index) => (
+							<text key={`${item.timestamp}-${index}`} fg={colors.muted}>
+								{truncate(
+									`${new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${item.message}`,
+									Math.max(16, rightWidth - 12),
+								)}
+							</text>
+						))}
 						<text fg={colors.muted}>
 							Config: {truncate(summary.paths.config, Math.max(16, rightWidth - 12))}
 						</text>
@@ -274,6 +305,7 @@ function StatApp({
 }
 
 export async function runStatsTui(loadSummary: () => Promise<StatsSummary>): Promise<void> {
+	const startedAtMs = Date.now();
 	const renderer = await createCliRenderer({
 		exitOnCtrlC: true,
 		clearOnShutdown: true,
@@ -295,6 +327,11 @@ export async function runStatsTui(loadSummary: () => Promise<StatsSummary>): Pro
 
 	renderer.start();
 	createRoot(renderer).render(
-		<StatApp loadSummary={loadSummary} onCommand={runAndExit} onQuit={quit} />,
+		<StatApp
+			loadSummary={loadSummary}
+			onCommand={runAndExit}
+			onQuit={quit}
+			startedAtMs={startedAtMs}
+		/>,
 	);
 }

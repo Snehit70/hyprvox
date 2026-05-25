@@ -50,7 +50,7 @@ const baseSummary: StatsSummary = {
 		},
 	],
 	daemon: { running: true, status: "idle", pid: 42 },
-	errors: { count: 5, latest: "something failed" },
+	errors: { count: 5, latest: "something failed", recent: [] },
 	paths: { config: "/tmp/cfg.json", history: "/tmp/h.json", logs: "/tmp/logs" },
 };
 

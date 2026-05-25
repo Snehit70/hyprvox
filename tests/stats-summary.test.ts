@@ -32,7 +32,7 @@ describe("stats summary", () => {
 			stats: { today: 2, total: 10 },
 			history,
 			daemon: { running: true, status: "idle", pid: 123 },
-			errors: { count: 1, latest: "example" },
+			errors: { count: 1, latest: "example", recent: [] },
 			paths: {
 				config: "/config.json",
 				history: "/history.json",
@@ -50,5 +50,6 @@ describe("stats summary", () => {
 		expect(summary.duration.longCount).toBe(1);
 		expect(summary.engines).toEqual({ groq: 1, "groq+deepgram": 2 });
 		expect(summary.recent[0]?.text).toBe("long");
+		expect(summary.errors.recent).toEqual([]);
 	});
 });
