@@ -2,6 +2,17 @@ import { TextAttributes, createCliRenderer } from "@opentui/core";
 import { createRoot, useTerminalDimensions } from "@opentui/react";
 import { useEffect, useMemo, useState } from "react";
 import type { StatsSummary } from "./summary";
+import {
+	age,
+	computePaneWidths,
+	daemonState,
+	errorState,
+	latencyState,
+	ms,
+	recentLatencySparkline,
+	seconds,
+	truncate,
+} from "./tui-model";
 
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
 const SPINNER_INTERVAL_MS = 1000 / 10;
@@ -19,69 +30,11 @@ const colors = {
 	bad: "#f28b82",
 };
 
-function ms(value: number | null): string {
-	return value === null ? "n/a" : `${Math.round(value)}ms`;
-}
-
-function seconds(value: number | null): string {
-	return value === null ? "n/a" : `${value.toFixed(1)}s`;
-}
-
-function age(msAgo: number): string {
-	const sec = Math.max(0, Math.floor(msAgo / 1000));
-	if (sec < 60) return `${sec}s`;
-	const min = Math.floor(sec / 60);
-	const rem = sec % 60;
-	return `${min}m ${rem}s`;
-}
-
-function latencyState(p95: number | null): "GOOD" | "WARN" | "BAD" | "UNKNOWN" {
-	if (p95 === null) return "UNKNOWN";
-	if (p95 <= 2000) return "GOOD";
-	if (p95 <= 3500) return "WARN";
-	return "BAD";
-}
-
-function errorState(count: number): "GOOD" | "WARN" | "BAD" {
-	if (count === 0) return "GOOD";
-	if (count <= 10) return "WARN";
-	return "BAD";
-}
-
-function daemonState(status: string): "GOOD" | "WARN" | "BAD" {
-	if (status === "idle" || status === "recording" || status === "processing") {
-		return "GOOD";
-	}
-	if (status === "running" || status === "stale-pid") return "WARN";
-	return "BAD";
-}
-
 function stateColor(state: "GOOD" | "WARN" | "BAD" | "UNKNOWN"): string {
 	if (state === "GOOD") return colors.ok;
 	if (state === "WARN") return colors.warn;
 	if (state === "BAD") return colors.bad;
 	return colors.muted;
-}
-
-function truncate(text: string, width: number): string {
-	if (text.length <= width) return text;
-	if (width <= 1) return "…";
-	return `${text.slice(0, width - 1)}…`;
-}
-
-function sparkline(values: number[], width: number): string {
-	if (values.length === 0 || width <= 0) return "";
-	const bars = "▁▂▃▄▅▆▇█";
-	const min = Math.min(...values);
-	const max = Math.max(...values);
-	const range = Math.max(1, max - min);
-	return values
-		.slice(-width)
-		.map((v) => {
-			const index = Math.floor(((v - min) / range) * (bars.length - 1));
-			return bars[Math.max(0, Math.min(index, bars.length - 1))] ?? "▁";
-		})
-		.join("");
 }
 
 function StatusBadge({ label, state }: { label: string; state: "GOOD" | "WARN" | "BAD" | "UNKNOWN" }) {
@@ -196,14 +149,7 @@ function StatApp({
 
 	const recentLatencySpark = useMemo(() => {
 		if (!summary) return "";
-		return sparkline(
-			summary.recent
-				.slice()
-				.reverse()
-				.map((item) => item.processingTime)
-				.filter((v) => Number.isFinite(v) && v >= 0),
-			24,
-		);
+		return recentLatencySparkline(summary, 24);
 	}, [summary]);
 
 	if (!summary) {
@@ -216,8 +162,7 @@ function StatApp({
 		);
 	}
 
-	const rightWidth = Math.max(34, Math.floor(width * 0.34));
-	const leftWidth = Math.max(50, width - rightWidth - 5);
+	const { left: leftWidth, right: rightWidth } = computePaneWidths(width);
 
 	return (
 		<box width={width} height={height} backgroundColor={colors.bg} flexDirection="column">
@@ -333,7 +278,7 @@ export async function runStatsTui(loadSummary: () => Promise<StatsSummary>): Pro
 		exitOnCtrlC: true,
 		clearOnShutdown: true,
 		screenMode: "alternate-screen",
-		openConsoleOnError: false,
+		openConsoleOnError: true,
 	});
 
 	const runAndExit = (cmd: "health" | "logs" | "errors") => {
@@ -348,6 +293,7 @@ export async function runStatsTui(loadSummary: () => Promise<StatsSummary>): Pro
 		process.exit(0);
 	};
 
+	renderer.start();
 	createRoot(renderer).render(
 		<StatApp loadSummary={loadSummary} onCommand={runAndExit} onQuit={quit} />,
 	);
