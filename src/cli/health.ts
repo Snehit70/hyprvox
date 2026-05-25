@@ -7,6 +7,7 @@ import * as colors from "yoctocolors";
 import { AudioDeviceService } from "../audio/device-service";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
 import type { DaemonState } from "../daemon/service";
+import { detectEnvironment, getInstallCommand } from "../setup/environment";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
 import { GroqClient } from "../transcribe/groq";
 
@@ -18,14 +19,14 @@ export const healthCommand = new Command("health")
 
 		let allOk = true;
 		let config: any;
-		const sessionType = process.env.WAYLAND_DISPLAY
-			? "wayland"
-			: process.env.XDG_SESSION_TYPE === "wayland"
-				? "wayland"
-				: process.env.DISPLAY
-					? "x11"
-					: "unknown";
+		const envInfo = detectEnvironment();
+		const sessionType =
+			envInfo.sessionType === "headless" ? "unknown" : envInfo.sessionType;
 		const isWayland = sessionType === "wayland";
+		const installCommand = getInstallCommand(
+			envInfo.distro,
+			envInfo.sessionType,
+		);
 
 		// 1. Environment Check
 		console.log(colors.bold("--- Environment ---"));
@@ -161,32 +162,51 @@ export const healthCommand = new Command("health")
 		// 4. Audio Check
 		console.log(`\n${colors.bold("--- Audio Devices ---")}`);
 		try {
-			const deviceService = new AudioDeviceService();
-			const devices = await deviceService.listDevices();
-			if (devices.length > 0) {
+			if (!envInfo.commands.arecord?.path) {
 				console.log(
-					`${colors.green("✅")} ${colors.bold(devices.length.toString())} audio devices found`,
+					`${colors.red("❌")} arecord is not installed; cannot inspect microphones`,
 				);
-				if (config?.behavior?.audioDevice) {
-					const found = devices.find(
-						(d) => d.id === config.behavior.audioDevice,
+				if (installCommand) {
+					console.log(
+						`${colors.dim("   Install deps:")} ${colors.cyan(installCommand)}`,
 					);
-					if (found) {
-						console.log(
-							`${colors.green("✅")} Configured device found: ${colors.cyan(found.description)}`,
+				}
+				if (envInfo.isContainer || envInfo.sessionType === "headless") {
+					console.log(
+						colors.dim(
+							"   This is expected in many containers/headless sessions. Run full audio checks on the desktop host.",
+						),
+					);
+				}
+				allOk = false;
+			} else {
+				const deviceService = new AudioDeviceService();
+				const devices = await deviceService.listDevices();
+				if (devices.length > 0) {
+					console.log(
+						`${colors.green("✅")} ${colors.bold(devices.length.toString())} audio devices found`,
+					);
+					if (config?.behavior?.audioDevice) {
+						const found = devices.find(
+							(d) => d.id === config.behavior.audioDevice,
 						);
+						if (found) {
+							console.log(
+								`${colors.green("✅")} Configured device found: ${colors.cyan(found.description)}`,
+							);
+						} else {
+							console.log(
+								`${colors.red("❌")} Configured device not found: ${colors.bold(config.behavior.audioDevice)}`,
+							);
+							allOk = false;
+						}
 					} else {
-						console.log(
-							`${colors.red("❌")} Configured device not found: ${colors.bold(config.behavior.audioDevice)}`,
-						);
-						allOk = false;
+						console.log(`${colors.blue("ℹ️")}  Using default system microphone`);
 					}
 				} else {
-					console.log(`${colors.blue("ℹ️")}  Using default system microphone`);
+					console.log(`${colors.red("❌")} No audio devices found`);
+					allOk = false;
 				}
-			} else {
-				console.log(`${colors.red("❌")} No audio devices found`);
-				allOk = false;
 			}
 		} catch (e) {
 			console.log(

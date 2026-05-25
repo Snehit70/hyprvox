@@ -6,13 +6,37 @@ This guide covers everything you need to know about using `hyprvox` effectively.
 
 The `hyprvox` daemon runs in the background and listens for your hotkey to start recording.
 
-If you prefer using the published CLI instead of the repo checkout:
+Use the published CLI for normal installs:
 
 ```bash
-npm install -g hyprvox
-# or
 bun add -g hyprvox
 ```
+
+If you are running from a source checkout, replace `hyprvox` with `bun run index.ts` in the commands below.
+
+### First-Time Setup
+
+Run the interactive setup wizard:
+
+```bash
+hyprvox setup
+```
+
+For Docker, CI, or non-interactive diagnostics:
+
+```bash
+hyprvox setup --check --json
+```
+
+Manual fallback:
+
+```bash
+hyprvox config init
+hyprvox setup --check
+hyprvox install
+```
+
+If `hyprvox status` shows a manually started daemon before `hyprvox install`, stop it with `hyprvox stop` so systemd owns the daemon cleanly. In containers or headless sessions, setup reports audio, clipboard, and service checks as host-only follow-up work.
 
 ### Starting the Daemon
 If you've installed it as a systemd service (recommended):
@@ -22,7 +46,7 @@ systemctl --user start hyprvox
 
 To run it manually in the foreground:
 ```bash
-bun run index.ts start
+hyprvox start
 ```
 
 ### Stopping the Daemon
@@ -33,13 +57,13 @@ systemctl --user stop hyprvox
 
 Manual:
 ```bash
-bun run index.ts stop
+hyprvox stop
 ```
 
 ### Checking Status
 You can see if the daemon is running, its current state (idle, recording, processing), and basic statistics:
 ```bash
-bun run index.ts status
+hyprvox status
 ```
 
 Example output:
@@ -92,17 +116,17 @@ The hotkey operates in **toggle mode**:
 ### Viewing History
 List the last 10 transcriptions:
 ```bash
-bun run index.ts history list
+hyprvox history list
 ```
 
 To see more items:
 ```bash
-bun run index.ts history list -n 20
+hyprvox history list -n 20
 ```
 
 ### Clearing History
 ```bash
-bun run index.ts history clear
+hyprvox history clear
 ```
 
 ---
@@ -112,13 +136,25 @@ bun run index.ts history clear
 ### Health Check
 Verify your configuration, API connectivity, and microphone access:
 ```bash
-bun run index.ts health
+hyprvox health
+```
+
+### Stats Dashboard
+Open the interactive terminal dashboard:
+```bash
+hyprvox stats
+```
+
+For non-interactive output:
+```bash
+hyprvox stats --summary
+hyprvox stats --json
 ```
 
 ### Microphone Selection
 If you have multiple microphones, you can list them and select the correct one:
 ```bash
-bun run index.ts list-mics
+hyprvox list-mics
 ```
 For more information, see the **[Audio Device Selection Guide](AUDIO_DEVICES.md)**.
 
@@ -126,16 +162,16 @@ For more information, see the **[Audio Device Selection Guide](AUDIO_DEVICES.md)
 `hyprvox` stores logs in `~/.config/hypr/vox/logs/` by default. You can view them via the CLI:
 ```bash
 # See recent logs
-bun run index.ts logs
+hyprvox logs
 
 # Follow logs in real-time
-bun run index.ts logs --tail
+hyprvox logs --follow
 ```
 
 ### Viewing Errors
 Specifically view recent errors:
 ```bash
-bun run index.ts errors
+hyprvox errors
 ```
 
 ---
@@ -145,21 +181,29 @@ bun run index.ts errors
 ### Changing the Hotkey
 You can rebind the hotkey using the interactive binder:
 ```bash
-bun run index.ts config bind
+hyprvox config bind
 ```
+
+### Interactive Config Updates
+To revisit API keys, microphone selection, and session-specific behavior:
+```bash
+hyprvox config
+```
+
+Direct commands are still available for scripting. Run `hyprvox config --help` to list them.
 
 ### Managing API Keys
 ```bash
 # List current keys (masked)
-bun run index.ts config list
+hyprvox config list
 
 # Set a key directly
-bun run index.ts config set apiKeys.groq gsk_your_key
+hyprvox config set apiKeys.groq gsk_your_key
 ```
 
 ### Boost Words
 To improve accuracy for specific names or technical terms:
 ```bash
-bun run index.ts boost add "Sisyphus" "hyprvox" "Hyprland"
+hyprvox boost add "Sisyphus" "hyprvox" "Hyprland"
 ```
 *(Limit: 450 words. See [Configuration Guide](CONFIGURATION.md#boost-words-custom-vocabulary) for details.)*

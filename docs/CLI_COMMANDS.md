@@ -4,15 +4,33 @@ This document provides a comprehensive list of all commands available in the `hy
 
 ## General Usage
 
-```bash
-bun run index.ts <command> [subcommand] [options]
-```
-
-If you installed the published package globally, you can also use:
+For a published/global install:
 
 ```bash
 hyprvox <command> [subcommand] [options]
 ```
+
+For a source checkout:
+
+```bash
+bun run index.ts <command> [subcommand] [options]
+```
+
+## First-Time Setup
+
+```bash
+# Interactive setup wizard.
+hyprvox setup
+
+# Non-interactive setup diagnosis for Docker/CI.
+hyprvox setup --check --json
+
+# Manual fallback.
+hyprvox config init
+hyprvox setup --check
+```
+
+If `hyprvox status` shows a manually started daemon before service installation, stop it with `hyprvox stop` first. For a source checkout, replace `hyprvox` with `bun run index.ts`.
 
 ## Main Commands
 
@@ -40,8 +58,23 @@ Display the current status of the daemon (PID, uptime, state, statistics).
 
 ### `install`
 Install `hyprvox` as a systemd user service for the current user.
+
+Recommended after `config init`, `list-mics`, and `health` have passed. The command writes `~/.config/systemd/user/hyprvox.service`, runs `systemctl --user daemon-reload`, enables the service, and starts it.
+
 - **Options:**
   - `--help`: Display help for the install command.
+
+### `setup`
+Interactively set up `hyprvox` and diagnose the host environment.
+
+The setup command detects Linux distro, Wayland/X11/headless session, container state, required commands, config validity, daemon status, and service installation. In interactive mode it can create/update config, select a microphone, recommend Wayland compositor binding behavior, and install the service.
+
+- **Options:**
+  - `--check`: Run setup checks without changing anything.
+  - `--json`: Print setup check output as JSON. Implies check mode.
+  - `--dry-run`: Show what setup would change without writing.
+  - `--skip-service`: Do not install or start the systemd user service.
+  - `--help`: Display help for the setup command.
 
 ### `uninstall`
 Remove the `hyprvox` systemd user service.
@@ -58,6 +91,16 @@ Perform a comprehensive system health check.
 - **Options:**
   - `--help`: Display help for the health command.
 
+### `stats`
+Show transcription usage, latency, duration, engine, daemon, and recent-history stats.
+
+By default, this opens an interactive OpenTUI dashboard when stdout is a TTY. Use direct output modes for scripts or remote sessions.
+
+- **Options:**
+  - `--summary`: Print a plain text summary.
+  - `--json`: Print the full stats summary as JSON.
+  - `--help`: Display help for the stats command.
+
 ---
 
 ## Subcommands
@@ -65,6 +108,10 @@ Perform a comprehensive system health check.
 ### `config`
 Manage `hyprvox` configuration.
 
+- **`config`**
+  - Launch the interactive configuration flow. Use this by default when changing setup after installation.
+  - **Options:**
+    - `--help`: Display direct config subcommands.
 - **`config init`**
   - Interactively initialize a new configuration file.
   - **Options:**
@@ -80,6 +127,10 @@ Manage `hyprvox` configuration.
     - `--help`: Display help for this subcommand.
 - **`config set <key> <value>`**
   - Update a specific configuration value.
+  - **Options:**
+    - `--help`: Display help for this subcommand.
+- **`config setup`**
+  - Interactively update API keys, microphone selection, and session-specific behavior without reinstalling the service.
   - **Options:**
     - `--help`: Display help for this subcommand.
 - **`config bind`**
