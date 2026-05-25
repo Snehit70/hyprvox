@@ -29,7 +29,12 @@ const PROMPT_ARTIFACT_PATTERNS = [
 
 const COT_META_PATTERNS = [
 	/<\/?think\b/i,
-	/\b(?:we need to|i need to|i should|let me)\s+(?:answer|analyze|reason|think|figure out)\b/i,
+	// LLM-style meta reasoning: requires both a first-person planning phrase
+	// AND a meta-context anchor referring to the user/request/prompt/etc.
+	// This avoids flagging ordinary speech like "Let me answer your next five
+	// questions" while still catching leaks like "We need to analyze the user
+	// request" or "Let me think step by step about the prompt".
+	/\b(?:we need to|i need to|i should|let me|let's|first,? (?:i|we)(?:'| a)?m? going to)\s+(?:answer|analyze|reason(?:\s+about)?|think|figure out|address|respond to|handle|approach|consider|examine|interpret|process)\b[^.?!]{0,80}?\b(?:the\s+(?:user(?:'s)?|request|prompt|input|task|instruction|question|transcript|merge|failed\s+output)|what\s+(?:the\s+user|they)|this\s+(?:carefully|methodically|systematically)|step[-\s]by[-\s]step)\b/i,
 	/\bthe user (?:wants|asked|is asking|requested)(?:(?:\s*[:,-])|(?:\s+that\b)|(?:\s+me\s+to\b))?/i,
 	/\b(?:my|the) (?:reasoning|analysis|thought process)\b/i,
 	/\bas an ai(?: language model)?\b/i,

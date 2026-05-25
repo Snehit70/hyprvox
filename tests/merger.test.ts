@@ -9,6 +9,7 @@ import {
 	type MergeReason,
 	type MergeStrategy,
 	shouldRouteFormattingToLlm,
+	stripReasoningArtifacts,
 	TranscriptMerger,
 } from "../src/transcribe/merger";
 import { exactTokenFixtures } from "./fixtures/transcript-quality";
@@ -503,5 +504,31 @@ describe("request-too-large detection", () => {
 		};
 
 		expect(isRequestTooLargeError(error)).toBe(false);
+	});
+});
+
+describe("stripReasoningArtifacts", () => {
+	it("removes a complete <think>...</think> block", () => {
+		const input =
+			"<think>Okay, the user wants me to clean this up.</think>\nThe final transcript.";
+
+		expect(stripReasoningArtifacts(input)).toBe("The final transcript.");
+	});
+
+	it("drops content preceding an orphan </think> closer", () => {
+		const input =
+			"Okay, let's reason about this carefully.</think> The actual answer.";
+
+		expect(stripReasoningArtifacts(input)).toBe("The actual answer.");
+	});
+
+	it("drops a dangling <think> opener with no closer", () => {
+		const input = "Visible prefix. <think>still reasoning, response truncated";
+
+		expect(stripReasoningArtifacts(input)).toBe("Visible prefix.");
+	});
+
+	it("returns trimmed text unchanged when no reasoning tags are present", () => {
+		expect(stripReasoningArtifacts("  hello world  ")).toBe("hello world");
 	});
 });

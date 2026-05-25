@@ -277,6 +277,18 @@ function estimateTokenCount(text: string): number {
 	return Math.ceil(text.length / APPROX_CHARS_PER_TOKEN);
 }
 
+// Strip <think>...</think> reasoning blocks from LLM output. Reasoning-capable
+// Groq models (e.g. Qwen/DeepSeek) emit these inline even when we ask them not
+// to; if leaked they trip the cot_meta validator. Handles orphan opening or
+// closing tags as well, in case the model truncates.
+export function stripReasoningArtifacts(text: string): string {
+	let cleaned = text.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, "");
+	const lastClose = cleaned.match(/^[\s\S]*<\/think\s*>([\s\S]*)$/i);
+	if (lastClose?.[1] !== undefined) cleaned = lastClose[1];
+	cleaned = cleaned.replace(/<think\b[^>]*>[\s\S]*$/i, "");
+	return cleaned.trim();
+}
+
 function cleanExactToken(token: string): string {
 	return token
 		.trim()
@@ -748,8 +760,6 @@ export class TranscriptMerger {
 							temperature: 0,
 							max_tokens: maxTokens,
 							seed: 42,
-							reasoning_effort: "none",
-							include_reasoning: false,
 						},
 						signal,
 					);
@@ -765,12 +775,13 @@ export class TranscriptMerger {
 				},
 			);
 
-			finalText =
+			finalText = stripReasoningArtifacts(
 				(
 					completion as {
 						choices?: Array<{ message?: { content?: string } }>;
 					}
-				).choices?.[0]?.message?.content?.trim() || "";
+				).choices?.[0]?.message?.content ?? "",
+			);
 			const timeMs = Date.now() - startTime;
 
 			logger.debug(
@@ -886,12 +897,13 @@ ${deepgramText}
 			},
 		);
 
-		const finalText =
+		const finalText = stripReasoningArtifacts(
 			(
 				completion as {
 					choices?: Array<{ message?: { content?: string } }>;
 				}
-			).choices?.[0]?.message?.content?.trim() || "";
+			).choices?.[0]?.message?.content ?? "",
+		);
 		logger.debug(
 			{
 				model: mergeModel,
