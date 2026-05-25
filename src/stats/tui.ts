@@ -15,16 +15,14 @@ function truncate(value: string, width: number): string {
 	return `${value.slice(0, width - 1)}…`;
 }
 
-function line(width: number): string {
-	return "─".repeat(Math.max(1, width));
+function line(width: number, char = "─"): string {
+	return char.repeat(Math.max(1, width));
 }
 
-function panel(title: string, body: string[], width: number): string[] {
-	const inner = Math.max(8, width - 2);
-	const header = `╭─ ${title} ${line(Math.max(0, inner - title.length - 3))}╮`;
-	const footer = `╰${line(inner)}╯`;
-	const rows = body.map((row) => `│${truncate(row, inner)}│`);
-	return [header, ...rows, footer];
+function section(title: string, body: string[], width: number): string[] {
+	const header = `${title}`;
+	const divider = line(Math.min(width, Math.max(12, title.length + 4)), "·");
+	return [header, divider, ...body.map((row) => truncate(row, width))];
 }
 
 function columns(left: string[], right: string[], gap = 2): string[] {
@@ -39,36 +37,54 @@ function columns(left: string[], right: string[], gap = 2): string[] {
 	return rows;
 }
 
+function latencyState(p95: number | null): string {
+	if (p95 === null) return "UNKNOWN";
+	if (p95 <= 2000) return "GOOD";
+	if (p95 <= 3500) return "WARN";
+	return "BAD";
+}
+
+function errorState(count: number): string {
+	if (count === 0) return "GOOD";
+	if (count <= 10) return "WARN";
+	return "BAD";
+}
+
+function daemonState(status: string): string {
+	if (status === "idle" || status === "recording" || status === "processing") {
+		return "GOOD";
+	}
+	if (status === "running" || status === "stale-pid") return "WARN";
+	return "BAD";
+}
+
+function summaryRows(summary: StatsSummary): string[] {
+	return [
+		`Today ${summary.counts.today}   Total ${summary.counts.total}   History ${summary.counts.history}`,
+		`Latency median ${ms(summary.latency.medianMs)}   p95 ${ms(summary.latency.p95Ms)}   avg ${ms(summary.latency.averageMs)}   [${latencyState(summary.latency.p95Ms)}]`,
+		`Duration avg ${seconds(summary.duration.averageSeconds)}   S/M/L ${summary.duration.shortCount}/${summary.duration.mediumCount}/${summary.duration.longCount}`,
+	];
+}
+
 function metricCards(summary: StatsSummary, width: number): string[] {
-	const cardGap = 2;
-	const cardWidth = Math.max(18, Math.floor((width - cardGap * 3) / 4));
+	const gap = width >= 120 ? 4 : 3;
+	const cardWidth = Math.max(20, Math.floor((width - gap) / 2));
 	const cards = [
-		panel(
-			"Today",
-			[`${summary.counts.today} transcriptions`, "current day"],
-			cardWidth,
-		),
-		panel(
-			"Total",
+		section(
+			"Counts",
 			[
-				`${summary.counts.total} all time`,
-				`${summary.counts.history} in history`,
+				`Today: ${summary.counts.today}`,
+				`Total: ${summary.counts.total}`,
+				`History: ${summary.counts.history}`,
 			],
 			cardWidth,
 		),
-		panel(
-			"Latency",
+		section(
+			"Health",
 			[
-				`median ${ms(summary.latency.medianMs)}`,
-				`p95 ${ms(summary.latency.p95Ms)}`,
-			],
-			cardWidth,
-		),
-		panel(
-			"Duration",
-			[
-				`avg ${seconds(summary.duration.averageSeconds)}`,
-				`S/M/L ${summary.duration.shortCount}/${summary.duration.mediumCount}/${summary.duration.longCount}`,
+				`Daemon: ${summary.daemon.status} [${daemonState(summary.daemon.status)}]`,
+				`Errors: ${summary.errors.count} [${errorState(summary.errors.count)}]`,
+				`Latency p95: ${ms(summary.latency.p95Ms)} [${latencyState(summary.latency.p95Ms)}]`,
 			],
 			cardWidth,
 		),
@@ -77,9 +93,7 @@ function metricCards(summary: StatsSummary, width: number): string[] {
 	const rows: string[] = [];
 	for (let i = 0; i < height; i += 1) {
 		rows.push(
-			cards
-				.map((card) => card[i] ?? " ".repeat(cardWidth))
-				.join(" ".repeat(cardGap)),
+			cards.map((card) => card[i] ?? " ".repeat(cardWidth)).join(" ".repeat(gap)),
 		);
 	}
 	return rows;
@@ -89,29 +103,29 @@ function enginesPanel(summary: StatsSummary, width: number): string[] {
 	const entries = Object.entries(summary.engines)
 		.sort((a, b) => b[1] - a[1])
 		.slice(0, 6);
-	if (entries.length === 0) return panel("Engines", ["No history yet."], width);
+	if (entries.length === 0) return section("Engines", ["No history yet."], width);
 	const max = Math.max(...entries.map(([, count]) => count));
 	const rows = entries.map(([engine, count]) => {
 		const barWidth = Math.max(1, width - 28);
 		const bar = "█".repeat(Math.max(1, Math.round((count / max) * barWidth)));
 		return `${truncate(engine, 14)} ${String(count).padStart(4)} ${bar}`;
 	});
-	return panel("Engines", rows, width);
+	return section("Engines", rows, width);
 }
 
 function runtimePanel(summary: StatsSummary, width: number): string[] {
 	const rows = [
-		`Daemon  ${summary.daemon.status}${summary.daemon.pid ? ` (${summary.daemon.pid})` : ""}`,
-		`Errors  ${summary.errors.count}`,
-		summary.errors.latest ? `Latest  ${summary.errors.latest}` : "Latest  none",
-		`Config  ${summary.paths.config}`,
+		`Daemon: ${summary.daemon.status}${summary.daemon.pid ? ` (${summary.daemon.pid})` : ""}`,
+		`Errors: ${summary.errors.count}`,
+		summary.errors.latest ? `Latest: ${summary.errors.latest}` : "Latest: none",
+		`Config: ${summary.paths.config}`,
 	];
-	return panel("Runtime", rows, width);
+	return section("Runtime", rows, width);
 }
 
 function recentPanel(summary: StatsSummary, width: number): string[] {
 	if (summary.recent.length === 0) {
-		return panel("Recent Transcriptions", ["No recent transcriptions."], width);
+		return section("Recent Transcriptions", ["No recent transcriptions."], width);
 	}
 	const textWidth = Math.max(12, width - 42);
 	const rows = [
@@ -125,16 +139,35 @@ function recentPanel(summary: StatsSummary, width: number): string[] {
 			return `${time.padEnd(10)} ${truncate(item.engine, 11)} ${ms(item.processingTime).padEnd(8)} ${truncate(item.text, textWidth)}`;
 		}),
 	];
-	return panel("Recent Transcriptions", rows, width);
+	return section("Recent Transcriptions", rows, width);
 }
 
 function dashboardText(summary: StatsSummary, terminalWidth: number): string {
-	const width = Math.max(76, Math.min(terminalWidth - 4, 140));
-	const sideWidth = Math.max(30, Math.floor(width * 0.32));
-	const mainWidth = width - sideWidth - 2;
-	const title = `hyprvox stats`.padEnd(width - 36);
+	const width = Math.max(64, Math.min(terminalWidth - 4, 140));
+	const title = `hyprvox stats`.padEnd(Math.max(20, width - 30));
 	const generated = `updated ${new Date(summary.generatedAt).toLocaleTimeString()}`;
-	const top = `${title}${generated}`;
+	const top = `${title}${truncate(generated, 28)}`;
+	const narrow = width < 110;
+
+	if (narrow) {
+		return [
+			top,
+			line(width),
+			"",
+			...summaryRows(summary),
+			"",
+			...recentPanel(summary, width),
+			"",
+			...enginesPanel(summary, width),
+			"",
+			...runtimePanel(summary, width),
+			"",
+			"q quit  r refresh  h health  l logs  e errors",
+		].join("\n");
+	}
+
+	const sideWidth = Math.max(30, Math.floor(width * 0.34));
+	const mainWidth = width - sideWidth - 2;
 	const lower = columns(recentPanel(summary, mainWidth), [
 		...enginesPanel(summary, sideWidth),
 		"",
@@ -146,6 +179,8 @@ function dashboardText(summary: StatsSummary, terminalWidth: number): string {
 		line(width),
 		"",
 		...metricCards(summary, width),
+		"",
+		...summaryRows(summary),
 		"",
 		...lower,
 		"",
