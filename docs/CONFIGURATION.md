@@ -53,7 +53,7 @@ The configuration is a JSON file structured into several sections.
     "clipboard": {
       "append": true,
       "minDuration": 0.6,
-      "maxDuration": 300
+      "maxDuration": 600
     },
     "audioDevice": "default"
   },
@@ -118,7 +118,7 @@ Controls the core functionality and user interaction of the daemon.
 | :--- | :--- | :--- | :--- | :--- |
 | `append` | Boolean | `true` | If `true`, appends the transcript to the current clipboard. If `false`, overwrites it. | N/A |
 | `minDuration` | Number | `0.6` | Minimum recording duration in seconds. | Min: `0.6` |
-| `maxDuration` | Number | `300` | Maximum recording duration in seconds (5 minutes). | Max: `300` |
+| `maxDuration` | Number | `600` | Maximum recording duration in seconds (10 minutes). | Max: `600` |
 
 #### Hotkey Format
 The `hotkey` option supports both single keys and combinations using the `+` separator, or the special value `"disabled"`.

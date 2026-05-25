@@ -159,7 +159,7 @@ const defaultBehavior = {
 	clipboard: {
 		append: true,
 		minDuration: 0.6,
-		maxDuration: 300,
+		maxDuration: 600,
 	},
 };
 
@@ -230,8 +230,8 @@ export const BehaviorSchema = z.object({
 				.default(defaultBehavior.clipboard.minDuration),
 			maxDuration: z
 				.number()
-				.max(300)
-				.default(defaultBehavior.clipboard.maxDuration), // 5 minutes in seconds
+				.max(600)
+				.default(defaultBehavior.clipboard.maxDuration), // 10 minutes in seconds
 		})
 		.default(defaultBehavior.clipboard),
 	audioDevice: z.string().optional(),

@@ -217,6 +217,43 @@ describe("Config Loader", () => {
 		expect(config.transcription.formattingMode).toBe("clean");
 	});
 
+	test("should allow maxDuration up to 600 seconds", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+			behavior: {
+				clipboard: {
+					maxDuration: 600,
+				},
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		const config = loadConfig(CONFIG_FILE);
+		expect(config.behavior.clipboard.maxDuration).toBe(600);
+	});
+
+	test("should reject maxDuration above 600 seconds", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+			behavior: {
+				clipboard: {
+					maxDuration: 601,
+				},
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		expect(() => loadConfig(CONFIG_FILE)).toThrow("Too big");
+	});
+
 	test("should reject boost words exceeding limit", () => {
 		// Generate 451 words
 		const manyWords = Array(451).fill("word");

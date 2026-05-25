@@ -58,7 +58,7 @@ sequenceDiagram
   - Format: WAV (LPCM 16-bit)
 - **Safety Limits**:
   - **Min Duration**: 0.6 seconds (rejects accidental triggers).
-  - **Max Duration**: 5 minutes (auto-stops to prevent runaway resource usage).
+  - **Max Duration**: 10 minutes (auto-stops to prevent runaway resource usage).
   - **Warning**: Desktop notifications at 4:00 and 4:30 minutes.
   - **Silence Detection**: Warns the user if the recorded audio contains no detectable speech (RMS threshold).
 
