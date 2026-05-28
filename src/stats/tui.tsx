@@ -1,23 +1,27 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { TextAttributes, createCliRenderer } from "@opentui/core";
 import { createRoot, useTerminalDimensions } from "@opentui/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { StatsSummary } from "./summary";
 import {
 	age,
-	computePaneWidths,
 	daemonState,
 	errorState,
 	latencyState,
 	ms,
+	nextFilter,
+	overallP0,
+	qualityState,
 	recentLatencySparkline,
 	seconds,
+	type StatsFilter,
 	truncate,
 } from "./tui-model";
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"] as const;
-const SPINNER_INTERVAL_MS = 1000 / 10;
 const AUTO_REFRESH_MS = 5000;
-
+const WATCH_DEBOUNCE_MS = 300;
 const colors = {
 	bg: "#101218",
 	panel: "#171a22",
@@ -28,6 +32,7 @@ const colors = {
 	ok: "#7dd488",
 	warn: "#f1c27a",
 	bad: "#f28b82",
+	info: "#8ab4f8",
 };
 
 function stateColor(state: "GOOD" | "WARN" | "BAD" | "UNKNOWN"): string {
@@ -37,14 +42,6 @@ function stateColor(state: "GOOD" | "WARN" | "BAD" | "UNKNOWN"): string {
 	return colors.muted;
 }
 
-function StatusBadge({ label, state }: { label: string; state: "GOOD" | "WARN" | "BAD" | "UNKNOWN" }) {
-	return (
-		<text fg={stateColor(state)}>
-			{label} [{state}]
-		</text>
-	);
-}
-
 function Section({
 	title,
 	children,
@@ -52,7 +49,7 @@ function Section({
 }: {
 	title: string;
 	children: React.ReactNode;
-	height?: number | string;
+	height?: number;
 }) {
 	return (
 		<box
@@ -62,18 +59,39 @@ function Section({
 			flexDirection="column"
 			paddingLeft={1}
 			paddingRight={1}
-			paddingTop={0}
-			paddingBottom={0}
 			{...(height ? { height } : {})}
 		>
-			<box height={1}>
-				<text fg={colors.accent} attributes={TextAttributes.BOLD}>
-					{title}
-				</text>
-			</box>
+			<text fg={colors.accent} attributes={TextAttributes.BOLD}>
+				{title}
+			</text>
 			{children}
 		</box>
 	);
+}
+
+async function exportSnapshot(
+	summary: StatsSummary,
+	format: "json" | "md",
+): Promise<string> {
+	const exportDir = join(homedir(), ".config", "hypr", "vox", "exports");
+	await mkdir(exportDir, { recursive: true, mode: 0o700 });
+	const stamp = new Date().toISOString().replace(/[.:]/g, "-");
+	const path = join(exportDir, `stats-${stamp}.${format}`);
+	if (format === "json") {
+		await writeFile(path, JSON.stringify(summary, null, 2), { mode: 0o600 });
+	} else {
+		const md = [
+			"# Hyprvox Stats Snapshot",
+			`Generated: ${summary.generatedAt}`,
+			`P0: ${overallP0(summary)}`,
+			`Latency p95: ${ms(summary.latency.p95Ms)}`,
+			`Errors: ${summary.errors.count}`,
+			`Quality failures 24h: ${summary.quality.total24h}`,
+			`Regression flags: ${summary.regression.flags.join(", ") || "none"}`,
+		].join("\n");
+		await writeFile(path, md, { mode: 0o600 });
+	}
+	return path;
 }
 
 function StatApp({
@@ -87,247 +105,287 @@ function StatApp({
 }) {
 	const { width, height } = useTerminalDimensions();
 	const [summary, setSummary] = useState<StatsSummary | null>(null);
-	const [frame, setFrame] = useState(0);
 	const [autoRefresh, setAutoRefresh] = useState(true);
-	const [showHelp, setShowHelp] = useState(false);
-	const [activeView, setActiveView] = useState<"stats" | "health" | "logs" | "errors">("stats");
 	const [lastRefreshAt, setLastRefreshAt] = useState(Date.now());
 	const [ttfpMs, setTtfpMs] = useState<number | null>(null);
+	const [filter, setFilter] = useState<StatsFilter>("all");
+	const [statusMessage, setStatusMessage] = useState("ready");
+	const [pendingExport, setPendingExport] = useState<null | "json" | "md">(null);
+	const [filterPrompt, setFilterPrompt] = useState(false);
+	const [recentOffset, setRecentOffset] = useState(0);
+	const watchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+	const refresh = () => {
+		void loadSummary()
+			.then((data) => {
+				setSummary(data);
+				setLastRefreshAt(Date.now());
+				if (ttfpMs === null) setTtfpMs(Date.now() - startedAtMs);
+			})
+			.catch((error) => {
+				setStatusMessage(`refresh failed: ${(error as Error).message}`);
+			});
+	};
 
 	useEffect(() => {
-		void loadSummary().then((data) => {
-			setSummary(data);
-			setLastRefreshAt(Date.now());
-		});
-	}, [loadSummary]);
-
-	useEffect(() => {
-		const timer = globalThis.setInterval(
-			() => setFrame((current) => current + 1),
-			SPINNER_INTERVAL_MS,
-		);
-		return () => globalThis.clearInterval(timer);
+		refresh();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	useEffect(() => {
 		const timer = globalThis.setInterval(() => {
 			if (!autoRefresh) return;
-			void loadSummary().then((data) => {
-				setSummary(data);
-				setLastRefreshAt(Date.now());
-			});
+			refresh();
 		}, AUTO_REFRESH_MS);
 		return () => globalThis.clearInterval(timer);
-	}, [autoRefresh, loadSummary]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [autoRefresh]);
+
+	useEffect(() => {
+		if (!summary) return;
+		const watchers: Array<{ close: () => void }> = [];
+		const watchPaths = [
+			summary.paths.history,
+			summary.paths.logs,
+			join(homedir(), ".config", "hypr", "vox", "daemon.state"),
+		].filter((p): p is string => Boolean(p));
+
+		for (const path of watchPaths) {
+			try {
+				const watcher = Bun.watch({
+					path,
+					onChange() {
+						if (watchTimer.current) clearTimeout(watchTimer.current);
+						watchTimer.current = setTimeout(() => {
+							setStatusMessage("event update");
+							refresh();
+						}, WATCH_DEBOUNCE_MS);
+					},
+				});
+				watchers.push(watcher);
+			} catch {
+				// Ignore unsupported watch path.
+			}
+		}
+
+		return () => {
+			for (const watcher of watchers) watcher.close();
+			if (watchTimer.current) {
+				clearTimeout(watchTimer.current);
+				watchTimer.current = null;
+			}
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [summary?.paths.history, summary?.paths.logs]);
 
 	useEffect(() => {
 		const onKey = (chunk: Buffer) => {
 			const key = chunk.toString();
+			if (pendingExport) {
+				if (key.toLowerCase() === "y" && summary) {
+					void exportSnapshot(summary, pendingExport)
+						.then((path) => setStatusMessage(`exported: ${path}`))
+						.catch((error) =>
+							setStatusMessage(`export failed: ${(error as Error).message}`),
+						);
+					setPendingExport(null);
+					return;
+				}
+				setPendingExport(null);
+				setStatusMessage("export cancelled");
+				return;
+			}
+			if (filterPrompt) {
+				if (key === "1") setFilter("all");
+				if (key === "2") setFilter("quality");
+				if (key === "3") setFilter("latency");
+				if (key === "4") setFilter("errors");
+				if (key === "5") setFilter("fallbacks");
+				setFilterPrompt(false);
+				setStatusMessage(`filter: ${filter}`);
+				return;
+			}
+
 			if (key === "q" || key === "\u0003") onQuit();
+			if (key === "r") refresh();
 			if (key === "a") setAutoRefresh((current) => !current);
-			if (key === "?") setShowHelp((current) => !current);
-			if (key === "h") setActiveView((view) => (view === "health" ? "stats" : "health"));
-			if (key === "l") setActiveView((view) => (view === "logs" ? "stats" : "logs"));
-			if (key === "e") setActiveView((view) => (view === "errors" ? "stats" : "errors"));
-			if (key === "r") {
-				void loadSummary().then((data) => {
-					setSummary(data);
-					setLastRefreshAt(Date.now());
-				});
+			if (key === "f") setFilter((current) => nextFilter(current));
+			if (key === "/") setFilterPrompt(true);
+			if (key === "e") {
+				setPendingExport("json");
+				setStatusMessage("Export JSON snapshot? y/N");
+			}
+			if (key === "E") {
+				setPendingExport("md");
+				setStatusMessage("Export markdown snapshot? y/N");
+			}
+			if (key === "j") setRecentOffset((current) => current + 1);
+			if (key === "k") setRecentOffset((current) => Math.max(0, current - 1));
+			if (key === "g") setRecentOffset(0);
+			if (key === "G" && summary) {
+				setRecentOffset(Math.max(0, summary.recent.length - 1));
 			}
 		};
+
 		process.stdin.setRawMode?.(true);
 		process.stdin.resume();
 		process.stdin.on("data", onKey);
 		return () => {
 			process.stdin.off("data", onKey);
 		};
-	}, [loadSummary, onQuit]);
+	}, [filter, filterPrompt, onQuit, pendingExport, summary]);
 
-	const spin = SPINNER_FRAMES[frame % SPINNER_FRAMES.length] ?? "•";
-	const latencyHealth = latencyState(summary?.latency.p95Ms ?? null);
-	const errorHealth = errorState(summary?.errors.count ?? 0);
-	const daemonHealth = daemonState(summary?.daemon.status ?? "stopped");
-
+	const p0 = summary ? overallP0(summary) : "UNKNOWN";
 	const recentLatencySpark = useMemo(() => {
 		if (!summary) return "";
 		return recentLatencySparkline(summary, 24);
 	}, [summary]);
 
-	useEffect(() => {
-		if (!summary || ttfpMs !== null) return;
-		setTtfpMs(Date.now() - startedAtMs);
-	}, [summary, ttfpMs, startedAtMs]);
-
 	if (!summary) {
 		return (
 			<box width={width} height={height} backgroundColor={colors.bg} paddingLeft={2} paddingTop={1}>
-				<text fg={colors.muted}>
-					{spin} loading stats...
-				</text>
+				<text fg={colors.muted}>loading stats...</text>
 			</box>
 		);
 	}
 
-	const { left: computedLeft, right: computedRight } = computePaneWidths(width);
-	const isNarrow = width < 110;
-	const leftWidth = isNarrow ? Math.max(40, width - 4) : computedLeft;
-	const rightWidth = isNarrow ? Math.max(40, width - 4) : computedRight;
+	const latencyHealth = latencyState(
+		summary.latency.p95Ms,
+		summary.thresholds.latencyP95WarnMs,
+		summary.thresholds.latencyP95BadMs,
+	);
+	const errorHealth = errorState(
+		summary.errors.count,
+		summary.thresholds.errorWarnCount24h,
+		summary.thresholds.errorBadCount24h,
+	);
+	const qualityHealth = qualityState(
+		summary.quality.total24h,
+		summary.thresholds.qualityWarnCount24h,
+		summary.thresholds.qualityBadCount24h,
+	);
+	const daemonHealth = daemonState(summary.daemon.status);
+
+	let filteredRecent = summary.recent;
+	if (filter === "latency") {
+		filteredRecent = summary.recent.filter(
+			(item) => item.processingTime >= summary.thresholds.latencyP95WarnMs,
+		);
+	}
+	if (filter === "errors") {
+		filteredRecent = summary.recent.filter(() => summary.errors.count > 0);
+	}
+	const recentPage = filteredRecent.slice(recentOffset, recentOffset + 8);
+
+	const topStrategies = Object.entries(summary.pipeline.mergeStrategies24h)
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 4);
 
 	return (
 		<box width={width} height={height} backgroundColor={colors.bg} flexDirection="column">
 			<box
-				height={3}
+				height={2}
 				borderBottom
 				borderColor={colors.border}
 				paddingLeft={1}
 				paddingRight={1}
-				alignItems="center"
 				justifyContent="space-between"
 			>
 				<text fg={colors.text} attributes={TextAttributes.BOLD}>
-					hyprvox stats
+					hyprvox stats | p0 {p0} | filter {filter}
 				</text>
 				<text fg={colors.muted}>
-					{spin} {autoRefresh ? "auto:on" : "auto:off"} updated{" "}
-					{new Date(summary.generatedAt).toLocaleTimeString()}{" "}
-					{ttfpMs !== null ? `ttfp ${ttfpMs}ms` : ""}{" "}
-					{activeView !== "stats" ? `view:${activeView}` : ""}
+					updated {new Date(summary.generatedAt).toLocaleTimeString()} | {autoRefresh ? "auto:on" : "auto:off"} | ttfp {ttfpMs ?? 0}ms
 				</text>
 			</box>
 
-			<box
-				flexDirection={isNarrow ? "column" : "row"}
-				flexGrow={1}
-				paddingLeft={1}
-				paddingRight={1}
-				paddingTop={1}
-				paddingBottom={1}
-				gap={1}
-			>
-				<box width={leftWidth} flexDirection="column" gap={1}>
-					<Section title="Overview" height={8}>
+			<box height={3} paddingLeft={1} paddingRight={1} alignItems="center" gap={2}>
+				<text fg={stateColor(daemonHealth)}>daemon {summary.daemon.status}</text>
+				<text fg={stateColor(latencyHealth)}>p95 {ms(summary.latency.p95Ms)}</text>
+				<text fg={stateColor(errorHealth)}>errors {summary.errors.count}</text>
+				<text fg={stateColor(qualityHealth)}>quality24h {summary.quality.total24h}</text>
+				<text fg={summary.quality.spike ? colors.bad : colors.muted}>
+					{summary.quality.spike ? "quality spike" : "stable"}
+				</text>
+			</box>
+
+			<box flexDirection="row" paddingLeft={1} paddingRight={1} gap={1} flexGrow={1}>
+				<box width={Math.max(58, Math.floor(width * 0.58))} flexDirection="column" gap={1}>
+					<Section title="Runtime Overview" height={8}>
 						<text fg={colors.text}>
-							Today {summary.counts.today}   Total {summary.counts.total}   History {summary.counts.history}
+							Today {summary.counts.today} | Total {summary.counts.total} | History {summary.counts.history}
 						</text>
 						<text fg={colors.text}>
-							Latency median {ms(summary.latency.medianMs)}   p95 {ms(summary.latency.p95Ms)}   avg {ms(summary.latency.averageMs)}
+							Latency median {ms(summary.latency.medianMs)} | p95 {ms(summary.latency.p95Ms)} | avg {ms(summary.latency.averageMs)}
 						</text>
 						<text fg={colors.text}>
-							Duration avg {seconds(summary.duration.averageSeconds)}   S/M/L {summary.duration.shortCount}/{summary.duration.mediumCount}/{summary.duration.longCount}
+							Duration avg {seconds(summary.duration.averageSeconds)} | S/M/L {summary.duration.shortCount}/{summary.duration.mediumCount}/{summary.duration.longCount}
 						</text>
-						<text fg={colors.muted}>
-							Pulse {recentLatencySpark || "n/a"}   refreshed {age(Date.now() - lastRefreshAt)} ago
-						</text>
+						<text fg={colors.muted}>Pulse {recentLatencySpark || "n/a"} | refreshed {age(Date.now() - lastRefreshAt)} ago</text>
 					</Section>
 
-					<Section title="Recent Transcriptions" height={isNarrow ? 11 : height - 16}>
-						<text fg={colors.muted}>Time      Engine        Latency  Text</text>
-						{summary.recent.slice(0, 8).map((item, index) => {
-							const time = new Date(item.timestamp).toLocaleTimeString([], {
-								hour: "2-digit",
-								minute: "2-digit",
-							});
-							return (
-								<text key={`${item.timestamp}-${index}`} fg={colors.text}>
-									{truncate(
-										`${time.padEnd(8)}  ${truncate(item.engine, 12).padEnd(12)}  ${ms(item.processingTime).padEnd(7)}  ${item.text}`,
-										Math.max(24, leftWidth - 6),
-									)}
-								</text>
-							);
-						})}
-					</Section>
-				</box>
-
-				<box width={rightWidth} flexDirection="column" gap={1}>
-					<Section title="Health" height={8}>
-						<StatusBadge label={`Daemon: ${summary.daemon.status}`} state={daemonHealth} />
-						<StatusBadge label={`Errors: ${summary.errors.count}`} state={errorHealth} />
-						<StatusBadge label={`Latency p95: ${ms(summary.latency.p95Ms)}`} state={latencyHealth} />
-					</Section>
-
-					<Section title="Engines" height={8}>
-						{Object.entries(summary.engines)
-							.sort((a, b) => b[1] - a[1])
-							.slice(0, 4)
-							.map(([engine, count]) => {
-								const max = Math.max(
-									1,
-									...Object.values(summary.engines).map((value) => value),
-								);
-								const barW = Math.max(4, Math.floor(((rightWidth - 20) * count) / max));
-								return (
-									<text key={engine} fg={colors.text}>
-										{truncate(engine, 12).padEnd(12)} {String(count).padStart(4)} {"█".repeat(barW)}
-									</text>
-								);
-							})}
-					</Section>
-
-					<Section
-						title={
-							activeView === "health"
-								? "Health Detail"
-								: activeView === "logs"
-									? "Logs Detail"
-									: activeView === "errors"
-										? "Errors Detail"
-										: "Runtime"
-						}
-						height={10}
-					>
-						<text fg={colors.text}>
-							Daemon: {summary.daemon.status}
-							{summary.daemon.pid ? ` (${summary.daemon.pid})` : ""}
-						</text>
-						<text fg={colors.text}>Errors: {summary.errors.count}</text>
-						<text fg={colors.muted}>
-							Latest: {truncate(summary.errors.latest ?? "none", Math.max(16, rightWidth - 12))}
-						</text>
-						{summary.errors.recent.length > 0 ? (
-							<text fg={colors.muted}>Recent:</text>
-						) : null}
-						{summary.errors.recent.map((item, index) => (
-							<text key={`${item.timestamp}-${index}`} fg={colors.muted}>
+					<Section title="Recent Sessions" height={height - 18}>
+						<text fg={colors.muted}>time   engine           latency   text</text>
+						{recentPage.map((item, index) => (
+							<text key={`${item.timestamp}-${index}`} fg={colors.text}>
 								{truncate(
-									`${new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} ${item.message}`,
-									Math.max(16, rightWidth - 12),
+									`${new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }).padEnd(6)} ${truncate(item.engine, 14).padEnd(14)} ${ms(item.processingTime).padEnd(8)} ${item.text}`,
+									Math.max(24, Math.floor(width * 0.56)),
 								)}
 							</text>
 						))}
-						<text fg={colors.muted}>
-							Config: {truncate(summary.paths.config, Math.max(16, rightWidth - 12))}
-						</text>
-						{activeView === "health" ? (
-							<text fg={colors.text}>
-								Status {daemonState(summary.daemon.status)} | latency {latencyState(summary.latency.p95Ms)} | errors {errorState(summary.errors.count)}
-							</text>
-						) : null}
-						{activeView === "logs" ? (
-							<text fg={colors.text}>
-								Log path: {truncate(summary.paths.logs ?? "not configured", Math.max(16, rightWidth - 12))}
-							</text>
-						) : null}
-						{activeView === "errors" ? (
-							<text fg={colors.text}>
-								Error trend: {summary.errors.recent.length} recent entries
-							</text>
-						) : null}
+						{textIfEmpty(recentPage.length === 0, "No matching sessions for current filter.")}
+					</Section>
+				</box>
+
+				<box flexDirection="column" flexGrow={1} gap={1}>
+					<Section title="Quality / Pipeline" height={10}>
+						<text fg={colors.text}>prompt_artifact {summary.quality.window24h.prompt_artifact}</text>
+						<text fg={colors.text}>token_injection {summary.quality.window24h.token_injection}</text>
+						<text fg={colors.text}>cot_meta {summary.quality.window24h.cot_meta}</text>
+						<text fg={colors.text}>fallback none/groq/deepgram {summary.pipeline.fallbacks24h.none}/{summary.pipeline.fallbacks24h.groq}/{summary.pipeline.fallbacks24h.deepgram}</text>
+						<text fg={colors.text}>validation retries 24h {summary.pipeline.validationRetries24h}</text>
 					</Section>
 
-					<Section title="Controls" height={showHelp ? 9 : 5}>
-						<text fg={colors.muted}>q quit   r refresh   a auto-refresh</text>
-						<text fg={colors.muted}>h health l logs      e errors</text>
-						<text fg={colors.muted}>? help</text>
-						{showHelp ? (
-							<text fg={colors.text}>Live view. h/l/e toggle internal detail views (no shell exit).</text>
-						) : null}
+					<Section title="Merge Strategy (24h)" height={8}>
+						{topStrategies.map(([name, count]) => (
+							<text key={name} fg={colors.text}>{truncate(name, 24).padEnd(24)} {String(count).padStart(5)}</text>
+						))}
+						{textIfEmpty(topStrategies.length === 0, "No perf strategy data in logs.")}
+					</Section>
+
+					<Section title="Regression Detector" height={8}>
+						<text fg={colors.text}>1h sessions {summary.regression.window1hCount}</text>
+						<text fg={colors.text}>24h sessions {summary.regression.window24hCount}</text>
+						<text fg={colors.text}>7d baseline sessions {summary.regression.baseline7dCount}</text>
+						<text fg={summary.regression.flags.length > 0 ? colors.warn : colors.ok}>
+							flags: {summary.regression.flags.join(", ") || "none"}
+						</text>
 					</Section>
 				</box>
 			</box>
+
+			<box height={3} borderTop borderColor={colors.border} paddingLeft={1} paddingRight={1}>
+				<text fg={colors.muted}>
+					hotkeys: q quit | r refresh | a auto | / filter prompt | f next filter | j/k scroll | g/G jump | e export json | E export md
+				</text>
+			</box>
+			<box height={1} paddingLeft={1}>
+				<text fg={pendingExport ? colors.warn : filterPrompt ? colors.info : colors.muted}>
+					{filterPrompt
+						? "filter: 1 all, 2 quality, 3 latency, 4 errors, 5 fallbacks"
+						: pendingExport
+							? "confirm export: y/N"
+							: statusMessage}
+				</text>
+			</box>
 		</box>
 	);
+}
+
+function textIfEmpty(condition: boolean, message: string): React.ReactNode {
+	if (!condition) return null;
+	return <text fg={colors.muted}>{message}</text>;
 }
 
 export async function runStatsTui(loadSummary: () => Promise<StatsSummary>): Promise<void> {
