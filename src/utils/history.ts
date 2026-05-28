@@ -11,6 +11,11 @@ export interface HistoryItem {
 	duration: number;
 	engine: string;
 	processingTime: number;
+	groqSttModel?: string;
+	deepgramModel?: string;
+	mergeModel?: string;
+	mergeStrategy?: string;
+	validationReasons?: string[];
 }
 
 export interface SearchOptions {

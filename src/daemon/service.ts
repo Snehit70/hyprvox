@@ -26,6 +26,7 @@ import {
 import { GroqClient } from "../transcribe/groq";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { assessLongRecordingQuality } from "../transcribe/long-recording";
+import { appendStatsAggregateEntry } from "../stats/aggregate";
 import {
 	type MergeReason,
 	type MergeResult,
@@ -113,6 +114,9 @@ interface TranscriptionMetrics {
 	textLength: number;
 	groqTextLength: number;
 	deepgramTextLength: number;
+	groqSttModel: string;
+	deepgramModel: string;
+	mergeModel: string;
 }
 
 async function timeAsync<T>(
@@ -988,6 +992,9 @@ export class DaemonService {
 			textLength: 0,
 			groqTextLength: 0,
 			deepgramTextLength: 0,
+			groqSttModel: "whisper-large-v3",
+			deepgramModel: "nova-3",
+			mergeModel: this.config.transcription.mergeModel,
 		};
 
 		try {
@@ -1487,9 +1494,28 @@ export class DaemonService {
 					duration,
 					engine: engineUsed,
 					processingTime,
+					groqSttModel: metrics.groqSttModel,
+					deepgramModel: metrics.deepgramModel,
+					mergeModel: metrics.mergeModel,
+					mergeStrategy: metrics.mergeStrategy,
+					validationReasons: metrics.validationReasons,
 				}),
 			);
 			metrics.historyAppendMs = historyTimed.durationMs;
+
+			void appendStatsAggregateEntry({
+				timestamp: new Date().toISOString(),
+				processingMs: processingTime,
+				engine: engineUsed,
+				mergeStrategy: metrics.mergeStrategy,
+				mergeReason: metrics.mergeReason,
+				validationReasons: metrics.validationReasons,
+				validationRetryCount: metrics.validationRetryCount,
+				validationFallbackSource: metrics.validationFallbackSource,
+				groqSttModel: metrics.groqSttModel,
+				deepgramModel: metrics.deepgramModel,
+				mergeModel: metrics.mergeModel,
+			});
 
 			// --- Stage: Notification ---
 			const notifyTimed = await timeAsync(async () =>
