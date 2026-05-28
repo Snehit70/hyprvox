@@ -173,6 +173,14 @@ const defaultTranscription = {
 	streaming: false,
 	deepgramBoosting: false,
 	lexiconEnabled: true,
+	statsThresholds: {
+		latencyP95WarnMs: 2500,
+		latencyP95BadMs: 4000,
+		errorWarnCount24h: 5,
+		errorBadCount24h: 20,
+		qualityWarnCount24h: 3,
+		qualityBadCount24h: 10,
+	},
 	mergeModel: "llama-3.3-70b-versatile",
 	formattingMode: "clean",
 } as const;
@@ -251,6 +259,34 @@ export const TranscriptionSchema = z.object({
 	streaming: z.boolean().default(defaultTranscription.streaming),
 	deepgramBoosting: z.boolean().default(defaultTranscription.deepgramBoosting),
 	lexiconEnabled: z.boolean().default(defaultTranscription.lexiconEnabled),
+	statsThresholds: z
+		.object({
+			latencyP95WarnMs: z
+				.number()
+				.min(1)
+				.default(defaultTranscription.statsThresholds.latencyP95WarnMs),
+			latencyP95BadMs: z
+				.number()
+				.min(1)
+				.default(defaultTranscription.statsThresholds.latencyP95BadMs),
+			errorWarnCount24h: z
+				.number()
+				.min(0)
+				.default(defaultTranscription.statsThresholds.errorWarnCount24h),
+			errorBadCount24h: z
+				.number()
+				.min(0)
+				.default(defaultTranscription.statsThresholds.errorBadCount24h),
+			qualityWarnCount24h: z
+				.number()
+				.min(0)
+				.default(defaultTranscription.statsThresholds.qualityWarnCount24h),
+			qualityBadCount24h: z
+				.number()
+				.min(0)
+				.default(defaultTranscription.statsThresholds.qualityBadCount24h),
+		})
+		.default(defaultTranscription.statsThresholds),
 	mergeModel: z.string().default(defaultTranscription.mergeModel),
 	formattingMode: z
 		.enum(["verbatim", "clean", "structured"])

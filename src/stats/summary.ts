@@ -1,10 +1,30 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { AudioDeviceService } from "../audio/device-service";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
 import type { DaemonState } from "../daemon/service";
+import { detectEnvironment } from "../setup/environment";
 import { type HistoryItem, loadHistory } from "../utils/history";
 import { loadStats } from "../utils/stats";
+
+export type QualityReason =
+	| "prompt_artifact"
+	| "cot_meta"
+	| "token_injection"
+	| "hallucination_suffix"
+	| "mixed_script"
+	| "garbage";
+
+interface PerfEvent {
+	timestamp: string;
+	processingMs: number;
+	mergeStrategy: string;
+	mergeReason: string | null;
+	validationReasons: QualityReason[];
+	validationRetryCount: number;
+	validationFallbackSource: "none" | "groq" | "deepgram";
+}
 
 export interface StatsSummary {
 	generatedAt: string;
@@ -42,6 +62,52 @@ export interface StatsSummary {
 		history: string | null;
 		logs: string | null;
 	};
+	health: {
+		checkedAt: string;
+		overall: "PASS" | "WARN" | "FAIL";
+		configLoaded: boolean;
+		apiKeysConfigured: {
+			groq: boolean;
+			deepgram: boolean;
+		};
+		audio: {
+			arecordAvailable: boolean;
+			deviceCount: number | null;
+		};
+		capabilities: {
+			clipboard: boolean;
+			notifications: boolean;
+			systemd: boolean;
+		};
+		session: {
+			type: string;
+			container: boolean;
+		};
+	};
+	quality: {
+		window24h: Record<QualityReason, number>;
+		total24h: number;
+		spike: boolean;
+	};
+	pipeline: {
+		mergeStrategies24h: Record<string, number>;
+		fallbacks24h: Record<"none" | "groq" | "deepgram", number>;
+		validationRetries24h: number;
+	};
+	regression: {
+		window1hCount: number;
+		window24hCount: number;
+		baseline7dCount: number;
+		flags: string[];
+	};
+	thresholds: {
+		latencyP95WarnMs: number;
+		latencyP95BadMs: number;
+		errorWarnCount24h: number;
+		errorBadCount24h: number;
+		qualityWarnCount24h: number;
+		qualityBadCount24h: number;
+	};
 }
 
 export interface StatsSummaryInput {
@@ -53,8 +119,20 @@ export interface StatsSummaryInput {
 	daemon: StatsSummary["daemon"];
 	errors: StatsSummary["errors"];
 	paths: StatsSummary["paths"];
+	health?: StatsSummary["health"];
+	perfEvents?: PerfEvent[];
+	thresholds?: StatsSummary["thresholds"];
 	now?: Date;
 }
+
+const DEFAULT_THRESHOLDS: StatsSummary["thresholds"] = {
+	latencyP95WarnMs: 2500,
+	latencyP95BadMs: 4000,
+	errorWarnCount24h: 5,
+	errorBadCount24h: 20,
+	qualityWarnCount24h: 3,
+	qualityBadCount24h: 10,
+};
 
 function percentile(values: number[], p: number): number | null {
 	if (values.length === 0) return null;
@@ -69,7 +147,6 @@ function average(values: number[]): number | null {
 }
 
 function normalizeDurationSeconds(value: number): number {
-	// Older history entries stored milliseconds while the field name stayed generic.
 	return value > 3600 ? value / 1000 : value;
 }
 
@@ -99,14 +176,9 @@ function readDaemonState(): StatsSummary["daemon"] {
 	}
 }
 
-function readErrorSummary(logDir: string | null): StatsSummary["errors"] {
-	if (!logDir || !existsSync(logDir))
-		return { count: 0, latest: null, recent: [] };
-
-	let count = 0;
-	let latest: string | null = null;
-	const recent: Array<{ timestamp: string; message: string }> = [];
-	const seen = new Set<string>();
+function readLogEntries(logDir: string | null): Array<Record<string, unknown>> {
+	if (!logDir || !existsSync(logDir)) return [];
+	const entries: Array<Record<string, unknown>> = [];
 	for (const file of readdirSync(logDir)
 		.filter((name) => name.startsWith("hyprvox-") && name.endsWith(".log"))
 		.sort()) {
@@ -114,29 +186,149 @@ function readErrorSummary(logDir: string | null): StatsSummary["errors"] {
 		for (const line of content.split("\n")) {
 			if (!line.trim()) continue;
 			try {
-				const entry = JSON.parse(line);
-				if (entry.level === 50) {
-					count += 1;
-					const message = entry.msg ?? entry.err?.message ?? "Unknown error";
-					latest = message;
-					const timestamp =
-						typeof entry.time === "string"
-							? entry.time
-							: new Date().toISOString();
-					const key = `${timestamp}|${message}`;
-					if (!seen.has(key)) {
-						seen.add(key);
-						recent.push({ timestamp, message });
-						if (recent.length > 3) recent.shift();
-					}
-				}
+				const parsed = JSON.parse(line) as Record<string, unknown>;
+				entries.push(parsed);
 			} catch {
 				// Ignore malformed log lines.
 			}
 		}
 	}
+	return entries;
+}
+
+function readErrorSummary(logEntries: Array<Record<string, unknown>>): StatsSummary["errors"] {
+	let count = 0;
+	let latest: string | null = null;
+	const recent: Array<{ timestamp: string; message: string }> = [];
+	const seen = new Set<string>();
+
+	for (const entry of logEntries) {
+		if (entry.level !== 50) continue;
+		count += 1;
+		const message =
+			typeof entry.msg === "string"
+				? entry.msg
+				: typeof (entry.err as { message?: unknown } | undefined)?.message ===
+						"string"
+					? String((entry.err as { message?: unknown }).message)
+					: "Unknown error";
+		latest = message;
+		const timestamp =
+			typeof entry.time === "string" ? entry.time : new Date().toISOString();
+		const key = `${timestamp}|${message}`;
+		if (!seen.has(key)) {
+			seen.add(key);
+			recent.push({ timestamp, message });
+			if (recent.length > 5) recent.shift();
+		}
+	}
 
 	return { count, latest, recent };
+}
+
+function readPerfEvents(logEntries: Array<Record<string, unknown>>): PerfEvent[] {
+	const events: PerfEvent[] = [];
+	for (const entry of logEntries) {
+		if (entry.type !== "perf") continue;
+		const timestamp =
+			typeof entry.time === "string" ? entry.time : new Date().toISOString();
+		const processingMs =
+			typeof entry.processingMs === "number" ? entry.processingMs : -1;
+		if (!Number.isFinite(processingMs) || processingMs < 0) continue;
+		const rawValidation = Array.isArray(entry.validationReasons)
+			? entry.validationReasons
+			: [];
+		const validationReasons: QualityReason[] = rawValidation.filter(
+			(value): value is QualityReason =>
+				typeof value === "string" &&
+				[
+					"prompt_artifact",
+					"cot_meta",
+					"token_injection",
+					"hallucination_suffix",
+					"mixed_script",
+					"garbage",
+				].includes(value),
+		);
+		events.push({
+			timestamp,
+			processingMs,
+			mergeStrategy:
+				typeof entry.mergeStrategy === "string"
+					? entry.mergeStrategy
+					: "unknown",
+			mergeReason:
+				typeof entry.mergeReason === "string" ? entry.mergeReason : null,
+			validationReasons,
+			validationRetryCount:
+				typeof entry.validationRetryCount === "number"
+					? entry.validationRetryCount
+					: 0,
+			validationFallbackSource:
+				entry.validationFallbackSource === "groq" ||
+				entry.validationFallbackSource === "deepgram"
+					? entry.validationFallbackSource
+					: "none",
+		});
+	}
+	return events;
+}
+
+function pickThresholdsFromConfig(): StatsSummary["thresholds"] {
+	try {
+		const rawConfig = loadConfig() as {
+			transcription?: {
+				statsThresholds?: Partial<StatsSummary["thresholds"]>;
+			};
+		};
+		const configured = rawConfig.transcription?.statsThresholds;
+		if (!configured) return DEFAULT_THRESHOLDS;
+		return {
+			latencyP95WarnMs:
+				typeof configured.latencyP95WarnMs === "number"
+					? configured.latencyP95WarnMs
+					: DEFAULT_THRESHOLDS.latencyP95WarnMs,
+			latencyP95BadMs:
+				typeof configured.latencyP95BadMs === "number"
+					? configured.latencyP95BadMs
+					: DEFAULT_THRESHOLDS.latencyP95BadMs,
+			errorWarnCount24h:
+				typeof configured.errorWarnCount24h === "number"
+					? configured.errorWarnCount24h
+					: DEFAULT_THRESHOLDS.errorWarnCount24h,
+			errorBadCount24h:
+				typeof configured.errorBadCount24h === "number"
+					? configured.errorBadCount24h
+					: DEFAULT_THRESHOLDS.errorBadCount24h,
+			qualityWarnCount24h:
+				typeof configured.qualityWarnCount24h === "number"
+					? configured.qualityWarnCount24h
+					: DEFAULT_THRESHOLDS.qualityWarnCount24h,
+			qualityBadCount24h:
+				typeof configured.qualityBadCount24h === "number"
+					? configured.qualityBadCount24h
+					: DEFAULT_THRESHOLDS.qualityBadCount24h,
+		};
+	} catch {
+		return DEFAULT_THRESHOLDS;
+	}
+}
+
+function eventsInWindow(
+	events: PerfEvent[],
+	nowMs: number,
+	windowMs: number,
+): PerfEvent[] {
+	const minTs = nowMs - windowMs;
+	return events.filter((event) => {
+		const ts = new Date(event.timestamp).getTime();
+		return Number.isFinite(ts) && ts >= minTs && ts <= nowMs;
+	});
+}
+
+function ratePerHour(events: PerfEvent[], nowMs: number, windowMs: number): number {
+	const count = eventsInWindow(events, nowMs, windowMs).length;
+	return count / (windowMs / 3_600_000);
 }
 
 export async function buildStatsSummary(): Promise<StatsSummary> {
@@ -144,31 +336,99 @@ export async function buildStatsSummary(): Promise<StatsSummary> {
 	const history = await loadHistory();
 	let historyPath: string | null = null;
 	let logsPath: string | null = null;
+	let configLoaded = false;
+	let groqConfigured = false;
+	let deepgramConfigured = false;
+	const envInfo = detectEnvironment();
+	let audioDeviceCount: number | null = null;
 
 	try {
 		const config = loadConfig();
+		configLoaded = true;
 		historyPath = config.paths.history;
 		logsPath = config.paths.logs;
+		groqConfigured =
+			typeof config.apiKeys.groq === "string" &&
+			config.apiKeys.groq.startsWith("gsk_") &&
+			config.apiKeys.groq.length > 6;
+		deepgramConfigured =
+			typeof config.apiKeys.deepgram === "string" &&
+			config.apiKeys.deepgram.length >= 24;
 	} catch {
 		// Config may be incomplete during setup; stats can still be shown.
 	}
+	if (envInfo.commands.arecord?.path) {
+		try {
+			audioDeviceCount = (await new AudioDeviceService().listDevices()).length;
+		} catch {
+			audioDeviceCount = null;
+		}
+	}
+
+	const apiReady = groqConfigured && deepgramConfigured;
+	const hasMicPath = Boolean(envInfo.commands.arecord?.path);
+	const clipboardReady = Boolean(
+		envInfo.commands["wl-copy"]?.path ||
+			envInfo.commands.xclip?.path ||
+			envInfo.commands.xsel?.path,
+	);
+	const notifyReady = Boolean(envInfo.commands["notify-send"]?.path);
+	const systemdReady = Boolean(envInfo.commands.systemctl?.path);
+	const failCount = Number(!configLoaded) + Number(!apiReady) + Number(!hasMicPath);
+	const warnCount =
+		Number(hasMicPath && (audioDeviceCount ?? 0) === 0) +
+		Number(!clipboardReady) +
+		Number(!notifyReady) +
+		Number(!systemdReady);
+	const overall = failCount > 0 ? "FAIL" : warnCount > 0 ? "WARN" : "PASS";
+
+	const logEntries = readLogEntries(logsPath);
+	const perfEvents = readPerfEvents(logEntries);
 
 	return buildStatsSummaryFromInput({
 		stats,
 		history,
 		daemon: readDaemonState(),
-		errors: readErrorSummary(logsPath),
+		errors: readErrorSummary(logEntries),
 		paths: {
 			config: DEFAULT_CONFIG_FILE,
 			history: historyPath,
 			logs: logsPath,
 		},
+		health: {
+			checkedAt: new Date().toISOString(),
+			overall,
+			configLoaded,
+			apiKeysConfigured: {
+				groq: groqConfigured,
+				deepgram: deepgramConfigured,
+			},
+			audio: {
+				arecordAvailable: Boolean(envInfo.commands.arecord?.path),
+				deviceCount: audioDeviceCount,
+			},
+			capabilities: {
+				clipboard: clipboardReady,
+				notifications: notifyReady,
+				systemd: systemdReady,
+			},
+			session: {
+				type: envInfo.sessionType,
+				container: envInfo.isContainer,
+			},
+		},
+		perfEvents,
+		thresholds: pickThresholdsFromConfig(),
 	});
 }
 
 export function buildStatsSummaryFromInput(
 	input: StatsSummaryInput,
 ): StatsSummary {
+	const now = input.now ?? new Date();
+	const nowMs = now.getTime();
+	const thresholds = input.thresholds ?? DEFAULT_THRESHOLDS;
+
 	const processingTimes = input.history
 		.map((item) => item.processingTime)
 		.filter((value) => Number.isFinite(value) && value >= 0);
@@ -181,8 +441,77 @@ export function buildStatsSummaryFromInput(
 		return acc;
 	}, {});
 
+	const perfEvents = input.perfEvents ?? [];
+	const events24h = eventsInWindow(perfEvents, nowMs, 24 * 3600_000);
+	const events1h = eventsInWindow(perfEvents, nowMs, 3600_000);
+	const baseline7d = eventsInWindow(perfEvents, nowMs, 7 * 24 * 3600_000);
+	const previous23h = eventsInWindow(perfEvents, nowMs - 3600_000, 23 * 3600_000);
+
+	const qualityWindow24h: Record<QualityReason, number> = {
+		prompt_artifact: 0,
+		cot_meta: 0,
+		token_injection: 0,
+		hallucination_suffix: 0,
+		mixed_script: 0,
+		garbage: 0,
+	};
+	for (const event of events24h) {
+		for (const reason of event.validationReasons) {
+			qualityWindow24h[reason] = (qualityWindow24h[reason] ?? 0) + 1;
+		}
+	}
+	const qualityTotal24h = Object.values(qualityWindow24h).reduce(
+		(sum, count) => sum + count,
+		0,
+	);
+
+	const mergeStrategies24h: Record<string, number> = {};
+	const fallbacks24h: Record<"none" | "groq" | "deepgram", number> = {
+		none: 0,
+		groq: 0,
+		deepgram: 0,
+	};
+	let validationRetries24h = 0;
+	for (const event of events24h) {
+		mergeStrategies24h[event.mergeStrategy] =
+			(mergeStrategies24h[event.mergeStrategy] ?? 0) + 1;
+		fallbacks24h[event.validationFallbackSource] += 1;
+		validationRetries24h += event.validationRetryCount;
+	}
+
+	const regressionFlags: string[] = [];
+	const p95 = percentile(
+		events24h.map((event) => event.processingMs),
+		95,
+	);
+	if (
+		p95 !== null &&
+		p95 > thresholds.latencyP95WarnMs &&
+		percentile(eventsInWindow(baseline7d, nowMs - 24 * 3600_000, 6 * 24 * 3600_000).map((event) => event.processingMs), 95) !==
+			null
+	) {
+		regressionFlags.push("latency_p95_regressed");
+	}
+	if (input.errors.count >= thresholds.errorWarnCount24h) {
+		regressionFlags.push("error_volume_high");
+	}
+	if (qualityTotal24h >= thresholds.qualityWarnCount24h) {
+		regressionFlags.push("quality_failures_high");
+	}
+	const oneHourQualityRate = ratePerHour(
+		events1h.filter((event) => event.validationReasons.length > 0),
+		nowMs,
+		3600_000,
+	);
+	const priorQualityRate =
+		previous23h.filter((event) => event.validationReasons.length > 0).length / 23;
+	const spike = oneHourQualityRate >= Math.max(2, priorQualityRate * 2);
+	if (spike) {
+		regressionFlags.push("quality_spike_1h");
+	}
+
 	return {
-		generatedAt: (input.now ?? new Date()).toISOString(),
+		generatedAt: now.toISOString(),
 		counts: {
 			today: input.stats.today,
 			total: input.stats.total,
@@ -202,9 +531,49 @@ export function buildStatsSummaryFromInput(
 			longCount: durationSeconds.filter((duration) => duration >= 60).length,
 		},
 		engines,
-		recent: input.history.slice(-8).reverse(),
+		recent: input.history.slice(-12).reverse(),
 		daemon: input.daemon,
 		errors: input.errors,
 		paths: input.paths,
+		health:
+			input.health ?? {
+				checkedAt: now.toISOString(),
+				overall: "FAIL",
+				configLoaded: false,
+				apiKeysConfigured: {
+					groq: false,
+					deepgram: false,
+				},
+				audio: {
+					arecordAvailable: false,
+					deviceCount: null,
+				},
+				capabilities: {
+					clipboard: false,
+					notifications: false,
+					systemd: false,
+				},
+				session: {
+					type: "unknown",
+					container: false,
+				},
+			},
+		quality: {
+			window24h: qualityWindow24h,
+			total24h: qualityTotal24h,
+			spike,
+		},
+		pipeline: {
+			mergeStrategies24h,
+			fallbacks24h,
+			validationRetries24h,
+		},
+		regression: {
+			window1hCount: events1h.length,
+			window24hCount: events24h.length,
+			baseline7dCount: baseline7d.length,
+			flags: regressionFlags,
+		},
+		thresholds,
 	};
 }

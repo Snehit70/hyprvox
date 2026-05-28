@@ -1,6 +1,7 @@
 import type { StatsSummary } from "./summary";
 
 export type HealthState = "GOOD" | "WARN" | "BAD" | "UNKNOWN";
+export type StatsFilter = "all" | "quality" | "latency" | "errors" | "fallbacks";
 
 export function ms(value: number | null): string {
 	return value === null ? "n/a" : `${Math.round(value)}ms`;
@@ -18,16 +19,34 @@ export function age(msAgo: number): string {
 	return `${min}m ${rem}s`;
 }
 
-export function latencyState(p95: number | null): HealthState {
+export function latencyState(
+	p95: number | null,
+	warnMs: number,
+	badMs: number,
+): HealthState {
 	if (p95 === null) return "UNKNOWN";
-	if (p95 <= 2000) return "GOOD";
-	if (p95 <= 3500) return "WARN";
+	if (p95 <= warnMs) return "GOOD";
+	if (p95 <= badMs) return "WARN";
 	return "BAD";
 }
 
-export function errorState(count: number): Exclude<HealthState, "UNKNOWN"> {
-	if (count === 0) return "GOOD";
-	if (count <= 10) return "WARN";
+export function errorState(
+	count: number,
+	warnCount: number,
+	badCount: number,
+): Exclude<HealthState, "UNKNOWN"> {
+	if (count < warnCount) return "GOOD";
+	if (count < badCount) return "WARN";
+	return "BAD";
+}
+
+export function qualityState(
+	count: number,
+	warnCount: number,
+	badCount: number,
+): Exclude<HealthState, "UNKNOWN"> {
+	if (count < warnCount) return "GOOD";
+	if (count < badCount) return "WARN";
 	return "BAD";
 }
 
@@ -41,8 +60,8 @@ export function daemonState(status: string): Exclude<HealthState, "UNKNOWN"> {
 
 export function truncate(text: string, width: number): string {
 	if (text.length <= width) return text;
-	if (width <= 1) return "…";
-	return `${text.slice(0, width - 1)}…`;
+	if (width <= 1) return "...";
+	return `${text.slice(0, width - 3)}...`;
 }
 
 export function sparkline(values: number[], width: number): string {
@@ -60,12 +79,6 @@ export function sparkline(values: number[], width: number): string {
 		.join("");
 }
 
-export function computePaneWidths(width: number): { left: number; right: number } {
-	const right = Math.max(34, Math.floor(width * 0.34));
-	const left = Math.max(50, width - right - 5);
-	return { left, right };
-}
-
 export function recentLatencySparkline(summary: StatsSummary, width: number): string {
 	return sparkline(
 		summary.recent
@@ -75,4 +88,34 @@ export function recentLatencySparkline(summary: StatsSummary, width: number): st
 			.filter((v) => Number.isFinite(v) && v >= 0),
 		width,
 	);
+}
+
+export function overallP0(summary: StatsSummary): HealthState {
+	const latency = latencyState(
+		summary.latency.p95Ms,
+		summary.thresholds.latencyP95WarnMs,
+		summary.thresholds.latencyP95BadMs,
+	);
+	const errors = errorState(
+		summary.errors.count,
+		summary.thresholds.errorWarnCount24h,
+		summary.thresholds.errorBadCount24h,
+	);
+	const quality = qualityState(
+		summary.quality.total24h,
+		summary.thresholds.qualityWarnCount24h,
+		summary.thresholds.qualityBadCount24h,
+	);
+	const daemon = daemonState(summary.daemon.status);
+	const hasBad = [latency, errors, quality, daemon].includes("BAD");
+	if (hasBad) return "BAD";
+	const hasWarn = [latency, errors, quality, daemon].includes("WARN");
+	if (hasWarn) return "WARN";
+	return "GOOD";
+}
+
+export function nextFilter(current: StatsFilter): StatsFilter {
+	const order: StatsFilter[] = ["all", "quality", "latency", "errors", "fallbacks"];
+	const idx = order.indexOf(current);
+	return order[(idx + 1) % order.length] ?? "all";
 }

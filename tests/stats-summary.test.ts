@@ -27,7 +27,7 @@ const history: HistoryItem[] = [
 ];
 
 describe("stats summary", () => {
-	test("computes latency, duration buckets, engines, and recent items", () => {
+	test("computes latency, duration buckets, engines, recent items, and new quality/pipeline blocks", () => {
 		const summary = buildStatsSummaryFromInput({
 			stats: { today: 2, total: 10 },
 			history,
@@ -38,7 +38,31 @@ describe("stats summary", () => {
 				history: "/history.json",
 				logs: "/logs",
 			},
+			health: {
+				checkedAt: "2026-05-23T12:00:00.000Z",
+				overall: "PASS",
+				configLoaded: true,
+				apiKeysConfigured: { groq: true, deepgram: true },
+				audio: { arecordAvailable: true, deviceCount: 1 },
+				capabilities: {
+					clipboard: true,
+					notifications: true,
+					systemd: true,
+				},
+				session: { type: "wayland", container: false },
+			},
 			now: new Date("2026-05-23T12:00:00.000Z"),
+			perfEvents: [
+				{
+					timestamp: "2026-05-23T11:30:00.000Z",
+					processingMs: 1800,
+					mergeStrategy: "llm",
+					mergeReason: "llm_succeeded",
+					validationReasons: ["token_injection"],
+					validationRetryCount: 1,
+					validationFallbackSource: "none",
+				},
+			],
 		});
 
 		expect(summary.counts).toEqual({ today: 2, total: 10, history: 3 });
@@ -51,5 +75,11 @@ describe("stats summary", () => {
 		expect(summary.engines).toEqual({ groq: 1, "groq+deepgram": 2 });
 		expect(summary.recent[0]?.text).toBe("long");
 		expect(summary.errors.recent).toEqual([]);
+		expect(summary.health.overall).toBe("PASS");
+		expect(summary.quality.total24h).toBe(1);
+		expect(summary.quality.window24h.token_injection).toBe(1);
+		expect(summary.pipeline.mergeStrategies24h.llm).toBe(1);
+		expect(summary.pipeline.validationRetries24h).toBe(1);
+		expect(summary.regression.window24hCount).toBe(1);
 	});
 });

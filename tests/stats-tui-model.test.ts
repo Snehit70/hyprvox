@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { StatsSummary } from "../src/stats/summary";
 import {
 	age,
-	computePaneWidths,
 	daemonState,
 	errorState,
 	latencyState,
 	ms,
+	nextFilter,
+	overallP0,
+	qualityState,
 	recentLatencySparkline,
 	seconds,
 	sparkline,
@@ -52,6 +54,46 @@ const baseSummary: StatsSummary = {
 	daemon: { running: true, status: "idle", pid: 42 },
 	errors: { count: 5, latest: "something failed", recent: [] },
 	paths: { config: "/tmp/cfg.json", history: "/tmp/h.json", logs: "/tmp/logs" },
+	health: {
+		checkedAt: "2026-05-25T10:00:00.000Z",
+		overall: "PASS",
+		configLoaded: true,
+		apiKeysConfigured: { groq: true, deepgram: true },
+		audio: { arecordAvailable: true, deviceCount: 2 },
+		capabilities: { clipboard: true, notifications: true, systemd: true },
+		session: { type: "wayland", container: false },
+	},
+	quality: {
+		window24h: {
+			prompt_artifact: 0,
+			cot_meta: 0,
+			token_injection: 1,
+			hallucination_suffix: 0,
+			mixed_script: 0,
+			garbage: 0,
+		},
+		total24h: 1,
+		spike: false,
+	},
+	pipeline: {
+		mergeStrategies24h: { llm: 3, single_source: 1 },
+		fallbacks24h: { none: 3, groq: 1, deepgram: 0 },
+		validationRetries24h: 1,
+	},
+	regression: {
+		window1hCount: 2,
+		window24hCount: 4,
+		baseline7dCount: 20,
+		flags: [],
+	},
+	thresholds: {
+		latencyP95WarnMs: 2500,
+		latencyP95BadMs: 4000,
+		errorWarnCount24h: 5,
+		errorBadCount24h: 20,
+		qualityWarnCount24h: 3,
+		qualityBadCount24h: 10,
+	},
 };
 
 describe("stats tui model helpers", () => {
@@ -69,16 +111,21 @@ describe("stats tui model helpers", () => {
 	});
 
 	it("assigns latency health thresholds", () => {
-		expect(latencyState(null)).toBe("UNKNOWN");
-		expect(latencyState(1999)).toBe("GOOD");
-		expect(latencyState(2500)).toBe("WARN");
-		expect(latencyState(4200)).toBe("BAD");
+		expect(latencyState(null, 2500, 4000)).toBe("UNKNOWN");
+		expect(latencyState(1999, 2500, 4000)).toBe("GOOD");
+		expect(latencyState(2500, 2500, 4000)).toBe("GOOD");
+		expect(latencyState(3200, 2500, 4000)).toBe("WARN");
+		expect(latencyState(4200, 2500, 4000)).toBe("BAD");
 	});
 
-	it("assigns error and daemon health thresholds", () => {
-		expect(errorState(0)).toBe("GOOD");
-		expect(errorState(4)).toBe("WARN");
-		expect(errorState(11)).toBe("BAD");
+	it("assigns error/quality and daemon states", () => {
+		expect(errorState(0, 5, 20)).toBe("GOOD");
+		expect(errorState(8, 5, 20)).toBe("WARN");
+		expect(errorState(20, 5, 20)).toBe("BAD");
+
+		expect(qualityState(0, 3, 10)).toBe("GOOD");
+		expect(qualityState(4, 3, 10)).toBe("WARN");
+		expect(qualityState(10, 3, 10)).toBe("BAD");
 
 		expect(daemonState("idle")).toBe("GOOD");
 		expect(daemonState("processing")).toBe("GOOD");
@@ -86,10 +133,22 @@ describe("stats tui model helpers", () => {
 		expect(daemonState("stopped")).toBe("BAD");
 	});
 
+	it("computes P0 state from summary", () => {
+		expect(overallP0(baseSummary)).toBe("BAD");
+	});
+
+	it("cycles filter order", () => {
+		expect(nextFilter("all")).toBe("quality");
+		expect(nextFilter("quality")).toBe("latency");
+		expect(nextFilter("latency")).toBe("errors");
+		expect(nextFilter("errors")).toBe("fallbacks");
+		expect(nextFilter("fallbacks")).toBe("all");
+	});
+
 	it("truncates safely for narrow widths", () => {
-		expect(truncate("abcdef", 4)).toBe("abc…");
-		expect(truncate("abcdef", 1)).toBe("…");
-		expect(truncate("abc", 4)).toBe("abc");
+		expect(truncate("abcdef", 6)).toBe("abcdef");
+		expect(truncate("abcdef", 4)).toBe("a...");
+		expect(truncate("abcdef", 1)).toBe("...");
 	});
 
 	it("renders sparkline output and respects width", () => {
@@ -105,13 +164,5 @@ describe("stats tui model helpers", () => {
 		const line = recentLatencySparkline(baseSummary, 4);
 		expect(line.length).toBe(4);
 		expect(line).toMatch(/^[▁▂▃▄▅▆▇█]+$/u);
-	});
-
-	it("computes sane pane widths across terminal sizes", () => {
-		expect(computePaneWidths(80)).toEqual({ left: 50, right: 34 });
-		const wide = computePaneWidths(180);
-		expect(wide.left).toBeGreaterThanOrEqual(50);
-		expect(wide.right).toBeGreaterThanOrEqual(34);
-		expect(wide.left + wide.right).toBeLessThanOrEqual(180);
 	});
 });
