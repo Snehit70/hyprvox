@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import type { StatsSummary } from "../src/stats/summary";
 import {
 	age,
+	confidenceLabel,
 	daemonState,
+	detectAnomalies,
 	errorState,
 	latencyState,
 	ms,
 	nextFilter,
+	nextTab,
 	overallP0,
+	prevTab,
 	qualityState,
 	recentLatencySparkline,
 	seconds,
@@ -150,6 +154,27 @@ describe("stats tui model helpers", () => {
 		expect(nextFilter("latency")).toBe("errors");
 		expect(nextFilter("errors")).toBe("fallbacks");
 		expect(nextFilter("fallbacks")).toBe("all");
+	});
+
+	it("cycles tab order", () => {
+		expect(nextTab("overview")).toBe("quality");
+		expect(nextTab("quality")).toBe("pipeline");
+		expect(nextTab("pipeline")).toBe("trends");
+		expect(nextTab("trends")).toBe("exports");
+		expect(nextTab("exports")).toBe("overview");
+		expect(prevTab("overview")).toBe("exports");
+	});
+
+	it("labels confidence using sample threshold", () => {
+		expect(confidenceLabel(3, 10)).toBe("low");
+		expect(confidenceLabel(10, 10)).toBe("high");
+	});
+
+	it("detects anomalies from thresholds and spikes", () => {
+		const anomalies = detectAnomalies(baseSummary);
+		expect(anomalies.length).toBeGreaterThan(0);
+		expect(anomalies.some((a) => a.key === "latency_bad")).toBe(true);
+		expect(anomalies.some((a) => a.key === "errors_warn")).toBe(true);
 	});
 
 	it("truncates safely for narrow widths", () => {

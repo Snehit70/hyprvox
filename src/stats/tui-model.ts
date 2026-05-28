@@ -4,6 +4,11 @@ export type HealthState = "GOOD" | "WARN" | "BAD" | "UNKNOWN";
 export type StatsFilter = "all" | "quality" | "latency" | "errors" | "fallbacks";
 export type StatsTab = "overview" | "quality" | "pipeline" | "trends" | "exports";
 export type StatsWindowPreset = "15m" | "1h" | "6h" | "24h" | "7d";
+export type Anomaly = {
+	key: string;
+	severity: "warn" | "bad";
+	message: string;
+};
 
 export function ms(value: number | null): string {
 	return value === null ? "n/a" : `${Math.round(value)}ms`;
@@ -136,4 +141,68 @@ export function prevTab(current: StatsTab): StatsTab {
 
 export function confidenceLabel(count: number, minSampleSize: number): string {
 	return count >= minSampleSize ? "high" : "low";
+}
+
+export function detectAnomalies(summary: StatsSummary): Anomaly[] {
+	const anomalies: Anomaly[] = [];
+	const p95 = summary.latency.p95Ms ?? 0;
+	if (p95 >= summary.thresholds.latencyP95BadMs) {
+		anomalies.push({
+			key: "latency_bad",
+			severity: "bad",
+			message: `Latency p95 ${ms(p95)} above bad threshold`,
+		});
+	} else if (p95 >= summary.thresholds.latencyP95WarnMs) {
+		anomalies.push({
+			key: "latency_warn",
+			severity: "warn",
+			message: `Latency p95 ${ms(p95)} above warn threshold`,
+		});
+	}
+
+	if (summary.errors.count >= summary.thresholds.errorBadCount24h) {
+		anomalies.push({
+			key: "errors_bad",
+			severity: "bad",
+			message: `Error volume ${summary.errors.count} exceeds bad threshold`,
+		});
+	} else if (summary.errors.count >= summary.thresholds.errorWarnCount24h) {
+		anomalies.push({
+			key: "errors_warn",
+			severity: "warn",
+			message: `Error volume ${summary.errors.count} exceeds warn threshold`,
+		});
+	}
+
+	if (summary.quality.total24h >= summary.thresholds.qualityBadCount24h) {
+		anomalies.push({
+			key: "quality_bad",
+			severity: "bad",
+			message: `Quality failures ${summary.quality.total24h} exceed bad threshold`,
+		});
+	} else if (summary.quality.total24h >= summary.thresholds.qualityWarnCount24h) {
+		anomalies.push({
+			key: "quality_warn",
+			severity: "warn",
+			message: `Quality failures ${summary.quality.total24h} exceed warn threshold`,
+		});
+	}
+
+	if (summary.quality.spike) {
+		anomalies.push({
+			key: "quality_spike",
+			severity: "warn",
+			message: "Quality spike detected in 1h window",
+		});
+	}
+
+	if (summary.cache.eventLagMs > 120000) {
+		anomalies.push({
+			key: "cache_lag",
+			severity: "warn",
+			message: `Cache event lag high (${ms(summary.cache.eventLagMs)})`,
+		});
+	}
+
+	return anomalies;
 }
