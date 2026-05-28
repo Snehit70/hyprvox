@@ -10,6 +10,7 @@ import type { StatsSummary } from "./summary";
 import {
 	age,
 	confidenceLabel,
+	detectAnomalies,
 	daemonState,
 	errorState,
 	latencyState,
@@ -332,6 +333,7 @@ function StatApp({
 	]);
 
 	const p0 = summary ? overallP0(summary) : "UNKNOWN";
+	const anomalies = detectAnomalies(summary);
 
 	if (!summary) {
 		return (
@@ -443,24 +445,42 @@ function StatApp({
 							</Section>
 						</box>
 						<box flexDirection="column" flexGrow={1} gap={1}>
+							<Section title="Anomaly Cards" height={degradedMode ? 7 : 10}>
+								{anomalies.length === 0 ? (
+									<text fg={colors.ok}>No anomalies detected.</text>
+								) : (
+									anomalies
+										.slice(0, degradedMode ? 2 : 5)
+										.map((item) => (
+											<text key={item.key} fg={item.severity === "bad" ? colors.bad : colors.warn}>
+												{truncate(item.message, Math.max(32, Math.floor(width * 0.34)))}
+											</text>
+										))
+								)}
+							</Section>
+							{degradedMode ? null : (
 							<Section title="Cache Health" height={8}>
 								<text fg={colors.text}>source {summary.cache.source}</text>
 								<text fg={colors.text}>hit-rate {(summary.cache.hitRate * 100).toFixed(0)}%</text>
 								<text fg={colors.text}>event lag {ms(summary.cache.eventLagMs)}</text>
 								<text fg={colors.text}>last rebuild {new Date(summary.cache.lastRebuildAt).toLocaleTimeString()}</text>
 							</Section>
+							)}
+							{degradedMode ? null : (
 							<Section title="Regression" height={8}>
 								<text fg={colors.text}>1h sessions {summary.regression.window1hCount}</text>
 								<text fg={colors.text}>24h sessions {summary.regression.window24hCount}</text>
 								<text fg={colors.text}>7d baseline {summary.regression.baseline7dCount}</text>
 								<text fg={summary.regression.flags.length > 0 ? colors.warn : colors.ok}>flags: {summary.regression.flags.join(", ") || "none"}</text>
 							</Section>
+							)}
 						</box>
 					</>
 				) : null}
 
 				{activeTab === "quality" ? (
-					<Section title="Quality Rankings (24h)" height={height - 9}>
+					<box flexDirection="column" flexGrow={1} gap={1}>
+					<Section title="Quality Rankings (24h)" height={degradedMode ? height - 14 : Math.max(12, Math.floor((height - 10) * 0.65))}>
 						{Object.entries(summary.quality.window24h)
 							.sort((a, b) => b[1] - a[1])
 							.map(([name, count]) => (
@@ -469,6 +489,15 @@ function StatApp({
 								</text>
 							))}
 					</Section>
+					{degradedMode ? null : (
+						<Section title="Quality Drilldown" height={Math.max(8, Math.floor((height - 10) * 0.35))}>
+							<text fg={colors.text}>Top issue: {Object.entries(summary.quality.window24h).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "none"}</text>
+							<text fg={colors.text}>Top issue count: {Object.entries(summary.quality.window24h).sort((a, b) => b[1] - a[1])[0]?.[1] ?? 0}</text>
+							<text fg={colors.text}>Total quality failures: {summary.quality.total24h}</text>
+							<text fg={summary.quality.spike ? colors.warn : colors.ok}>1h spike: {summary.quality.spike ? "yes" : "no"}</text>
+						</Section>
+					)}
+					</box>
 				) : null}
 
 				{activeTab === "pipeline" ? (
@@ -487,12 +516,19 @@ function StatApp({
 								</text>
 							))}
 						</Section>
-						<Section title="Fallbacks" height={8}>
+						<Section title="Fallbacks" height={degradedMode ? 6 : 8}>
 							<text fg={colors.text}>none {summary.pipeline.fallbacks24h.none}</text>
 							<text fg={colors.text}>groq {summary.pipeline.fallbacks24h.groq}</text>
 							<text fg={colors.text}>deepgram {summary.pipeline.fallbacks24h.deepgram}</text>
 							<text fg={colors.text}>validation retries {summary.pipeline.validationRetries24h}</text>
 						</Section>
+						{degradedMode ? null : (
+							<Section title="Pipeline Drilldown" height={8}>
+								<text fg={colors.text}>Top merge strategy: {topStrategies[0]?.[0] ?? "none"}</text>
+								<text fg={colors.text}>Top model: {topModels[0]?.[0] ?? "unknown"}</text>
+								<text fg={colors.text}>Model diversity (24h): {Object.keys(summary.pipeline.modelRank24h).length}</text>
+							</Section>
+						)}
 					</box>
 				) : null}
 
@@ -502,6 +538,11 @@ function StatApp({
 							<text fg={colors.text}>Latency trend {windowSpark || "n/a"}</text>
 							<text fg={colors.text}>samples {windowValues.length} [{confidenceLabel(windowValues.length, minSampleSize)}]</text>
 							<text fg={colors.text}>window switch: t</text>
+						</Section>
+						<Section title="Anomaly Trend" height={degradedMode ? 6 : 8}>
+							<text fg={colors.text}>anomaly count {anomalies.length}</text>
+							<text fg={colors.text}>severity mix bad/warn {anomalies.filter((a) => a.severity === "bad").length}/{anomalies.filter((a) => a.severity === "warn").length}</text>
+							<text fg={colors.muted}>high anomalies likely imply degraded reliability</text>
 						</Section>
 						<Section title="Thresholds" height={10}>
 							<text fg={colors.text}>latency warn/bad {summary.thresholds.latencyP95WarnMs}/{summary.thresholds.latencyP95BadMs} ms</text>
