@@ -69,6 +69,9 @@ function getErrorMessage(error: unknown): string | undefined {
 
 export class GroqClient {
 	private _client: Groq | null = null;
+	private static readonly REQUEST_TIMEOUT_MS = 30000;
+	private static readonly REQUEST_TIMEOUT_LONG_MS = 45000;
+	private static readonly LONG_RECORDING_THRESHOLD_MS = 120000;
 
 	private get client(): Groq {
 		if (!this._client) {
@@ -122,8 +125,15 @@ export class GroqClient {
 		language: string = "en",
 		boostWords: string[] = [],
 		format: "opus" | "wav" = "opus",
+		recordingDurationMs?: number,
 	): Promise<string> {
 		try {
+			const requestTimeoutMs =
+				recordingDurationMs &&
+				recordingDurationMs >= GroqClient.LONG_RECORDING_THRESHOLD_MS
+					? GroqClient.REQUEST_TIMEOUT_LONG_MS
+					: GroqClient.REQUEST_TIMEOUT_MS;
+
 			return await withRetry(
 				async (signal) => {
 					const filename = format === "opus" ? "audio.opus" : "audio.wav";
@@ -144,7 +154,7 @@ export class GroqClient {
 						},
 						{
 							signal,
-							timeout: 30000,
+							timeout: requestTimeoutMs,
 							maxRetries: 0,
 						},
 					);
@@ -166,8 +176,11 @@ export class GroqClient {
 					operationName: "Groq Transcription",
 					maxRetries: 2,
 					backoffs: [100, 200],
-					timeout: 30000,
+					timeout: requestTimeoutMs,
 					shouldRetry: (error: unknown) => {
+						if (getErrorMessage(error)?.includes("timed out")) {
+							return false;
+						}
 						const status = getErrorStatus(error);
 						return status === undefined || status >= 500 || status === 429;
 					},
