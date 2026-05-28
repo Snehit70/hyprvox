@@ -5,6 +5,7 @@ import { AudioDeviceService } from "../audio/device-service";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
 import type { DaemonState } from "../daemon/service";
 import { detectEnvironment } from "../setup/environment";
+import { loadStatsAggregateEntries } from "./aggregate";
 import { type HistoryItem, loadHistory } from "../utils/history";
 import { loadStats } from "../utils/stats";
 
@@ -24,6 +25,9 @@ interface PerfEvent {
 	validationReasons: QualityReason[];
 	validationRetryCount: number;
 	validationFallbackSource: "none" | "groq" | "deepgram";
+	groqSttModel?: string;
+	deepgramModel?: string;
+	mergeModel?: string;
 }
 
 export interface StatsSummary {
@@ -93,6 +97,7 @@ export interface StatsSummary {
 		mergeStrategies24h: Record<string, number>;
 		fallbacks24h: Record<"none" | "groq" | "deepgram", number>;
 		validationRetries24h: number;
+		modelRank24h: Record<string, number>;
 	};
 	regression: {
 		window1hCount: number;
@@ -108,6 +113,12 @@ export interface StatsSummary {
 		qualityWarnCount24h: number;
 		qualityBadCount24h: number;
 	};
+	cache: {
+		source: "aggregate" | "logs";
+		lastRebuildAt: string;
+		hitRate: number;
+		eventLagMs: number;
+	};
 }
 
 export interface StatsSummaryInput {
@@ -122,6 +133,11 @@ export interface StatsSummaryInput {
 	health?: StatsSummary["health"];
 	perfEvents?: PerfEvent[];
 	thresholds?: StatsSummary["thresholds"];
+	cacheMeta?: {
+		source: "aggregate" | "logs";
+		lastRebuildAt: string;
+		hitRate: number;
+	};
 	now?: Date;
 }
 
@@ -269,9 +285,89 @@ function readPerfEvents(logEntries: Array<Record<string, unknown>>): PerfEvent[]
 				entry.validationFallbackSource === "deepgram"
 					? entry.validationFallbackSource
 					: "none",
+			groqSttModel:
+				typeof entry.groqSttModel === "string" ? entry.groqSttModel : undefined,
+			deepgramModel:
+				typeof entry.deepgramModel === "string"
+					? entry.deepgramModel
+					: undefined,
+			mergeModel:
+				typeof entry.mergeModel === "string" ? entry.mergeModel : undefined,
 		});
 	}
 	return events;
+}
+
+async function loadPerfEventsHybrid(
+	logEntries: Array<Record<string, unknown>>,
+	cacheTtlMs: number,
+): Promise<{
+	events: PerfEvent[];
+	source: "aggregate" | "logs";
+	lastRebuildAt: string;
+	hitRate: number;
+}> {
+	const now = Date.now();
+	if (perfEventCache && perfEventCache.expiresAt > now) {
+		return {
+			events: perfEventCache.events,
+			source: perfEventCache.source,
+			lastRebuildAt: perfEventCache.lastRebuildAt,
+			hitRate: 1,
+		};
+	}
+
+	const aggregateRows = await loadStatsAggregateEntries(8000);
+	if (aggregateRows.length > 0) {
+		const events: PerfEvent[] = aggregateRows.map((row) => ({
+			timestamp: row.timestamp,
+			processingMs: row.processingMs,
+			mergeStrategy: row.mergeStrategy,
+			mergeReason: row.mergeReason,
+			validationReasons: row.validationReasons.filter(
+				(value): value is QualityReason =>
+					[
+						"prompt_artifact",
+						"cot_meta",
+						"token_injection",
+						"hallucination_suffix",
+						"mixed_script",
+						"garbage",
+					].includes(value),
+			),
+			validationRetryCount: row.validationRetryCount,
+			validationFallbackSource: row.validationFallbackSource,
+			groqSttModel: row.groqSttModel,
+			deepgramModel: row.deepgramModel,
+			mergeModel: row.mergeModel,
+		}));
+		perfEventCache = {
+			expiresAt: now + cacheTtlMs,
+			events,
+			source: "aggregate",
+			lastRebuildAt: new Date().toISOString(),
+		};
+		return {
+			events,
+			source: "aggregate",
+			lastRebuildAt: perfEventCache.lastRebuildAt,
+			hitRate: 0.95,
+		};
+	}
+
+	const events = readPerfEvents(logEntries);
+	perfEventCache = {
+		expiresAt: now + cacheTtlMs,
+		events,
+		source: "logs",
+		lastRebuildAt: new Date().toISOString(),
+	};
+	return {
+		events,
+		source: "logs",
+		lastRebuildAt: perfEventCache.lastRebuildAt,
+		hitRate: 0.3,
+	};
 }
 
 function pickThresholdsFromConfig(): StatsSummary["thresholds"] {
@@ -383,7 +479,10 @@ export async function buildStatsSummary(): Promise<StatsSummary> {
 	const overall = failCount > 0 ? "FAIL" : warnCount > 0 ? "WARN" : "PASS";
 
 	const logEntries = readLogEntries(logsPath);
-	const perfEvents = readPerfEvents(logEntries);
+	const ttlMs =
+		((loadConfig() as { transcription?: { statsCacheTtlMs?: number } }).transcription
+			?.statsCacheTtlMs ?? 10000);
+	const perfBundle = await loadPerfEventsHybrid(logEntries, ttlMs);
 
 	return buildStatsSummaryFromInput({
 		stats,
@@ -417,8 +516,13 @@ export async function buildStatsSummary(): Promise<StatsSummary> {
 				container: envInfo.isContainer,
 			},
 		},
-		perfEvents,
+		perfEvents: perfBundle.events,
 		thresholds: pickThresholdsFromConfig(),
+		cacheMeta: {
+			source: perfBundle.source,
+			lastRebuildAt: perfBundle.lastRebuildAt,
+			hitRate: perfBundle.hitRate,
+		},
 	});
 }
 
@@ -472,11 +576,18 @@ export function buildStatsSummaryFromInput(
 		deepgram: 0,
 	};
 	let validationRetries24h = 0;
+	const modelRank24h: Record<string, number> = {};
 	for (const event of events24h) {
 		mergeStrategies24h[event.mergeStrategy] =
 			(mergeStrategies24h[event.mergeStrategy] ?? 0) + 1;
 		fallbacks24h[event.validationFallbackSource] += 1;
 		validationRetries24h += event.validationRetryCount;
+		const modelKey =
+			event.mergeModel ||
+			event.groqSttModel ||
+			event.deepgramModel ||
+			"unknown-model";
+		modelRank24h[modelKey] = (modelRank24h[modelKey] ?? 0) + 1;
 	}
 
 	const regressionFlags: string[] = [];
@@ -567,6 +678,7 @@ export function buildStatsSummaryFromInput(
 			mergeStrategies24h,
 			fallbacks24h,
 			validationRetries24h,
+			modelRank24h,
 		},
 		regression: {
 			window1hCount: events1h.length,
@@ -575,5 +687,23 @@ export function buildStatsSummaryFromInput(
 			flags: regressionFlags,
 		},
 		thresholds,
+		cache: {
+			source: input.cacheMeta?.source ?? "logs",
+			lastRebuildAt: input.cacheMeta?.lastRebuildAt ?? now.toISOString(),
+			hitRate: input.cacheMeta?.hitRate ?? 0,
+			eventLagMs: Math.max(
+				0,
+				nowMs -
+					(events24h.length > 0
+						? new Date(events24h[events24h.length - 1]?.timestamp ?? now).getTime()
+						: nowMs),
+			),
+		},
 	};
 }
+let perfEventCache: {
+	expiresAt: number;
+	events: PerfEvent[];
+	source: "aggregate" | "logs";
+	lastRebuildAt: string;
+} | null = null;

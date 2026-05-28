@@ -79,6 +79,7 @@ const baseSummary: StatsSummary = {
 		mergeStrategies24h: { llm: 3, single_source: 1 },
 		fallbacks24h: { none: 3, groq: 1, deepgram: 0 },
 		validationRetries24h: 1,
+		modelRank24h: { "llama-3.3-70b-versatile": 4 },
 	},
 	regression: {
 		window1hCount: 2,
@@ -93,6 +94,12 @@ const baseSummary: StatsSummary = {
 		errorBadCount24h: 20,
 		qualityWarnCount24h: 3,
 		qualityBadCount24h: 10,
+	},
+	cache: {
+		source: "aggregate",
+		lastRebuildAt: "2026-05-25T10:00:00.000Z",
+		hitRate: 0.95,
+		eventLagMs: 1200,
 	},
 };
 

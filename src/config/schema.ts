@@ -181,6 +181,9 @@ const defaultTranscription = {
 		qualityWarnCount24h: 3,
 		qualityBadCount24h: 10,
 	},
+	statsCacheTtlMs: 10000,
+	statsRenderBudgetMs: 50,
+	statsMinSampleSize: 10,
 	mergeModel: "llama-3.3-70b-versatile",
 	formattingMode: "clean",
 } as const;
@@ -287,6 +290,18 @@ export const TranscriptionSchema = z.object({
 				.default(defaultTranscription.statsThresholds.qualityBadCount24h),
 		})
 		.default(defaultTranscription.statsThresholds),
+	statsCacheTtlMs: z
+		.number()
+		.min(1000)
+		.default(defaultTranscription.statsCacheTtlMs),
+	statsRenderBudgetMs: z
+		.number()
+		.min(10)
+		.default(defaultTranscription.statsRenderBudgetMs),
+	statsMinSampleSize: z
+		.number()
+		.min(1)
+		.default(defaultTranscription.statsMinSampleSize),
 	mergeModel: z.string().default(defaultTranscription.mergeModel),
 	formattingMode: z
 		.enum(["verbatim", "clean", "structured"])

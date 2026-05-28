@@ -61,6 +61,7 @@ describe("stats summary", () => {
 					validationReasons: ["token_injection"],
 					validationRetryCount: 1,
 					validationFallbackSource: "none",
+					mergeModel: "llama-3.3-70b-versatile",
 				},
 			],
 		});
@@ -79,7 +80,9 @@ describe("stats summary", () => {
 		expect(summary.quality.total24h).toBe(1);
 		expect(summary.quality.window24h.token_injection).toBe(1);
 		expect(summary.pipeline.mergeStrategies24h.llm).toBe(1);
+		expect(summary.pipeline.modelRank24h["llama-3.3-70b-versatile"]).toBe(1);
 		expect(summary.pipeline.validationRetries24h).toBe(1);
 		expect(summary.regression.window24hCount).toBe(1);
+		expect(summary.cache.source).toBe("logs");
 	});
 });

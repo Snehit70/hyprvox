@@ -2,6 +2,8 @@ import type { StatsSummary } from "./summary";
 
 export type HealthState = "GOOD" | "WARN" | "BAD" | "UNKNOWN";
 export type StatsFilter = "all" | "quality" | "latency" | "errors" | "fallbacks";
+export type StatsTab = "overview" | "quality" | "pipeline" | "trends" | "exports";
+export type StatsWindowPreset = "15m" | "1h" | "6h" | "24h" | "7d";
 
 export function ms(value: number | null): string {
 	return value === null ? "n/a" : `${Math.round(value)}ms`;
@@ -118,4 +120,20 @@ export function nextFilter(current: StatsFilter): StatsFilter {
 	const order: StatsFilter[] = ["all", "quality", "latency", "errors", "fallbacks"];
 	const idx = order.indexOf(current);
 	return order[(idx + 1) % order.length] ?? "all";
+}
+
+export function nextTab(current: StatsTab): StatsTab {
+	const order: StatsTab[] = ["overview", "quality", "pipeline", "trends", "exports"];
+	const idx = order.indexOf(current);
+	return order[(idx + 1) % order.length] ?? "overview";
+}
+
+export function prevTab(current: StatsTab): StatsTab {
+	const order: StatsTab[] = ["overview", "quality", "pipeline", "trends", "exports"];
+	const idx = order.indexOf(current);
+	return order[(idx - 1 + order.length) % order.length] ?? "overview";
+}
+
+export function confidenceLabel(count: number, minSampleSize: number): string {
+	return count >= minSampleSize ? "high" : "low";
 }
