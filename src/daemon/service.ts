@@ -1116,6 +1116,7 @@ export class DaemonService {
 								language,
 								boostWords,
 								audioFormat,
+								duration,
 							)
 							.catch((err) => {
 								groqErr = err;
@@ -1172,6 +1173,7 @@ export class DaemonService {
 								language,
 								boostWords,
 								audioFormat,
+								duration,
 							)
 							.catch((err) => {
 								groqErr = err;
