@@ -172,6 +172,7 @@ const defaultTranscription = {
 	language: "en",
 	streaming: false,
 	deepgramBoosting: false,
+	lexiconEnabled: true,
 	mergeModel: "llama-3.3-70b-versatile",
 	formattingMode: "clean",
 } as const;
@@ -249,6 +250,7 @@ export const TranscriptionSchema = z.object({
 	language: z.enum(["en"]).default(defaultTranscription.language as "en"),
 	streaming: z.boolean().default(defaultTranscription.streaming),
 	deepgramBoosting: z.boolean().default(defaultTranscription.deepgramBoosting),
+	lexiconEnabled: z.boolean().default(defaultTranscription.lexiconEnabled),
 	mergeModel: z.string().default(defaultTranscription.mergeModel),
 	formattingMode: z
 		.enum(["verbatim", "clean", "structured"])
