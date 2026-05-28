@@ -233,10 +233,14 @@ export class DaemonService {
 
 	private refreshContextLexicon(): void {
 		const configuredBoostWords = this.config.transcription.boostWords || [];
-		this.contextLexicon = buildContextLexicon({
-			rootDir: projectRoot,
-			boostWords: configuredBoostWords,
-		});
+		if (this.config.transcription.lexiconEnabled) {
+			this.contextLexicon = buildContextLexicon({
+				rootDir: projectRoot,
+				boostWords: configuredBoostWords,
+			});
+		} else {
+			this.contextLexicon = [];
+		}
 		this.providerBoostWords = this.mergeProviderBoostWords(
 			configuredBoostWords,
 			this.contextLexicon,
