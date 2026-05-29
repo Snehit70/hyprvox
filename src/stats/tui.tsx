@@ -618,7 +618,7 @@ function StatApp({
 								<text fg={colors.text}>Duration avg {seconds(summary.duration.averageSeconds)} | S/M/L {summary.duration.shortCount}/{summary.duration.mediumCount}/{summary.duration.longCount}</text>
 								<text fg={colors.muted}>Pulse {recentLatencySpark || "n/a"} | refreshed {age(Date.now() - lastRefreshAt)} ago</text>
 							</Section>
-							<Section title="Recent Sessions" height={height - 18}>
+							<Section title={`Recent Sessions [${recentSortMode}/${recentLocalFilter}]`} height={height - 18}>
 								<text fg={colors.muted}>age  time  engine         lat    flags  text</text>
 								{recentRows.length === 0 ? (
 									<text fg={colors.muted}>no rows for filter {recentLocalFilter}; press v then 1 for all</text>
@@ -629,16 +629,16 @@ function StatApp({
 										return (
 											<text key={row.key} fg={isActive ? colors.bg : rowColor(row.severity)} bg={isActive ? colors.accent : undefined}>
 												{truncate(
-													`${row.ageLabel.padEnd(4)} ${new Date(row.item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }).padEnd(5)} ${truncate(row.item.engine, 14).padEnd(14)} ${ms(row.item.processingTime).padEnd(6)} ${(row.flags.join(",") || "-").padEnd(6)} ${truncate(row.item.text, 60)}`,
+													`${isActive ? ">" : " "}${row.ageLabel.padEnd(4)} ${new Date(row.item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }).padEnd(5)} ${truncate(row.item.engine, 14).padEnd(14)} ${ms(row.item.processingTime).padEnd(6)} ${(row.flags.join(",") || "-").padEnd(6)} ${truncate(row.item.text, 60)}`,
 													Math.max(24, Math.floor(width * 0.56)),
 												)}
 											</text>
 										);
 									})
 								)}
-								<text fg={colors.muted}>sort:{recentSortMode} filter:{recentLocalFilter} rows:{recentRows.length}</text>
+								<text fg={colors.muted}>rows:{recentRows.length} | nav j/k row u/d page | n sort | v filter</text>
 								{selectedRecentRow ? (
-									<text fg={colors.text}>selected: {truncate(selectedRecentRow.item.text, Math.max(24, Math.floor(width * 0.56)))}</text>
+									<text fg={colors.text}>detail: {truncate(selectedRecentRow.item.text, Math.max(24, Math.floor(width * 0.56)))}</text>
 								) : null}
 							</Section>
 						</box>
