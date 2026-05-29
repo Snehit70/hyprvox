@@ -1,4 +1,5 @@
 import { mkdir, writeFile } from "node:fs/promises";
+import { readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { TextAttributes, createCliRenderer } from "@opentui/core";
@@ -117,24 +118,57 @@ async function exportSnapshot(
 }
 
 function filterByWindow(summary: StatsSummary, preset: StatsWindowPreset): number[] {
-	const now = Date.now();
-	const windowMs =
-		preset === "15m"
-			? 15 * 60_000
-			: preset === "1h"
-				? 60 * 60_000
-				: preset === "6h"
-					? 6 * 60 * 60_000
-					: preset === "24h"
-						? 24 * 60 * 60_000
-						: 7 * 24 * 60 * 60_000;
-	return summary.recent
-		.filter((item) => {
-			const ts = new Date(item.timestamp).getTime();
-			return Number.isFinite(ts) && now - ts <= windowMs;
-		})
-		.map((item) => item.processingTime)
-		.filter((value) => Number.isFinite(value) && value >= 0);
+	if (preset === "15m") return summary.trends.processingMs.window15m;
+	if (preset === "1h") return summary.trends.processingMs.window1h;
+	if (preset === "6h") return summary.trends.processingMs.window6h;
+	if (preset === "24h") return summary.trends.processingMs.window24h;
+	return summary.trends.processingMs.window7d;
+}
+
+function readStatsUiConfig(): { renderBudgetMs: number; minSampleSize: number } {
+	try {
+		const cfg = loadConfig() as {
+			transcription?: {
+				statsRenderBudgetMs?: number;
+				statsMinSampleSize?: number;
+			};
+		};
+		const renderBudgetMs = cfg.transcription?.statsRenderBudgetMs;
+		const minSampleSize = cfg.transcription?.statsMinSampleSize;
+		return {
+			renderBudgetMs:
+				typeof renderBudgetMs === "number" && Number.isFinite(renderBudgetMs)
+					? renderBudgetMs
+					: 50,
+			minSampleSize:
+				typeof minSampleSize === "number" && Number.isFinite(minSampleSize)
+					? minSampleSize
+					: 10,
+		};
+	} catch {
+		return { renderBudgetMs: 50, minSampleSize: 10 };
+	}
+}
+
+function resolveWatchPaths(summary: StatsSummary): string[] {
+	const base = [
+		summary.paths.history,
+		summary.paths.logs,
+		join(homedir(), ".config", "hypr", "vox", "daemon.state"),
+	].filter((p): p is string => Boolean(p));
+	const expanded = new Set<string>(base);
+	for (const path of base) {
+		try {
+			if (!statSync(path).isDirectory()) continue;
+			for (const file of readdirSync(path)) {
+				if (!file.endsWith(".log")) continue;
+				expanded.add(join(path, file));
+			}
+		} catch {
+			// Ignore paths that cannot be expanded.
+		}
+	}
+	return [...expanded];
 }
 
 function StatApp({
@@ -161,22 +195,18 @@ function StatApp({
 	const [windowPreset, setWindowPreset] = useState<StatsWindowPreset>(DEFAULT_UI_STATE.windowPreset);
 	const [loadedTabs, setLoadedTabs] = useState<Set<StatsTab>>(new Set(["overview"]));
 	const [degradedMode, setDegradedMode] = useState(false);
+	const statsUiConfig = useMemo(() => readStatsUiConfig(), []);
 	const watchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-	const renderBudgetMs =
-		(loadConfig() as { transcription?: { statsRenderBudgetMs?: number } }).transcription
-			?.statsRenderBudgetMs ?? 50;
-	const minSampleSize =
-		(loadConfig() as { transcription?: { statsMinSampleSize?: number } }).transcription
-			?.statsMinSampleSize ?? 10;
+	const minSampleSize = statsUiConfig.minSampleSize;
 
 	const refresh = () => {
-		const beganAt = Date.now();
 		void loadSummary()
 			.then((data) => {
+				const renderBeganAt = Date.now();
 				setSummary(data);
 				setLastRefreshAt(Date.now());
 				if (ttfpMs === null) setTtfpMs(Date.now() - startedAtMs);
-				setDegradedMode(Date.now() - beganAt > renderBudgetMs);
+				setDegradedMode(Date.now() - renderBeganAt > statsUiConfig.renderBudgetMs);
 			})
 			.catch((error) => {
 				setStatusMessage(`refresh failed: ${(error as Error).message}`);
@@ -210,11 +240,7 @@ function StatApp({
 	useEffect(() => {
 		if (!summary) return;
 		const watchers: Array<{ close: () => void }> = [];
-		const watchPaths = [
-			summary.paths.history,
-			summary.paths.logs,
-			join(homedir(), ".config", "hypr", "vox", "daemon.state"),
-		].filter((p): p is string => Boolean(p));
+		const watchPaths = resolveWatchPaths(summary);
 
 		for (const path of watchPaths) {
 			try {
@@ -270,13 +296,17 @@ function StatApp({
 				return;
 			}
 			if (filterPrompt) {
-				if (key === "1") setFilter("all");
-				if (key === "2") setFilter("quality");
-				if (key === "3") setFilter("latency");
-				if (key === "4") setFilter("errors");
-				if (key === "5") setFilter("fallbacks");
+				let next: StatsFilter | null = null;
+				if (key === "1") next = "all";
+				if (key === "2") next = "quality";
+				if (key === "3") next = "latency";
+				if (key === "4") next = "errors";
+				if (key === "5") next = "fallbacks";
+				if (next) {
+					setFilter(next);
+					setStatusMessage(`filter: ${next}`);
+				}
 				setFilterPrompt(false);
-				setStatusMessage(`filter: ${filter}`);
 				return;
 			}
 
@@ -333,7 +363,6 @@ function StatApp({
 	]);
 
 	const p0 = summary ? overallP0(summary) : "UNKNOWN";
-	const anomalies = detectAnomalies(summary);
 
 	if (!summary) {
 		return (
@@ -342,6 +371,8 @@ function StatApp({
 			</box>
 		);
 	}
+
+	const anomalies = detectAnomalies(summary);
 
 	const latencyHealth = latencyState(
 		summary.latency.p95Ms,
@@ -385,7 +416,7 @@ function StatApp({
 	return (
 		<box width={width} height={height} backgroundColor={colors.bg} flexDirection="column">
 			<box
-				height={2}
+				height={1}
 				borderBottom
 				borderColor={colors.border}
 				paddingLeft={1}
@@ -396,7 +427,7 @@ function StatApp({
 					hyprvox stats | p0 {p0} | {tabLabel(activeTab)} | filter {filter}
 				</text>
 				<text fg={colors.muted}>
-					updated {new Date(summary.generatedAt).toLocaleTimeString()} | {autoRefresh ? "auto:on" : "auto:off"} | ttfp {ttfpMs ?? 0}ms
+					{autoRefresh ? "auto:on" : "auto:off"} | ttfp {ttfpMs ?? 0}ms | upd {new Date(summary.generatedAt).toLocaleTimeString()}
 				</text>
 			</box>
 
@@ -564,7 +595,7 @@ function StatApp({
 
 			<box height={3} borderTop borderColor={colors.border} paddingLeft={1} paddingRight={1}>
 				<text fg={colors.muted}>
-					hotkeys: 1-5 tabs | h/l prev-next | q quit | r refresh | a auto | / filter | f next filter | j/k scroll | g/G jump | t window | e/E export
+					hotkeys: q quit | 1-5 tabs | h/l nav | r refresh | a auto | / filter | j/k scroll | t window | e/E export
 				</text>
 			</box>
 			<box height={1} paddingLeft={1}>
