@@ -87,6 +87,69 @@ function tabLabel(tab: StatsTab): string {
 	return "Exports";
 }
 
+type RecentSortMode = "severity" | "newest";
+type RecentLocalFilter = "all" | "bad" | "warn" | "good";
+type RecentSessionRow = {
+	key: string;
+	item: StatsSummary["recent"][number];
+	ageLabel: string;
+	flags: string[];
+	severity: "bad" | "warn" | "good";
+	severityScore: number;
+};
+
+function scoreSeverity(item: StatsSummary["recent"][number], summary: StatsSummary): { severity: "bad" | "warn" | "good"; score: number; flags: string[] } {
+	const flags: string[] = [];
+	let score = 0;
+	if (item.processingTime >= summary.thresholds.latencyP95BadMs) {
+		score += 3;
+		flags.push("LAT");
+	} else if (item.processingTime >= summary.thresholds.latencyP95WarnMs) {
+		score += 2;
+		flags.push("LAT");
+	}
+	const hasErrorSignal = summary.errors.count > 0;
+	if (hasErrorSignal) {
+		score += 1;
+		flags.push("ERR");
+	}
+	if (summary.quality.total24h >= summary.thresholds.qualityBadCount24h) {
+		score += 2;
+		flags.push("QTY");
+	} else if (summary.quality.total24h >= summary.thresholds.qualityWarnCount24h) {
+		score += 1;
+		flags.push("QTY");
+	}
+	if (summary.pipeline.fallbacks24h.groq + summary.pipeline.fallbacks24h.deepgram > 0) {
+		score += 1;
+		flags.push("FB");
+	}
+	if (score >= 4) return { severity: "bad", score, flags };
+	if (score >= 2) return { severity: "warn", score, flags };
+	return { severity: "good", score, flags };
+}
+
+function sortRecentRows(rows: RecentSessionRow[], mode: RecentSortMode): RecentSessionRow[] {
+	if (mode === "newest") {
+		return rows.slice().sort((a, b) => new Date(b.item.timestamp).getTime() - new Date(a.item.timestamp).getTime());
+	}
+	return rows.slice().sort((a, b) => {
+		if (b.severityScore !== a.severityScore) return b.severityScore - a.severityScore;
+		return new Date(b.item.timestamp).getTime() - new Date(a.item.timestamp).getTime();
+	});
+}
+
+function rowColor(severity: RecentSessionRow["severity"]): string {
+	if (severity === "bad") return colors.bad;
+	if (severity === "warn") return colors.warn;
+	return colors.muted;
+}
+
+function rowMatchesFilter(row: RecentSessionRow, filter: RecentLocalFilter): boolean {
+	if (filter === "all") return true;
+	return row.severity === filter;
+}
+
 async function exportSnapshot(
 	summary: StatsSummary,
 	format: "json" | "md",
@@ -191,6 +254,11 @@ function StatApp({
 	const [pendingExportScope, setPendingExportScope] = useState<"tab" | "global">("tab");
 	const [filterPrompt, setFilterPrompt] = useState(false);
 	const [recentOffset, setRecentOffset] = useState(0);
+	const [recentSelectedIndex, setRecentSelectedIndex] = useState(0);
+	const [recentSelectedKey, setRecentSelectedKey] = useState<string | null>(null);
+	const [recentSortMode, setRecentSortMode] = useState<RecentSortMode>("severity");
+	const [recentLocalFilter, setRecentLocalFilter] = useState<RecentLocalFilter>("all");
+	const [recentFilterPrompt, setRecentFilterPrompt] = useState(false);
 	const [activeTab, setActiveTab] = useState<StatsTab>(DEFAULT_UI_STATE.activeTab);
 	const [windowPreset, setWindowPreset] = useState<StatsWindowPreset>(DEFAULT_UI_STATE.windowPreset);
 	const [loadedTabs, setLoadedTabs] = useState<Set<StatsTab>>(new Set(["overview"]));
@@ -278,6 +346,47 @@ function StatApp({
 		}
 	}, [activeTab, loadedTabs, loadSummary]);
 
+	const rowsPerPage = Math.max(8, Math.min(12, height - 24));
+	const recentRows = useMemo(() => {
+		const base = summary
+			? summary.recent.map((item) => {
+				const scored = scoreSeverity(item, summary);
+				return {
+					key: `${item.timestamp}-${item.engine}-${item.processingTime}-${item.text.slice(0, 20)}`,
+					item,
+					ageLabel: age(Date.now() - new Date(item.timestamp).getTime()),
+					flags: scored.flags,
+					severity: scored.severity,
+					severityScore: scored.score,
+				} satisfies RecentSessionRow;
+			})
+			: [];
+		return sortRecentRows(base, recentSortMode).filter((row) => rowMatchesFilter(row, recentLocalFilter));
+	}, [summary, recentSortMode, recentLocalFilter]);
+
+	useEffect(() => {
+		if (recentRows.length === 0) {
+			setRecentSelectedIndex(0);
+			setRecentSelectedKey(null);
+			setRecentOffset(0);
+			return;
+		}
+		if (recentSelectedKey) {
+			const idx = recentRows.findIndex((row) => row.key === recentSelectedKey);
+			if (idx >= 0) {
+				setRecentSelectedIndex(idx);
+				if (idx < recentOffset) setRecentOffset(idx);
+				if (idx >= recentOffset + rowsPerPage) setRecentOffset(Math.max(0, idx - rowsPerPage + 1));
+				return;
+			}
+		}
+		const nextIdx = Math.min(recentSelectedIndex, recentRows.length - 1);
+		setRecentSelectedIndex(nextIdx);
+		setRecentSelectedKey(recentRows[nextIdx]?.key ?? null);
+		if (nextIdx < recentOffset) setRecentOffset(nextIdx);
+		if (nextIdx >= recentOffset + rowsPerPage) setRecentOffset(Math.max(0, nextIdx - rowsPerPage + 1));
+	}, [recentRows, recentSelectedKey, recentSelectedIndex, recentOffset, rowsPerPage]);
+
 	useEffect(() => {
 		const onKey = (chunk: Buffer) => {
 			const key = chunk.toString();
@@ -309,6 +418,19 @@ function StatApp({
 				setFilterPrompt(false);
 				return;
 			}
+			if (recentFilterPrompt) {
+				let next: RecentLocalFilter | null = null;
+				if (key === "1") next = "all";
+				if (key === "2") next = "bad";
+				if (key === "3") next = "warn";
+				if (key === "4") next = "good";
+				if (next) {
+					setRecentLocalFilter(next);
+					setStatusMessage(`recent filter: ${next}`);
+				}
+				setRecentFilterPrompt(false);
+				return;
+			}
 
 			if (key === "q" || key === "\u0003") onQuit();
 			if (key === "r") refresh();
@@ -325,11 +447,47 @@ function StatApp({
 				setPendingExportScope("global");
 				setStatusMessage("Export GLOBAL markdown snapshot? y/N");
 			}
-			if (key === "j") setRecentOffset((current) => current + 1);
-			if (key === "k") setRecentOffset((current) => Math.max(0, current - 1));
+			if (key === "j") {
+				setRecentSelectedIndex((current) => {
+					const next = Math.min(current + 1, Math.max(0, recentRows.length - 1));
+					setRecentSelectedKey(recentRows[next]?.key ?? null);
+					if (next >= recentOffset + rowsPerPage) setRecentOffset(next - rowsPerPage + 1);
+					return next;
+				});
+			}
+			if (key === "k") {
+				setRecentSelectedIndex((current) => {
+					const next = Math.max(0, current - 1);
+					setRecentSelectedKey(recentRows[next]?.key ?? null);
+					if (next < recentOffset) setRecentOffset(next);
+					return next;
+				});
+			}
+			if (key === "u") setRecentOffset((current) => Math.max(0, current - rowsPerPage));
+			if (key === "d") {
+				setRecentOffset((current) => Math.min(Math.max(0, recentRows.length - rowsPerPage), current + rowsPerPage));
+			}
 			if (key === "g") setRecentOffset(0);
-			if (key === "G" && summary) {
-				setRecentOffset(Math.max(0, summary.recent.length - 1));
+			if (key === "G") {
+				setRecentOffset(Math.max(0, recentRows.length - rowsPerPage));
+			}
+			if (key === "n") setRecentSortMode((current) => (current === "severity" ? "newest" : "severity"));
+			if (key === "v") setRecentFilterPrompt(true);
+			if (key === "x") {
+				const selected = recentRows[recentSelectedIndex];
+				if (selected) {
+					void exportSnapshot(
+						{
+							...summary!,
+							recent: [selected.item],
+						},
+						"json",
+						"tab",
+						"overview",
+					)
+						.then((path) => setStatusMessage(`row exported: ${path}`))
+						.catch((error) => setStatusMessage(`row export failed: ${(error as Error).message}`));
+				}
 			}
 			if (key === "h") setActiveTab((current) => prevTab(current));
 			if (key === "l") setActiveTab((current) => nextTab(current));
@@ -358,6 +516,11 @@ function StatApp({
 		onQuit,
 		pendingExport,
 		pendingExportScope,
+		recentFilterPrompt,
+		recentOffset,
+		recentRows,
+		recentSelectedIndex,
+		rowsPerPage,
 		summary,
 		windowPreset,
 	]);
@@ -391,16 +554,8 @@ function StatApp({
 	);
 	const daemonHealth = daemonState(summary.daemon.status);
 
-	let filteredRecent = summary.recent;
-	if (filter === "latency") {
-		filteredRecent = summary.recent.filter(
-			(item) => item.processingTime >= summary.thresholds.latencyP95WarnMs,
-		);
-	}
-	if (filter === "errors") {
-		filteredRecent = summary.recent.filter(() => summary.errors.count > 0);
-	}
-	const recentPage = filteredRecent.slice(recentOffset, recentOffset + 8);
+	const selectedRecentRow =
+		recentRows[Math.min(recentSelectedIndex, Math.max(0, recentRows.length - 1))] ?? null;
 
 	const topStrategies = Object.entries(summary.pipeline.mergeStrategies24h)
 		.sort((a, b) => b[1] - a[1])
@@ -464,15 +619,27 @@ function StatApp({
 								<text fg={colors.muted}>Pulse {recentLatencySpark || "n/a"} | refreshed {age(Date.now() - lastRefreshAt)} ago</text>
 							</Section>
 							<Section title="Recent Sessions" height={height - 18}>
-								<text fg={colors.muted}>time   engine           latency   text</text>
-								{recentPage.map((item, index) => (
-									<text key={`${item.timestamp}-${index}`} fg={colors.text}>
-										{truncate(
-											`${new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }).padEnd(6)} ${truncate(item.engine, 14).padEnd(14)} ${ms(item.processingTime).padEnd(8)} ${item.text}`,
-											Math.max(24, Math.floor(width * 0.56)),
-										)}
-									</text>
-								))}
+								<text fg={colors.muted}>age  time  engine         lat    flags  text</text>
+								{recentRows.length === 0 ? (
+									<text fg={colors.muted}>no rows for filter {recentLocalFilter}; press v then 1 for all</text>
+								) : (
+									recentRows.slice(recentOffset, recentOffset + rowsPerPage).map((row) => {
+										const absoluteIndex = recentRows.findIndex((item) => item.key === row.key);
+										const isActive = absoluteIndex === recentSelectedIndex;
+										return (
+											<text key={row.key} fg={isActive ? colors.bg : rowColor(row.severity)} bg={isActive ? colors.accent : undefined}>
+												{truncate(
+													`${row.ageLabel.padEnd(4)} ${new Date(row.item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }).padEnd(5)} ${truncate(row.item.engine, 14).padEnd(14)} ${ms(row.item.processingTime).padEnd(6)} ${(row.flags.join(",") || "-").padEnd(6)} ${truncate(row.item.text, 60)}`,
+													Math.max(24, Math.floor(width * 0.56)),
+												)}
+											</text>
+										);
+									})
+								)}
+								<text fg={colors.muted}>sort:{recentSortMode} filter:{recentLocalFilter} rows:{recentRows.length}</text>
+								{selectedRecentRow ? (
+									<text fg={colors.text}>selected: {truncate(selectedRecentRow.item.text, Math.max(24, Math.floor(width * 0.56)))}</text>
+								) : null}
 							</Section>
 						</box>
 						<box flexDirection="column" flexGrow={1} gap={1}>
@@ -595,13 +762,15 @@ function StatApp({
 
 			<box height={3} borderTop borderColor={colors.border} paddingLeft={1} paddingRight={1}>
 				<text fg={colors.muted}>
-					hotkeys: q quit | 1-5 tabs | h/l nav | r refresh | a auto | / filter | j/k scroll | t window | e/E export
+					hotkeys: q quit | 1-5 tabs | h/l nav | r refresh | a auto | / global | v recent | j/k row | u/d page | n sort | x row export | t window
 				</text>
 			</box>
 			<box height={1} paddingLeft={1}>
 				<text fg={pendingExport ? colors.warn : filterPrompt ? colors.info : colors.muted}>
 					{filterPrompt
 						? "filter: 1 all, 2 quality, 3 latency, 4 errors, 5 fallbacks"
+						: recentFilterPrompt
+							? "recent filter: 1 all, 2 bad, 3 warn, 4 good"
 						: pendingExport
 							? "confirm export: y/N"
 							: `${statusMessage}${degradedMode ? " | degraded mode" : ""}`}
