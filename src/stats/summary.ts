@@ -119,6 +119,15 @@ export interface StatsSummary {
 		hitRate: number;
 		eventLagMs: number;
 	};
+	trends: {
+		processingMs: {
+			window15m: number[];
+			window1h: number[];
+			window6h: number[];
+			window24h: number[];
+			window7d: number[];
+		};
+	};
 }
 
 export interface StatsSummaryInput {
@@ -372,12 +381,20 @@ async function loadPerfEventsHybrid(
 
 function pickThresholdsFromConfig(): StatsSummary["thresholds"] {
 	try {
-		const rawConfig = loadConfig() as {
+		return pickThresholdsFromRawConfig(loadConfig());
+	} catch {
+		return DEFAULT_THRESHOLDS;
+	}
+}
+
+function pickThresholdsFromRawConfig(rawConfig: unknown): StatsSummary["thresholds"] {
+	try {
+		const parsed = rawConfig as {
 			transcription?: {
 				statsThresholds?: Partial<StatsSummary["thresholds"]>;
 			};
 		};
-		const configured = rawConfig.transcription?.statsThresholds;
+		const configured = parsed.transcription?.statsThresholds;
 		if (!configured) return DEFAULT_THRESHOLDS;
 		return {
 			latencyP95WarnMs:
@@ -410,6 +427,25 @@ function pickThresholdsFromConfig(): StatsSummary["thresholds"] {
 	}
 }
 
+function pickStatsCacheTtlMsFromRawConfig(rawConfig: unknown): number {
+	const parsed = rawConfig as { transcription?: { statsCacheTtlMs?: number } };
+	const ttlMs = parsed.transcription?.statsCacheTtlMs;
+	return typeof ttlMs === "number" && Number.isFinite(ttlMs) && ttlMs > 0
+		? ttlMs
+		: 10000;
+}
+
+function processingWindow(events: PerfEvent[], nowMs: number, windowMs: number): number[] {
+	return eventsInWindow(events, nowMs, windowMs)
+		.slice()
+		.sort(
+			(a, b) =>
+				new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+		)
+		.map((event) => event.processingMs)
+		.filter((value) => Number.isFinite(value) && value >= 0);
+}
+
 function eventsInWindow(
 	events: PerfEvent[],
 	nowMs: number,
@@ -435,11 +471,13 @@ export async function buildStatsSummary(): Promise<StatsSummary> {
 	let configLoaded = false;
 	let groqConfigured = false;
 	let deepgramConfigured = false;
+	let rawConfig: ReturnType<typeof loadConfig> | null = null;
 	const envInfo = detectEnvironment();
 	let audioDeviceCount: number | null = null;
 
 	try {
 		const config = loadConfig();
+		rawConfig = config;
 		configLoaded = true;
 		historyPath = config.paths.history;
 		logsPath = config.paths.logs;
@@ -479,9 +517,7 @@ export async function buildStatsSummary(): Promise<StatsSummary> {
 	const overall = failCount > 0 ? "FAIL" : warnCount > 0 ? "WARN" : "PASS";
 
 	const logEntries = readLogEntries(logsPath);
-	const ttlMs =
-		((loadConfig() as { transcription?: { statsCacheTtlMs?: number } }).transcription
-			?.statsCacheTtlMs ?? 10000);
+	const ttlMs = pickStatsCacheTtlMsFromRawConfig(rawConfig);
 	const perfBundle = await loadPerfEventsHybrid(logEntries, ttlMs);
 
 	return buildStatsSummaryFromInput({
@@ -517,7 +553,9 @@ export async function buildStatsSummary(): Promise<StatsSummary> {
 			},
 		},
 		perfEvents: perfBundle.events,
-		thresholds: pickThresholdsFromConfig(),
+		thresholds: rawConfig
+			? pickThresholdsFromRawConfig(rawConfig)
+			: pickThresholdsFromConfig(),
 		cacheMeta: {
 			source: perfBundle.source,
 			lastRebuildAt: perfBundle.lastRebuildAt,
@@ -546,10 +584,16 @@ export function buildStatsSummaryFromInput(
 	}, {});
 
 	const perfEvents = input.perfEvents ?? [];
-	const events24h = eventsInWindow(perfEvents, nowMs, 24 * 3600_000);
-	const events1h = eventsInWindow(perfEvents, nowMs, 3600_000);
-	const baseline7d = eventsInWindow(perfEvents, nowMs, 7 * 24 * 3600_000);
-	const previous23h = eventsInWindow(perfEvents, nowMs - 3600_000, 23 * 3600_000);
+	const sortedPerfEvents = perfEvents
+		.slice()
+		.sort(
+			(a, b) =>
+				new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+		);
+	const events24h = eventsInWindow(sortedPerfEvents, nowMs, 24 * 3600_000);
+	const events1h = eventsInWindow(sortedPerfEvents, nowMs, 3600_000);
+	const baseline7d = eventsInWindow(sortedPerfEvents, nowMs, 7 * 24 * 3600_000);
+	const previous23h = eventsInWindow(sortedPerfEvents, nowMs - 3600_000, 23 * 3600_000);
 
 	const qualityWindow24h: Record<QualityReason, number> = {
 		prompt_artifact: 0,
@@ -695,9 +739,27 @@ export function buildStatsSummaryFromInput(
 				0,
 				nowMs -
 					(events24h.length > 0
-						? new Date(events24h[events24h.length - 1]?.timestamp ?? now).getTime()
+						? new Date(
+								events24h
+									.slice()
+									.sort(
+										(a, b) =>
+											new Date(a.timestamp).getTime() -
+											new Date(b.timestamp).getTime(),
+									)
+									.at(-1)?.timestamp ?? now,
+							).getTime()
 						: nowMs),
 			),
+		},
+		trends: {
+			processingMs: {
+				window15m: processingWindow(sortedPerfEvents, nowMs, 15 * 60_000),
+				window1h: processingWindow(sortedPerfEvents, nowMs, 60 * 60_000),
+				window6h: processingWindow(sortedPerfEvents, nowMs, 6 * 60 * 60_000),
+				window24h: processingWindow(sortedPerfEvents, nowMs, 24 * 60 * 60_000),
+				window7d: processingWindow(sortedPerfEvents, nowMs, 7 * 24 * 60 * 60_000),
+			},
 		},
 	};
 }

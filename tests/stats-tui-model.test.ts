@@ -105,6 +105,15 @@ const baseSummary: StatsSummary = {
 		hitRate: 0.95,
 		eventLagMs: 1200,
 	},
+	trends: {
+		processingMs: {
+			window15m: [1000, 2000, 3000, 4000],
+			window1h: [1000, 2000, 3000, 4000],
+			window6h: [1000, 2000, 3000, 4000],
+			window24h: [1000, 2000, 3000, 4000],
+			window7d: [1000, 2000, 3000, 4000],
+		},
+	},
 };
 
 describe("stats tui model helpers", () => {
