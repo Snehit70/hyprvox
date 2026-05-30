@@ -33,6 +33,40 @@ export interface SetupOptions {
 	advanced?: boolean;
 }
 
+class SetupAbortedError extends Error {
+	constructor() {
+		super("setup aborted by user");
+	}
+}
+
+function abortIfQuit(value: string): void {
+	if (value.trim().toLowerCase() === "q") throw new SetupAbortedError();
+}
+
+function askYesNoQuit(prompt: string): boolean {
+	const idx = readlineSync.keyInSelect(["Yes", "No", "Quit setup"], `${prompt} (or q to quit)`, { cancel: false });
+	if (idx === 2) throw new SetupAbortedError();
+	return idx === 0;
+}
+
+function askSelectionQuit(choices: string[], prompt: string): number {
+	const idx = readlineSync.keyInSelect([...choices, "Quit setup"], `${prompt} (or q to quit)`, { cancel: false });
+	if (idx === choices.length) throw new SetupAbortedError();
+	return idx;
+}
+
+function askIntQuit(prompt: string, min: number, max: number, defaultValue: number): number {
+	while (true) {
+		const raw = readlineSync.question(`${prompt} [${defaultValue}] (or q to quit): `, {
+			defaultInput: String(defaultValue),
+		});
+		abortIfQuit(raw);
+		const value = Number.parseInt(raw, 10);
+		if (Number.isFinite(value) && value >= min && value <= max) return value;
+		console.log(colors.red(`Choose a number between ${min} and ${max}.`));
+	}
+}
+
 const statusIcon: Record<SetupCheckStatus, string> = {
 	pass: colors.green("✓"),
 	warn: colors.yellow("!"),
@@ -165,6 +199,7 @@ function askOptionalSecret(
 		hideEchoBack: true,
 		mask: "*",
 	});
+	abortIfQuit(value);
 
 	if (value.trim() !== "") {
 		const validation = validate(value);
@@ -175,7 +210,7 @@ function askOptionalSecret(
 
 	if (
 		allowEmpty &&
-		readlineSync.keyInYN(
+		askYesNoQuit(
 			"Leave this empty for now? You can set it later with hyprvox config setup.",
 		)
 	) {
@@ -303,7 +338,7 @@ async function collectInteractiveWizardUpdates(
 		};
 	}
 
-	const useBuiltInHotkey = readlineSync.keyInYNStrict(
+	const useBuiltInHotkey = askYesNoQuit(
 		"Use built-in hotkey listener? (No = disable and use compositor bind)",
 	);
 	updates.behavior = {
@@ -313,13 +348,13 @@ async function collectInteractiveWizardUpdates(
 			: "disabled",
 	};
 
-	const notifications = readlineSync.keyInYNStrict("Enable notifications?");
+	const notifications = askYesNoQuit("Enable notifications?");
 	updates.behavior = {
 		...updates.behavior,
 		notifications,
 	};
 
-	const clipAppend = readlineSync.keyInYNStrict("Append transcripts to clipboard history?");
+	const clipAppend = askYesNoQuit("Append transcripts to clipboard history?");
 	updates.behavior = {
 		...updates.behavior,
 		clipboard: {
@@ -336,8 +371,8 @@ async function collectInteractiveWizardUpdates(
 	};
 
 	if (options.advanced) {
-		const streaming = readlineSync.keyInYNStrict("[Advanced] Enable streaming mode?");
-		const deepgramBoosting = readlineSync.keyInYNStrict("[Advanced] Enable Deepgram boosting?");
+		const streaming = askYesNoQuit("[Advanced] Enable streaming mode?");
+		const deepgramBoosting = askYesNoQuit("[Advanced] Enable Deepgram boosting?");
 		updates.transcription = {
 			...updates.transcription,
 			streaming,
@@ -387,7 +422,7 @@ async function configureInteractively(options: SetupOptions): Promise<boolean> {
 		console.log(
 			colors.green(`Config found at ${colors.dim(DEFAULT_CONFIG_FILE)}`),
 		);
-		if (!options.nonInteractive && !readlineSync.keyInYN("Do you want to update configuration now?")) {
+		if (!options.nonInteractive && !askYesNoQuit("Do you want to update configuration now?")) {
 			return true;
 		}
 	}
@@ -403,7 +438,7 @@ async function configureInteractively(options: SetupOptions): Promise<boolean> {
 		for (const line of changes) console.log(`  - ${line}`);
 	}
 
-	if (!options.nonInteractive && !readlineSync.keyInYNStrict("Apply these setup changes?")) {
+	if (!options.nonInteractive && !askYesNoQuit("Apply these setup changes?")) {
 		console.log(colors.yellow("Setup changes cancelled by user."));
 		return hasConfiguredApiKeys(config);
 	}
@@ -461,11 +496,7 @@ async function configureMicrophone(options: SetupOptions): Promise<void> {
 	});
 	console.log("  0. Use system default");
 
-	const choice = readlineSync.questionInt("Select microphone [0]: ", {
-		defaultInput: "0",
-		limit: (input) => input >= 0 && input <= devices.length,
-		limitMessage: "Choose a listed microphone number.",
-	});
+	const choice = askIntQuit("Select microphone", 0, devices.length, 0);
 
 	if (choice === 0) return;
 
@@ -496,7 +527,7 @@ function configureWaylandBehavior(options: SetupOptions): void {
 	);
 
 	if (
-		!readlineSync.keyInYN("Use compositor binding and disable built-in hotkey?")
+		!askYesNoQuit("Use compositor binding and disable built-in hotkey?")
 	) {
 		return;
 	}
@@ -561,7 +592,7 @@ function installServiceIfRequested(
 	}
 
 	if (
-		!readlineSync.keyInYN("Install and start the systemd user service now?")
+		!askYesNoQuit("Install and start the systemd user service now?")
 	) {
 		return;
 	}
@@ -610,11 +641,7 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 	];
 	const profileChoice = options.nonInteractive
 		? 0
-		: readlineSync.keyInSelect(
-		profileChoices,
-		"Choose setup profile",
-		{ cancel: false },
-		);
+		: askSelectionQuit(profileChoices, "Choose setup profile");
 	selectedProfileId = recommendation.profile;
 	if (profileChoice === 1) selectedProfileId = "desktop-balanced";
 	if (profileChoice === 2) selectedProfileId = "laptop-lowpower";
@@ -636,7 +663,7 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 			for (const line of profileDiff) console.log(`  - ${line}`);
 		}
 
-		if (options.nonInteractive || readlineSync.keyInYN("Apply this profile before setup questions?")) {
+		if (options.nonInteractive || askYesNoQuit("Apply this profile before setup questions?")) {
 			if (!options.dryRun) saveConfig(proposedConfig);
 			console.log(
 				`${colors.green("✓")} ${options.dryRun ? "Would apply" : "Applied"} profile ${selectedBundle.label}`,
@@ -662,7 +689,7 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 			);
 		} else if (
 			!options.nonInteractive &&
-			!readlineSync.keyInYN("Continue setup after handling dependencies?")
+			!askYesNoQuit("Continue setup after handling dependencies?")
 		) {
 			return;
 		}
@@ -725,6 +752,10 @@ export const setupCommand = new Command("setup")
 
 			await runInteractiveSetup(options);
 		} catch (error) {
+			if (error instanceof SetupAbortedError) {
+				console.log(colors.yellow("Setup aborted."));
+				process.exit(0);
+			}
 			console.error(colors.red("Setup failed:"), (error as Error).message);
 			process.exit(1);
 		}
