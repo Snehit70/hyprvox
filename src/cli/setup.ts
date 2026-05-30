@@ -13,6 +13,12 @@ import {
 	type SetupReport,
 } from "../setup/checks";
 import { getInstallCommand } from "../setup/environment";
+import {
+	collectDeviceSignals,
+	diffConfig,
+	getProfileBundle,
+	recommendProfile,
+} from "../setup/profile";
 
 export interface SetupOptions {
 	check?: boolean;
@@ -416,6 +422,62 @@ function installServiceIfRequested(
 async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 	const initialReport = runSetupChecks();
 	printReport(initialReport);
+	const audioDevices = initialReport.environment.commands.arecord?.path
+		? await new AudioDeviceService().listDevices().catch(() => [])
+		: [];
+	const signals = collectDeviceSignals(initialReport.environment, audioDevices.length);
+	const recommendation = recommendProfile(signals);
+	const recommendedBundle = getProfileBundle(recommendation.profile);
+
+	console.log(colors.bold("Device-aware profile recommendation"));
+	console.log(
+		`${colors.cyan(recommendedBundle.label)} (${recommendation.profile}) confidence=${recommendation.confidence}`,
+	);
+	console.log(colors.dim(recommendedBundle.description));
+	for (const reason of recommendation.reasons.slice(0, 4)) {
+		console.log(`  - ${reason}`);
+	}
+
+	const profileChoices = [
+		`Use recommended: ${recommendedBundle.label}`,
+		"Override: Desktop Balanced",
+		"Override: Laptop Low Power",
+		"Override: Container Headless",
+		"Skip profile",
+	];
+	const profileChoice = readlineSync.keyInSelect(
+		profileChoices,
+		"Choose setup profile",
+		{ cancel: false },
+	);
+	let selectedProfileId = recommendation.profile;
+	if (profileChoice === 1) selectedProfileId = "desktop-balanced";
+	if (profileChoice === 2) selectedProfileId = "laptop-lowpower";
+	if (profileChoice === 3) selectedProfileId = "container-headless";
+	const shouldApplyProfile = profileChoice !== 4;
+	if (shouldApplyProfile) {
+		const currentConfig = loadPartialConfig();
+		const selectedBundle = getProfileBundle(selectedProfileId);
+		const proposedConfig = selectedBundle.apply(currentConfig);
+		const profileDiff = diffConfig(currentConfig, proposedConfig);
+
+		console.log(colors.bold("\nProfile preview"));
+		console.log(
+			`${colors.cyan(selectedBundle.label)} (${selectedProfileId}) will apply:`,
+		);
+		if (profileDiff.length === 0) {
+			console.log(colors.dim("  (no changes from current config)"));
+		} else {
+			for (const line of profileDiff) console.log(`  - ${line}`);
+		}
+
+		if (readlineSync.keyInYN("Apply this profile before setup questions?")) {
+			if (!options.dryRun) saveConfig(proposedConfig);
+			console.log(
+				`${colors.green("✓")} ${options.dryRun ? "Would apply" : "Applied"} profile ${selectedBundle.label}`,
+			);
+		}
+	}
 
 	const installCommand = getInstallCommand(
 		initialReport.environment.distro,
