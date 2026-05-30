@@ -1,5 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { Command } from "commander";
 import readlineSync from "readline-sync";
 import * as colors from "yoctocolors";
@@ -18,6 +21,7 @@ import {
 	diffConfig,
 	getProfileBundle,
 	recommendProfile,
+	type SetupProfileId,
 } from "../setup/profile";
 
 export interface SetupOptions {
@@ -25,6 +29,8 @@ export interface SetupOptions {
 	json?: boolean;
 	dryRun?: boolean;
 	skipService?: boolean;
+	nonInteractive?: boolean;
+	advanced?: boolean;
 }
 
 const statusIcon: Record<SetupCheckStatus, string> = {
@@ -153,6 +159,7 @@ function printReport(report: ReturnType<typeof runSetupChecks>): void {
 function askOptionalSecret(
 	prompt: string,
 	validate: (input: string) => true | string,
+	allowEmpty = true,
 ): string | null {
 	const value = readlineSync.question(prompt, {
 		hideEchoBack: true,
@@ -167,6 +174,7 @@ function askOptionalSecret(
 	}
 
 	if (
+		allowEmpty &&
 		readlineSync.keyInYN(
 			"Leave this empty for now? You can set it later with hyprvox config setup.",
 		)
@@ -177,6 +185,41 @@ function askOptionalSecret(
 	return askOptionalSecret(prompt, validate);
 }
 
+function hasConfiguredApiKeys(config: ConfigFile): boolean {
+	return Boolean(
+		config.apiKeys?.groq?.startsWith("gsk_") &&
+			typeof config.apiKeys?.deepgram === "string" &&
+			config.apiKeys.deepgram.length >= 32,
+	);
+}
+
+function mergeConfig(base: ConfigFile, updates: ConfigFile): ConfigFile {
+	return {
+		...base,
+		...updates,
+		apiKeys: {
+			...(base.apiKeys ?? {}),
+			...(updates.apiKeys ?? {}),
+		},
+		behavior: {
+			...(base.behavior ?? {}),
+			...(updates.behavior ?? {}),
+			clipboard: {
+				...(base.behavior?.clipboard ?? {}),
+				...(updates.behavior?.clipboard ?? {}),
+			},
+		},
+		transcription: {
+			...(base.transcription ?? {}),
+			...(updates.transcription ?? {}),
+			statsThresholds: {
+				...(base.transcription?.statsThresholds ?? {}),
+				...(updates.transcription?.statsThresholds ?? {}),
+			},
+		},
+	};
+}
+
 function loadPartialConfig(): ConfigFile {
 	if (!existsSync(DEFAULT_CONFIG_FILE)) return {};
 	try {
@@ -184,6 +227,145 @@ function loadPartialConfig(): ConfigFile {
 	} catch {
 		return {};
 	}
+}
+
+const SETUP_REPORT_FILE = join(homedir(), ".config", "hypr", "vox", "setup-report.json");
+
+function writeSetupReport(payload: Record<string, unknown>): void {
+	mkdirSync(dirname(SETUP_REPORT_FILE), { recursive: true });
+	writeFileSync(SETUP_REPORT_FILE, JSON.stringify(payload, null, 2));
+}
+
+function rollbackProfileDerivedFields(
+	current: ConfigFile,
+	baseline: ConfigFile,
+): ConfigFile {
+	return mergeConfig(current, {
+		transcription: {
+			streaming: baseline.transcription?.streaming,
+			deepgramBoosting: baseline.transcription?.deepgramBoosting,
+			mergeModel: baseline.transcription?.mergeModel,
+			statsMinSampleSize: baseline.transcription?.statsMinSampleSize,
+			statsThresholds: baseline.transcription?.statsThresholds,
+		},
+		behavior: {
+			notifications: baseline.behavior?.notifications,
+			hotkey: baseline.behavior?.hotkey,
+		},
+	});
+}
+
+function runPostApplySmokeTest(apiKeysConfigured: boolean): {
+	passed: boolean;
+	reasons: string[];
+} {
+	const reasons: string[] = [];
+	const report = runSetupChecks();
+	if (!apiKeysConfigured) reasons.push("api_keys_incomplete");
+	if (!report.environment.commands.arecord?.path) reasons.push("arecord_missing");
+	if (
+		report.environment.sessionType === "wayland" &&
+		!report.environment.commands["wl-copy"]?.path
+	) {
+		reasons.push("wl_copy_missing");
+	}
+	if (report.checks.some((check) => check.id.startsWith("config.") && check.status === "fail")) {
+		reasons.push("config_check_failed");
+	}
+	return { passed: reasons.length === 0, reasons };
+}
+
+async function collectInteractiveWizardUpdates(
+	baseConfig: ConfigFile,
+	options: SetupOptions,
+): Promise<ConfigFile> {
+	const updates: ConfigFile = {};
+
+	const groqKey = askOptionalSecret(
+		"Enter Groq API Key (starts with gsk_) [enter to keep current]: ",
+		(input) =>
+			input.startsWith("gsk_")
+				? true
+				: colors.red("Groq API key must start with gsk_"),
+	);
+
+	const deepgramKey = askOptionalSecret(
+		"\nEnter Deepgram API Key [enter to keep current]: ",
+		(input) =>
+			(input.length >= 32 && input.length <= 40) ||
+			colors.red("Deepgram API key must be 32-40 characters"),
+	);
+
+	if (groqKey || deepgramKey) {
+		updates.apiKeys = {
+			...(groqKey ? { groq: groqKey } : {}),
+			...(deepgramKey ? { deepgram: deepgramKey } : {}),
+		};
+	}
+
+	const useBuiltInHotkey = readlineSync.keyInYNStrict(
+		"Use built-in hotkey listener? (No = disable and use compositor bind)",
+	);
+	updates.behavior = {
+		...updates.behavior,
+		hotkey: useBuiltInHotkey
+			? baseConfig.behavior?.hotkey ?? "Right Control"
+			: "disabled",
+	};
+
+	const notifications = readlineSync.keyInYNStrict("Enable notifications?");
+	updates.behavior = {
+		...updates.behavior,
+		notifications,
+	};
+
+	const clipAppend = readlineSync.keyInYNStrict("Append transcripts to clipboard history?");
+	updates.behavior = {
+		...updates.behavior,
+		clipboard: {
+			...updates.behavior?.clipboard,
+			append: clipAppend,
+			minDuration: baseConfig.behavior?.clipboard?.minDuration ?? 0.6,
+			maxDuration: baseConfig.behavior?.clipboard?.maxDuration ?? 600,
+		},
+	};
+
+	updates.transcription = {
+		...updates.transcription,
+		language: "en",
+	};
+
+	if (options.advanced) {
+		const streaming = readlineSync.keyInYNStrict("[Advanced] Enable streaming mode?");
+		const deepgramBoosting = readlineSync.keyInYNStrict("[Advanced] Enable Deepgram boosting?");
+		updates.transcription = {
+			...updates.transcription,
+			streaming,
+			deepgramBoosting,
+		};
+	}
+
+	return updates;
+}
+
+async function runSetupWizard(
+	workingConfig: ConfigFile,
+	options: SetupOptions,
+): Promise<{ nextConfig: ConfigFile; apiKeysConfigured: boolean }> {
+	if (options.nonInteractive) {
+		console.log(colors.dim("Non-interactive mode: skipping prompts and preserving existing values."));
+		return {
+			nextConfig: workingConfig,
+			apiKeysConfigured: hasConfiguredApiKeys(workingConfig),
+		};
+	}
+
+	const updates = await collectInteractiveWizardUpdates(workingConfig, options);
+	const nextConfig = mergeConfig(workingConfig, updates);
+	return {
+		nextConfig,
+		apiKeysConfigured: hasConfiguredApiKeys(nextConfig),
+	};
 }
 
 async function configureInteractively(options: SetupOptions): Promise<boolean> {
@@ -205,76 +387,38 @@ async function configureInteractively(options: SetupOptions): Promise<boolean> {
 		console.log(
 			colors.green(`Config found at ${colors.dim(DEFAULT_CONFIG_FILE)}`),
 		);
-		if (!readlineSync.keyInYN("Do you want to update configuration now?")) {
+		if (!options.nonInteractive && !readlineSync.keyInYN("Do you want to update configuration now?")) {
 			return true;
 		}
 	}
 
-	const groqKey = askOptionalSecret(
-		"Enter Groq API Key (starts with gsk_): ",
-		(input) =>
-			input.startsWith("gsk_")
-				? true
-				: colors.red("Groq API key must start with gsk_"),
-	);
+	const config = existingConfig ?? loadPartialConfig();
+	const { nextConfig, apiKeysConfigured } = await runSetupWizard(config, options);
 
-	const deepgramKey = askOptionalSecret(
-		"\nEnter Deepgram API Key: ",
-		(input) =>
-			(input.length >= 32 && input.length <= 40) ||
-			colors.red("Deepgram API key must be 32-40 characters"),
-	);
+	const changes = diffConfig(config, nextConfig);
+	console.log(colors.bold("\nPlanned setup changes"));
+	if (changes.length === 0) {
+		console.log(colors.dim("  (no config changes)"));
+	} else {
+		for (const line of changes) console.log(`  - ${line}`);
+	}
 
-	if (!groqKey || !deepgramKey) {
-		const partialConfig = loadPartialConfig();
-		const nextConfig: ConfigFile = {
-			...partialConfig,
-			apiKeys:
-				groqKey || deepgramKey
-					? {
-							...(partialConfig.apiKeys ?? {}),
-							...(groqKey ? { groq: groqKey } : {}),
-							...(deepgramKey ? { deepgram: deepgramKey } : {}),
-						}
-					: partialConfig.apiKeys,
-		};
+	if (!options.nonInteractive && !readlineSync.keyInYNStrict("Apply these setup changes?")) {
+		console.log(colors.yellow("Setup changes cancelled by user."));
+		return hasConfiguredApiKeys(config);
+	}
 
-		if (!options.dryRun) {
-			saveConfig(nextConfig);
-		}
+	if (!options.dryRun && changes.length > 0) saveConfig(nextConfig);
+	console.log(`${colors.green("✓")} ${options.dryRun ? "Would save" : "Saved"} config at ${DEFAULT_CONFIG_FILE}`);
 
+	if (!apiKeysConfigured) {
 		console.log(
 			colors.yellow(
-				"API keys were skipped. Full transcription will not work until they are configured.",
+				"API keys are incomplete. Full transcription will not work until both Groq and Deepgram are configured.",
 			),
 		);
-		console.log(`Later setup: ${colors.cyan("hyprvox config setup")}`);
-		console.log(
-			`Direct set:  ${colors.cyan("hyprvox config set apiKeys.groq gsk_...")}`,
-		);
-		console.log(
-			`Direct set:  ${colors.cyan("hyprvox config set apiKeys.deepgram <key>")}`,
-		);
-		return false;
 	}
-
-	const config = existingConfig ?? loadPartialConfig();
-	const nextConfig = {
-		...config,
-		apiKeys: {
-			...(existingConfig?.apiKeys ?? {}),
-			groq: groqKey,
-			deepgram: deepgramKey,
-		},
-	};
-
-	if (!options.dryRun) {
-		saveConfig(nextConfig);
-	}
-	console.log(
-		`${colors.green("✓")} ${options.dryRun ? "Would save" : "Saved"} config at ${DEFAULT_CONFIG_FILE}`,
-	);
-	return true;
+	return apiKeysConfigured;
 }
 
 export async function runConfigSetup(
@@ -287,6 +431,7 @@ export async function runConfigSetup(
 }
 
 async function configureMicrophone(options: SetupOptions): Promise<void> {
+	if (options.nonInteractive) return;
 	const report = runSetupChecks();
 	if (!report.environment.commands.arecord?.path) {
 		console.log(
@@ -341,6 +486,7 @@ async function configureMicrophone(options: SetupOptions): Promise<void> {
 }
 
 function configureWaylandBehavior(options: SetupOptions): void {
+	if (options.nonInteractive) return;
 	const report = runSetupChecks();
 	if (report.environment.sessionType !== "wayland") return;
 
@@ -403,6 +549,17 @@ function installServiceIfRequested(
 		return;
 	}
 
+	if (options.nonInteractive) {
+		if (options.dryRun) {
+			console.log(colors.green("✓ Would run hyprvox install"));
+			return;
+		}
+		execFileSync(process.argv[0], [process.argv[1] ?? "index.ts", "install"], {
+			stdio: "inherit",
+		});
+		return;
+	}
+
 	if (
 		!readlineSync.keyInYN("Install and start the systemd user service now?")
 	) {
@@ -422,11 +579,17 @@ function installServiceIfRequested(
 async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 	const initialReport = runSetupChecks();
 	printReport(initialReport);
+	const runStartedAt = new Date().toISOString();
+	let selectedProfileId: SetupProfileId | null = null;
+	let selectedProfileConfidence: string | null = null;
+	let profileDiff: string[] = [];
+	const preProfileConfig = loadPartialConfig();
 	const audioDevices = initialReport.environment.commands.arecord?.path
 		? await new AudioDeviceService().listDevices().catch(() => [])
 		: [];
 	const signals = collectDeviceSignals(initialReport.environment, audioDevices.length);
 	const recommendation = recommendProfile(signals);
+	selectedProfileConfidence = recommendation.confidence;
 	const recommendedBundle = getProfileBundle(recommendation.profile);
 
 	console.log(colors.bold("Device-aware profile recommendation"));
@@ -445,12 +608,14 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 		"Override: Container Headless",
 		"Skip profile",
 	];
-	const profileChoice = readlineSync.keyInSelect(
+	const profileChoice = options.nonInteractive
+		? 0
+		: readlineSync.keyInSelect(
 		profileChoices,
 		"Choose setup profile",
 		{ cancel: false },
-	);
-	let selectedProfileId = recommendation.profile;
+		);
+	selectedProfileId = recommendation.profile;
 	if (profileChoice === 1) selectedProfileId = "desktop-balanced";
 	if (profileChoice === 2) selectedProfileId = "laptop-lowpower";
 	if (profileChoice === 3) selectedProfileId = "container-headless";
@@ -459,7 +624,7 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 		const currentConfig = loadPartialConfig();
 		const selectedBundle = getProfileBundle(selectedProfileId);
 		const proposedConfig = selectedBundle.apply(currentConfig);
-		const profileDiff = diffConfig(currentConfig, proposedConfig);
+		profileDiff = diffConfig(currentConfig, proposedConfig);
 
 		console.log(colors.bold("\nProfile preview"));
 		console.log(
@@ -471,7 +636,7 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 			for (const line of profileDiff) console.log(`  - ${line}`);
 		}
 
-		if (readlineSync.keyInYN("Apply this profile before setup questions?")) {
+		if (options.nonInteractive || readlineSync.keyInYN("Apply this profile before setup questions?")) {
 			if (!options.dryRun) saveConfig(proposedConfig);
 			console.log(
 				`${colors.green("✓")} ${options.dryRun ? "Would apply" : "Applied"} profile ${selectedBundle.label}`,
@@ -496,6 +661,7 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 				),
 			);
 		} else if (
+			!options.nonInteractive &&
 			!readlineSync.keyInYN("Continue setup after handling dependencies?")
 		) {
 			return;
@@ -503,9 +669,37 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 	}
 
 	const apiKeysConfigured = await runConfigSetup(options);
+	const smoke = runPostApplySmokeTest(apiKeysConfigured);
+	if (!smoke.passed && selectedProfileId && profileDiff.length > 0) {
+		console.log(colors.yellow("Smoke test failed; rolling back profile-derived fields."));
+		const current = loadPartialConfig();
+		const rolledBack = rollbackProfileDerivedFields(current, preProfileConfig);
+		if (!options.dryRun) saveConfig(rolledBack);
+	}
 	installServiceIfRequested(options, initialReport, apiKeysConfigured);
 
 	const finalReport = runSetupChecks();
+	writeSetupReport({
+		startedAt: runStartedAt,
+		finishedAt: new Date().toISOString(),
+		nonInteractive: Boolean(options.nonInteractive),
+		advanced: Boolean(options.advanced),
+		profile: {
+			selected: selectedProfileId,
+			confidence: selectedProfileConfidence,
+			diff: profileDiff,
+		},
+		smokeTest: smoke,
+		initialReady: initialReport.ready,
+		finalReady: finalReport.ready,
+		environment: {
+			distro: initialReport.environment.distro,
+			sessionType: initialReport.environment.sessionType,
+			isContainer: initialReport.environment.isContainer,
+			audioDeviceCount: audioDevices.length,
+		},
+	});
+	console.log(colors.dim(`Setup report saved: ${SETUP_REPORT_FILE}`));
 	printReport(finalReport);
 }
 
@@ -515,6 +709,8 @@ export const setupCommand = new Command("setup")
 	.option("--json", "Print setup check output as JSON")
 	.option("--dry-run", "Show what setup would change without writing")
 	.option("--skip-service", "Do not install or start the systemd user service")
+	.option("--non-interactive", "Run setup without prompts (automation-friendly)")
+	.option("--advanced", "Enable advanced setup questions")
 	.action(async (options: SetupOptions) => {
 		try {
 			if (options.check || options.json) {
