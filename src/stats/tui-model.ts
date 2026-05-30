@@ -206,3 +206,43 @@ export function detectAnomalies(summary: StatsSummary): Anomaly[] {
 
 	return anomalies;
 }
+
+export function percentile(values: number[], p: number): number | null {
+	if (values.length === 0) return null;
+	const sorted = [...values].sort((a, b) => a - b);
+	const index = Math.ceil((p / 100) * sorted.length) - 1;
+	return sorted[Math.max(0, Math.min(sorted.length - 1, index))] ?? null;
+}
+
+export function trendArrow(current: number | null, baseline: number | null): string {
+	if (current === null || baseline === null || baseline === 0) return "~";
+	const delta = (current - baseline) / baseline;
+	if (delta > 0.1) return "↑";
+	if (delta < -0.1) return "↓";
+	return "~";
+}
+
+export function deltaPercent(current: number | null, baseline: number | null): string {
+	if (current === null || baseline === null || baseline === 0) return "n/a";
+	const delta = ((current - baseline) / baseline) * 100;
+	const sign = delta >= 0 ? "+" : "";
+	return `${sign}${delta.toFixed(0)}%`;
+}
+
+export function confidenceFromSample(sampleSize: number, minSampleSize: number): "high" | "low" {
+	return sampleSize >= minSampleSize ? "high" : "low";
+}
+
+export function runtimeActionHint(summary: StatsSummary, anomalies: Anomaly[]): string {
+	if (summary.cache.eventLagMs > 120000) return "check cache health and log watcher";
+	if (anomalies.some((a) => a.key === "errors_bad" || a.key === "errors_warn")) {
+		return "open pipeline tab and inspect fallback/retries";
+	}
+	if (anomalies.some((a) => a.key === "latency_bad" || a.key === "latency_warn")) {
+		return "watch trends tab and compare 1h vs 24h latency";
+	}
+	if (anomalies.some((a) => a.key === "quality_bad" || a.key === "quality_warn")) {
+		return "open quality tab and inspect top failure reasons";
+	}
+	return "stable now; keep monitoring auto-refresh";
+}

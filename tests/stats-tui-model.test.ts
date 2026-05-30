@@ -5,6 +5,7 @@ import {
 	confidenceLabel,
 	daemonState,
 	detectAnomalies,
+	deltaPercent,
 	errorState,
 	latencyState,
 	ms,
@@ -14,8 +15,10 @@ import {
 	prevTab,
 	qualityState,
 	recentLatencySparkline,
+	runtimeActionHint,
 	seconds,
 	sparkline,
+	trendArrow,
 	truncate,
 } from "../src/stats/tui-model";
 
@@ -205,5 +208,18 @@ describe("stats tui model helpers", () => {
 		const line = recentLatencySparkline(baseSummary, 4);
 		expect(line.length).toBe(4);
 		expect(line).toMatch(/^[▁▂▃▄▅▆▇█]+$/u);
+	});
+
+	it("formats trend arrows and deltas", () => {
+		expect(trendArrow(120, 100)).toBe("↑");
+		expect(trendArrow(80, 100)).toBe("↓");
+		expect(trendArrow(104, 100)).toBe("~");
+		expect(deltaPercent(120, 100)).toBe("+20%");
+		expect(deltaPercent(80, 100)).toBe("-20%");
+	});
+
+	it("provides runtime action hint from anomaly priority", () => {
+		const anomalies = detectAnomalies(baseSummary);
+		expect(runtimeActionHint(baseSummary, anomalies)).toContain("open pipeline");
 	});
 });
