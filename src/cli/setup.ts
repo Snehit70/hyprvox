@@ -50,9 +50,18 @@ function askYesNoQuit(prompt: string): boolean {
 }
 
 function askSelectionQuit(choices: string[], prompt: string): number {
-	const idx = readlineSync.keyInSelect([...choices, "Quit setup"], `${prompt} (or q to quit)`, { cancel: false });
-	if (idx === choices.length) throw new SetupAbortedError();
-	return idx;
+	for (let idx = 0; idx < choices.length; idx += 1) {
+		console.log(`[${idx + 1}] ${choices[idx]}`);
+	}
+	while (true) {
+		const raw = readlineSync.question(`${prompt} (or q to quit) [1...${choices.length}]: `);
+		abortIfQuit(raw);
+		const selected = Number.parseInt(raw, 10);
+		if (Number.isFinite(selected) && selected >= 1 && selected <= choices.length) {
+			return selected - 1;
+		}
+		console.log(colors.red(`Choose a number between 1 and ${choices.length}, or q.`));
+	}
 }
 
 function askIntQuit(prompt: string, min: number, max: number, defaultValue: number): number {
