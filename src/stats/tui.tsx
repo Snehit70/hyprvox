@@ -11,6 +11,8 @@ import type { StatsSummary } from "./summary";
 import {
 	age,
 	confidenceLabel,
+	confidenceFromSample,
+	deltaPercent,
 	detectAnomalies,
 	daemonState,
 	errorState,
@@ -22,8 +24,10 @@ import {
 	prevTab,
 	qualityState,
 	recentLatencySparkline,
-	seconds,
+	runtimeActionHint,
 	sparkline,
+	trendArrow,
+	percentile,
 	type StatsFilter,
 	type StatsTab,
 	type StatsWindowPreset,
@@ -148,6 +152,23 @@ function rowColor(severity: RecentSessionRow["severity"]): string {
 function rowMatchesFilter(row: RecentSessionRow, filter: RecentLocalFilter): boolean {
 	if (filter === "all") return true;
 	return row.severity === filter;
+}
+
+function chunkText(text: string, width: number, maxLines: number): string[] {
+	if (maxLines <= 0) return [];
+	const clean = text.trim();
+	if (!clean) return [""];
+	const lines: string[] = [];
+	let cursor = 0;
+	while (cursor < clean.length && lines.length < maxLines) {
+		lines.push(clean.slice(cursor, cursor + width));
+		cursor += width;
+	}
+	if (cursor < clean.length && lines.length > 0) {
+		const last = lines.length - 1;
+		lines[last] = `${lines[last]?.slice(0, Math.max(0, width - 3)) ?? ""}...`;
+	}
+	return lines;
 }
 
 async function exportSnapshot(
@@ -556,6 +577,10 @@ function StatApp({
 
 	const selectedRecentRow =
 		recentRows[Math.min(recentSelectedIndex, Math.max(0, recentRows.length - 1))] ?? null;
+	const detailWidth = Math.max(24, Math.floor(width * 0.56) - 8);
+	const detailLines = selectedRecentRow
+		? chunkText(selectedRecentRow.item.text, detailWidth, 4)
+		: [];
 
 	const topStrategies = Object.entries(summary.pipeline.mergeStrategies24h)
 		.sort((a, b) => b[1] - a[1])
@@ -567,6 +592,58 @@ function StatApp({
 	const windowValues = filterByWindow(summary, windowPreset);
 	const windowSpark = sparkline(windowValues, 36);
 	const recentLatencySpark = recentLatencySparkline(summary, 24);
+	const latency24h = percentile(summary.trends.processingMs.window24h, 95);
+	const latency7d = percentile(summary.trends.processingMs.window7d, 95);
+	const latencyTrend = trendArrow(latency24h, latency7d);
+	const latencyDelta = deltaPercent(latency24h, latency7d);
+	const error24h = summary.errors.count;
+	const baselineErrors24h = Math.max(
+		1,
+		Math.round((summary.regression.baseline7dCount / 7) * 0.03),
+	);
+	const errorTrend = trendArrow(error24h, baselineErrors24h);
+	const errorDelta = deltaPercent(error24h, baselineErrors24h);
+	const quality24h = summary.quality.total24h;
+	const baselineQuality24h = Math.max(1, Math.round((summary.regression.baseline7dCount / 7) * 0.01));
+	const qualityTrend = trendArrow(quality24h, baselineQuality24h);
+	const qualityDelta = deltaPercent(quality24h, baselineQuality24h);
+	const throughputPerHour = summary.regression.window1hCount;
+	const throughputBaselinePerHour = Math.max(1, Math.round(summary.regression.baseline7dCount / (7 * 24)));
+	const throughputTrend = trendArrow(throughputPerHour, throughputBaselinePerHour);
+	const freshness = summary.cache.eventLagMs > 120000 ? "stale" : "fresh";
+	const freshnessColor = summary.cache.eventLagMs > 120000 ? colors.warn : colors.ok;
+	const topModel = topModels[0]?.[0] ?? "unknown";
+	const fallbackRate = summary.regression.window24hCount > 0
+		? ((summary.pipeline.fallbacks24h.groq + summary.pipeline.fallbacks24h.deepgram) / summary.regression.window24hCount) * 100
+		: 0;
+	const actionHint = runtimeActionHint(summary, anomalies);
+	const topAnomaly = anomalies[0]?.message ?? "none";
+	const kpiRows = [
+		{
+			label: "latency p95",
+			value: ms(latency24h),
+			delta: `${latencyTrend} ${latencyDelta}`,
+			confidence: confidenceFromSample(summary.trends.processingMs.window24h.length, minSampleSize),
+			severityScore: latencyHealth === "BAD" ? 3 : latencyHealth === "WARN" ? 2 : 1,
+			color: stateColor(latencyHealth),
+		},
+		{
+			label: "errors 24h",
+			value: String(error24h),
+			delta: `${errorTrend} ${errorDelta}`,
+			confidence: confidenceFromSample(summary.regression.window24hCount, minSampleSize),
+			severityScore: errorHealth === "BAD" ? 3 : errorHealth === "WARN" ? 2 : 1,
+			color: stateColor(errorHealth),
+		},
+		{
+			label: "quality 24h",
+			value: String(quality24h),
+			delta: `${qualityTrend} ${qualityDelta}`,
+			confidence: confidenceFromSample(summary.regression.window24hCount, minSampleSize),
+			severityScore: qualityHealth === "BAD" ? 3 : qualityHealth === "WARN" ? 2 : 1,
+			color: stateColor(qualityHealth),
+		},
+	].sort((a, b) => b.severityScore - a.severityScore);
 
 	return (
 		<box width={width} height={height} backgroundColor={colors.bg} flexDirection="column">
@@ -612,11 +689,18 @@ function StatApp({
 				{activeTab === "overview" ? (
 					<>
 						<box width={Math.max(58, Math.floor(width * 0.62))} flexDirection="column" gap={1}>
-							<Section title="Runtime Overview" height={8}>
-								<text fg={colors.text}>Today {summary.counts.today} | Total {summary.counts.total} | History {summary.counts.history}</text>
-								<text fg={colors.text}>Latency median {ms(summary.latency.medianMs)} | p95 {ms(summary.latency.p95Ms)} | avg {ms(summary.latency.averageMs)}</text>
-								<text fg={colors.text}>Duration avg {seconds(summary.duration.averageSeconds)} | S/M/L {summary.duration.shortCount}/{summary.duration.mediumCount}/{summary.duration.longCount}</text>
-								<text fg={colors.muted}>Pulse {recentLatencySpark || "n/a"} | refreshed {age(Date.now() - lastRefreshAt)} ago</text>
+							<Section title="Runtime Overview" height={11}>
+								<text fg={colors.text}>Today {summary.counts.today} | Total {summary.counts.total} | History {summary.counts.history} | Win {windowPreset}</text>
+								{kpiRows.map((kpi) => (
+									<text key={kpi.label} fg={kpi.color}>
+										{kpi.label.padEnd(12)} {kpi.value.padEnd(8)} {kpi.delta.padEnd(8)} n={summary.regression.window24hCount} [{kpi.confidence}]
+									</text>
+								))}
+								<text fg={colors.text}>throughput {throughputPerHour}/h ({throughputTrend} vs {throughputBaselinePerHour}/h) | pulse {recentLatencySpark || "n/a"}</text>
+								<text fg={freshnessColor}>freshness {freshness} | lag {ms(summary.cache.eventLagMs)} | rebuild {new Date(summary.cache.lastRebuildAt).toLocaleTimeString()}</text>
+								<text fg={colors.text}>routing top {truncate(topModel, 20)} | fallback {fallbackRate.toFixed(1)}%</text>
+								<text fg={anomalies.length > 0 ? colors.warn : colors.ok}>anomalies {anomalies.length} | top {truncate(topAnomaly, 48)}</text>
+								<text fg={colors.info}>next: {truncate(actionHint, 64)} | refreshed {age(Date.now() - lastRefreshAt)} ago</text>
 							</Section>
 							<Section title={`Recent Sessions [${recentSortMode}/${recentLocalFilter}]`} height={height - 18}>
 								<text fg={colors.muted}>age  time  engine         lat    flags  text</text>
@@ -638,7 +722,19 @@ function StatApp({
 								)}
 								<text fg={colors.muted}>rows:{recentRows.length} | nav j/k row u/d page | n sort | v filter</text>
 								{selectedRecentRow ? (
-									<text fg={colors.text}>detail: {truncate(selectedRecentRow.item.text, Math.max(24, Math.floor(width * 0.56)))}</text>
+									<>
+										<text fg={rowColor(selectedRecentRow.severity)}>
+											detail: sev {selectedRecentRow.severity} | lat {ms(selectedRecentRow.item.processingTime)} | flags {selectedRecentRow.flags.join(",") || "-"}
+										</text>
+										<text fg={colors.text}>
+											time {new Date(selectedRecentRow.item.timestamp).toLocaleString()} | age {selectedRecentRow.ageLabel} | engine {selectedRecentRow.item.engine}
+										</text>
+										{detailLines.map((line, index) => (
+											<text key={`${selectedRecentRow.key}-detail-${index}`} fg={colors.text}>
+												text: {line}
+											</text>
+										))}
+									</>
 								) : null}
 							</Section>
 						</box>
