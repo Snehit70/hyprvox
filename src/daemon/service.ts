@@ -176,7 +176,8 @@ export class DaemonService {
 	private contextLexicon: string[] = [];
 	private providerBoostWords: string[] = [];
 
-	private static readonly OVERLAY_RESTART_DELAY_MS = 2000;
+	private static readonly OVERLAY_RESTART_INITIAL_DELAY_MS = 250;
+	private static readonly OVERLAY_RESTART_MAX_DELAY_MS = 2000;
 	private static readonly OVERLAY_RESTART_WINDOW_MS = 60000;
 	private static readonly OVERLAY_RESTART_MAX_ATTEMPTS = 5;
 
@@ -416,10 +417,16 @@ export class DaemonService {
 		}
 
 		this.overlayRestartAttempts.push(now);
+		const restartDelayMs = Math.min(
+			DaemonService.OVERLAY_RESTART_INITIAL_DELAY_MS *
+				2 ** (this.overlayRestartAttempts.length - 1),
+			DaemonService.OVERLAY_RESTART_MAX_DELAY_MS,
+		);
+
 		logger.warn(
 			{
 				reason,
-				delayMs: DaemonService.OVERLAY_RESTART_DELAY_MS,
+				delayMs: restartDelayMs,
 				attempt: this.overlayRestartAttempts.length,
 				logFile: this.overlayLogFile,
 			},
@@ -429,7 +436,28 @@ export class DaemonService {
 		this.overlayRestartTimer = setTimeout(() => {
 			this.overlayRestartTimer = undefined;
 			this.startOverlay("restart");
-		}, DaemonService.OVERLAY_RESTART_DELAY_MS);
+		}, restartDelayMs);
+	}
+
+	private resolveOverlayLaunchCommand(overlayPath: string): {
+		command: string;
+		args: string[];
+		mode: "electron_direct" | "bun_fallback";
+	} {
+		const directElectronPath = join(overlayPath, "node_modules", ".bin", "electron");
+		if (existsSync(directElectronPath)) {
+			return {
+				command: directElectronPath,
+				args: ["."],
+				mode: "electron_direct",
+			};
+		}
+
+		return {
+			command: "bun",
+			args: ["run", "start"],
+			mode: "bun_fallback",
+		};
 	}
 
 	private startOverlay(trigger: "startup" | "restart" = "startup"): void {
@@ -471,6 +499,8 @@ export class DaemonService {
 			}
 
 			try {
+				const launch = this.resolveOverlayLaunchCommand(overlayPath);
+
 				// Explicitly pass display environment for Wayland/X11 compatibility
 				const uid = process.getuid?.() ?? 1000;
 				const overlayEnv: NodeJS.ProcessEnv = { ...process.env };
@@ -501,7 +531,7 @@ export class DaemonService {
 				mkdirSync(this.config.paths.logs, { recursive: true, mode: 0o700 });
 				overlayLogFd = openSync(this.overlayLogFile, "a");
 
-				this.overlayProcess = spawn("bun", ["run", "start"], {
+				this.overlayProcess = spawn(launch.command, launch.args, {
 					cwd: overlayPath,
 					detached: true,
 					stdio: ["ignore", overlayLogFd, overlayLogFd],
@@ -552,7 +582,7 @@ export class DaemonService {
 				}
 
 				logger.info(
-					{ pid, logFile: this.overlayLogFile, trigger },
+					{ pid, logFile: this.overlayLogFile, trigger, launchMode: launch.mode },
 					"Overlay started",
 				);
 			} catch (error) {
