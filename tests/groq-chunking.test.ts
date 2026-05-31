@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+	GroqChunkedTranscriptionError,
 	type GroqChunkingOptions,
-	GroqClient,
-	getGroqChunkingFailureReason,
-} from "../src/transcribe/groq";
+	transcribeGroqRecording,
+} from "../src/transcribe/groq-chunking";
 import { TranscriptionError } from "../src/utils/errors";
 
 const SAMPLE_RATE = 16000;
@@ -60,21 +60,21 @@ function resolveAt(
 
 describe("GroqClient chunked transcription", () => {
 	it("preserves output order when chunks complete out of order", async () => {
-		const client = new GroqClient();
 		const resolvers: Array<(value: string) => void> = [];
-		vi.spyOn(client, "transcribe").mockImplementation(
+		const transcribe = vi.fn().mockImplementation(
 			() =>
 				new Promise<string>((resolve) => {
 					resolvers.push(resolve);
 				}),
 		);
 
-		const resultPromise = client.transcribeChunked({
+		const resultPromise = transcribeGroqRecording({
 			rawAudioBuffer: buildWav([1, 2, 3, 4, 5, 6, 7, 8, 9]),
 			fallbackAudioBuffer: Buffer.from("fallback"),
 			fallbackFormat: "wav",
 			recordingDurationMs: 1000,
 			chunking: chunkingOptions(),
+			transcribe,
 		});
 
 		await vi.waitFor(() => expect(resolvers).toHaveLength(3));
@@ -91,26 +91,24 @@ describe("GroqClient chunked transcription", () => {
 	});
 
 	it("respects maxConcurrency", async () => {
-		const client = new GroqClient();
 		let active = 0;
 		let maxActive = 0;
 
-		const transcribe = vi
-			.spyOn(client, "transcribe")
-			.mockImplementation(async () => {
-				active++;
-				maxActive = Math.max(maxActive, active);
-				await new Promise((resolve) => setTimeout(resolve, 5));
-				active--;
-				return "chunk";
-			});
+		const transcribe = vi.fn().mockImplementation(async () => {
+			active++;
+			maxActive = Math.max(maxActive, active);
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			active--;
+			return "chunk";
+		});
 
-		const result = await client.transcribeChunked({
+		const result = await transcribeGroqRecording({
 			rawAudioBuffer: buildWav([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
 			fallbackAudioBuffer: Buffer.from("fallback"),
 			fallbackFormat: "wav",
 			recordingDurationMs: 1000,
 			chunking: chunkingOptions({ maxConcurrency: 2 }),
+			transcribe,
 		});
 
 		expect(transcribe).toHaveBeenCalledTimes(4);
@@ -119,19 +117,19 @@ describe("GroqClient chunked transcription", () => {
 	});
 
 	it("falls back to full audio when a chunk request fails", async () => {
-		const client = new GroqClient();
 		const fallbackAudioBuffer = Buffer.from("full audio");
 		const transcribe = vi
-			.spyOn(client, "transcribe")
+			.fn()
 			.mockRejectedValueOnce(new Error("chunk failed"))
 			.mockResolvedValueOnce("full transcript");
 
-		const result = await client.transcribeChunked({
+		const result = await transcribeGroqRecording({
 			rawAudioBuffer: buildWav([1, 2, 3, 4, 5, 6]),
 			fallbackAudioBuffer,
 			fallbackFormat: "wav",
 			recordingDurationMs: 1000,
 			chunking: chunkingOptions({ maxConcurrency: 1 }),
+			transcribe,
 		});
 
 		expect(result.text).toBe("full transcript");
@@ -140,36 +138,39 @@ describe("GroqClient chunked transcription", () => {
 		expect(result.chunking.failureReason).toContain("chunk_request_failed");
 		expect(transcribe).toHaveBeenLastCalledWith(
 			fallbackAudioBuffer,
-			undefined,
-			undefined,
+			"en",
+			[],
 			"wav",
 			1000,
 		);
 	});
 
 	it("propagates chunk errors when fallback is disabled", async () => {
-		const client = new GroqClient();
 		const providerError = new TranscriptionError(
 			"Groq",
 			"RATE_LIMIT_EXCEEDED",
 			"Groq: Rate limit exceeded",
 		);
-		vi.spyOn(client, "transcribe").mockRejectedValue(providerError);
+		const transcribe = vi.fn().mockRejectedValue(providerError);
 
 		try {
-			await client.transcribeChunked({
+			await transcribeGroqRecording({
 				rawAudioBuffer: buildWav([1, 2, 3, 4, 5, 6]),
 				fallbackAudioBuffer: Buffer.from("fallback"),
 				fallbackFormat: "wav",
 				recordingDurationMs: 1000,
 				chunking: chunkingOptions({ fallbackToFullAudio: false }),
+				transcribe,
 			});
 			throw new Error("Expected transcribeChunked to fail");
 		} catch (error: unknown) {
-			expect(error).toBe(providerError);
-			expect(getGroqChunkingFailureReason(error)).toContain(
-				"chunk_request_failed",
+			expect(error).toBeInstanceOf(GroqChunkedTranscriptionError);
+			expect((error as GroqChunkedTranscriptionError).cause).toBe(
+				providerError,
 			);
+			expect(
+				(error as GroqChunkedTranscriptionError).chunking.failureReason,
+			).toContain("chunk_request_failed");
 		}
 	});
 });

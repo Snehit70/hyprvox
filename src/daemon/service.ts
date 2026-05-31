@@ -24,7 +24,13 @@ import {
 	type StreamingFailureReason,
 	type StreamingStopReason,
 } from "../transcribe/deepgram-streaming";
-import { GroqClient, getGroqChunkingFailureReason } from "../transcribe/groq";
+import { GroqClient } from "../transcribe/groq";
+import {
+	createGroqChunkingMetrics,
+	GroqChunkedTranscriptionError,
+	type GroqChunkingMetrics,
+	transcribeGroqRecording,
+} from "../transcribe/groq-chunking";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { assessLongRecordingQuality } from "../transcribe/long-recording";
 import {
@@ -124,6 +130,31 @@ interface TranscriptionMetrics {
 	groqSttModel: string;
 	deepgramModel: string;
 	mergeModel: string;
+}
+
+type GroqChunkingMetricFields = Pick<
+	TranscriptionMetrics,
+	| "groqChunkingEnabled"
+	| "groqChunkingUsed"
+	| "groqChunkCount"
+	| "groqChunkDurationSeconds"
+	| "groqChunkOverlapSeconds"
+	| "groqChunkFallback"
+	| "groqChunkFailureReason"
+>;
+
+function toGroqChunkingMetricFields(
+	chunking: GroqChunkingMetrics,
+): GroqChunkingMetricFields {
+	return {
+		groqChunkingEnabled: chunking.enabled,
+		groqChunkingUsed: chunking.used,
+		groqChunkCount: chunking.chunkCount,
+		groqChunkDurationSeconds: chunking.chunkDurationSeconds,
+		groqChunkOverlapSeconds: chunking.overlapSeconds,
+		groqChunkFallback: chunking.fallback,
+		groqChunkFailureReason: chunking.failureReason,
+	};
 }
 
 async function timeAsync<T>(
@@ -998,6 +1029,9 @@ export class DaemonService {
 
 	private async processAudio(audioBuffer: Buffer, duration: number) {
 		const totalStart = Date.now();
+		const groqChunkingConfig = this.config.transcription.groqChunking;
+		const initialGroqChunkingMetrics =
+			createGroqChunkingMetrics(groqChunkingConfig);
 
 		// Initialize metrics with defaults
 		const metrics: TranscriptionMetrics = {
@@ -1035,15 +1069,7 @@ export class DaemonService {
 			deepgramEndpointingMs: -1,
 			deepgramReceivedFinalChunk: false,
 			deepgramHadSpeechFinal: false,
-			groqChunkingEnabled: this.config.transcription.groqChunking.enabled,
-			groqChunkingUsed: false,
-			groqChunkCount: 0,
-			groqChunkDurationSeconds:
-				this.config.transcription.groqChunking.chunkSeconds,
-			groqChunkOverlapSeconds:
-				this.config.transcription.groqChunking.overlapSeconds,
-			groqChunkFallback: false,
-			groqChunkFailureReason: null,
+			...toGroqChunkingMetricFields(initialGroqChunkingMetrics),
 			engine: "",
 			textLength: 0,
 			groqTextLength: 0,
@@ -1163,46 +1189,45 @@ export class DaemonService {
 			const audioFormat =
 				metrics.audioFormatStrategy === "opus" ? "opus" : "wav";
 
-			const transcribeGroqAudio = async (): Promise<string> => {
-				const groqChunking = this.config.transcription.groqChunking;
-
-				if (!groqChunking.enabled) {
-					return this.groq.transcribe(
-						audioBufferToTranscribe,
-						language,
-						boostWords,
-						audioFormat,
-						duration,
-					);
-				}
-
+			const runGroqTranscription = async () => {
 				try {
-					const result = await this.groq.transcribeChunked({
+					return await transcribeGroqRecording({
 						rawAudioBuffer: audioBuffer,
 						fallbackAudioBuffer: audioBufferToTranscribe,
 						fallbackFormat: audioFormat,
 						language,
 						boostWords,
 						recordingDurationMs: duration,
-						chunking: groqChunking,
+						chunking: groqChunkingConfig,
+						transcribe: (
+							buffer,
+							transcribeLanguage,
+							transcribeBoostWords,
+							format,
+							recordingDurationMs,
+						) =>
+							this.groq.transcribe(
+								buffer,
+								transcribeLanguage,
+								transcribeBoostWords,
+								format,
+								recordingDurationMs,
+							),
 					});
-
-					metrics.groqChunkingEnabled = result.chunking.enabled;
-					metrics.groqChunkingUsed = result.chunking.used;
-					metrics.groqChunkCount = result.chunking.chunkCount;
-					metrics.groqChunkDurationSeconds =
-						result.chunking.chunkDurationSeconds;
-					metrics.groqChunkOverlapSeconds = result.chunking.overlapSeconds;
-					metrics.groqChunkFallback = result.chunking.fallback;
-					metrics.groqChunkFailureReason = result.chunking.failureReason;
-
-					return result.text;
 				} catch (error: unknown) {
-					const chunkFailureReason = getGroqChunkingFailureReason(error);
-					if (chunkFailureReason) {
-						metrics.groqChunkFailureReason = chunkFailureReason;
+					if (error instanceof GroqChunkedTranscriptionError) {
+						groqErr = error.cause ?? error;
+						return {
+							text: "",
+							chunking: error.chunking,
+						};
 					}
-					throw error;
+
+					groqErr = error;
+					return {
+						text: "",
+						chunking: createGroqChunkingMetrics(groqChunkingConfig),
+					};
 				}
 			};
 
@@ -1215,15 +1240,14 @@ export class DaemonService {
 				// Deepgram stop is already in flight; wait for it in parallel
 				// with Groq transcription.
 				const [groqTimed, deepgramTimed] = await Promise.all([
-					timeAsync(() =>
-						transcribeGroqAudio().catch((err) => {
-							groqErr = err;
-							return "";
-						}),
-					),
+					timeAsync(runGroqTranscription),
 					deepgramStopPromise,
 				]);
 				metrics.groqMs = groqTimed.durationMs;
+				Object.assign(
+					metrics,
+					toGroqChunkingMetricFields(groqTimed.result.chunking),
+				);
 				metrics.deepgramStopWallMs = deepgramTimed.durationMs;
 				const streamingResult = deepgramTimed.result;
 				metrics.deepgramFinalizeWaitMs = streamingResult.finalizeWaitMs;
@@ -1247,7 +1271,7 @@ export class DaemonService {
 					deepgramTimed.durationMs - metrics.deepgramCriticalPathMs,
 				);
 				metrics.deepgramMs = metrics.deepgramCriticalPathMs;
-				groqText = groqTimed.result;
+				groqText = groqTimed.result.text;
 				deepgramText = streamingResult.text;
 				streamingChunkCount = streamingResult.chunkCount;
 				metrics.deepgramStopReason = streamingResult.stopReason;
@@ -1264,12 +1288,7 @@ export class DaemonService {
 				);
 			} else {
 				const [groqTimed, deepgramTimed] = await Promise.all([
-					timeAsync(() =>
-						transcribeGroqAudio().catch((err) => {
-							groqErr = err;
-							return "";
-						}),
-					),
+					timeAsync(runGroqTranscription),
 					timeAsync(() =>
 						this.deepgram
 							.transcribe(
@@ -1285,9 +1304,13 @@ export class DaemonService {
 					),
 				]);
 				metrics.groqMs = groqTimed.durationMs;
+				Object.assign(
+					metrics,
+					toGroqChunkingMetricFields(groqTimed.result.chunking),
+				);
 				metrics.deepgramMs = deepgramTimed.durationMs;
 				metrics.deepgramCriticalPathMs = deepgramTimed.durationMs;
-				groqText = groqTimed.result;
+				groqText = groqTimed.result.text;
 				deepgramText = deepgramTimed.result;
 			}
 
