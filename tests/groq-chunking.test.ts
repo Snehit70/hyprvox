@@ -145,6 +145,53 @@ describe("GroqClient chunked transcription", () => {
 		);
 	});
 
+	it("waits for active chunks and stops scheduling before fallback", async () => {
+		const fallbackAudioBuffer = Buffer.from("full audio");
+		const calls: string[] = [];
+		let releaseActiveChunk: ((value: string) => void) | undefined;
+
+		const transcribe = vi.fn().mockImplementation((audioBuffer: Buffer) => {
+			if (audioBuffer === fallbackAudioBuffer) {
+				calls.push("fallback");
+				return Promise.resolve("full transcript");
+			}
+
+			if (!calls.includes("chunk-0")) {
+				calls.push("chunk-0");
+				return Promise.reject(new Error("chunk failed"));
+			}
+
+			calls.push("chunk-1");
+			return new Promise<string>((resolve) => {
+				releaseActiveChunk = resolve;
+			});
+		});
+
+		const resultPromise = transcribeGroqRecording({
+			rawAudioBuffer: buildWav(Array.from({ length: 12 }, (_, index) => index)),
+			fallbackAudioBuffer,
+			fallbackFormat: "wav",
+			recordingDurationMs: 1000,
+			chunking: chunkingOptions({ maxConcurrency: 2 }),
+			transcribe,
+		});
+
+		await vi.waitFor(() => expect(calls).toEqual(["chunk-0", "chunk-1"]));
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(calls).not.toContain("fallback");
+
+		if (!releaseActiveChunk) {
+			throw new Error("Expected second chunk to be active");
+		}
+		releaseActiveChunk("late chunk result");
+
+		const result = await resultPromise;
+
+		expect(result.text).toBe("full transcript");
+		expect(calls).toEqual(["chunk-0", "chunk-1", "fallback"]);
+		expect(transcribe).toHaveBeenCalledTimes(3);
+	});
+
 	it("propagates chunk errors when fallback is disabled", async () => {
 		const providerError = new TranscriptionError(
 			"Groq",

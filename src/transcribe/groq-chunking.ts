@@ -112,10 +112,15 @@ async function mapChunksWithConcurrency(
 	);
 	const results: Array<string | undefined> = new Array(chunks.length);
 	let nextIndex = 0;
+	let firstError: unknown;
 
 	await Promise.all(
 		Array.from({ length: workerCount }, async () => {
 			while (true) {
+				if (firstError !== undefined) {
+					return;
+				}
+
 				const index = nextIndex;
 				nextIndex++;
 
@@ -128,10 +133,19 @@ async function mapChunksWithConcurrency(
 					return;
 				}
 
-				results[index] = await mapper(chunk);
+				try {
+					results[index] = await mapper(chunk);
+				} catch (error: unknown) {
+					firstError = error;
+					return;
+				}
 			}
 		}),
 	);
+
+	if (firstError !== undefined) {
+		throw firstError;
+	}
 
 	return results.map((result, index) => {
 		if (result === undefined) {
