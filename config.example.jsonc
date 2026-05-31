@@ -69,6 +69,17 @@
 		// Note: Groq + LLM merger helps compensate for streaming accuracy loss
 		"streaming": false,
 
+		// Optional Groq-only chunking for longer recordings. Disabled by default.
+		// Deepgram still receives the full audio buffer; only Groq Whisper is split.
+		"groqChunking": {
+			"enabled": false,
+			"minDurationSeconds": 45,
+			"chunkSeconds": 20,
+			"overlapSeconds": 1.5,
+			"maxConcurrency": 3,
+			"fallbackToFullAudio": true
+		},
+
 		// Custom vocabulary to improve accuracy for jargon, names, or acronyms.
 		// Limit: Total word count across all entries must not exceed 450 words.
 		"boostWords": [

@@ -173,6 +173,14 @@ const defaultTranscription = {
 	streaming: false,
 	deepgramBoosting: false,
 	lexiconEnabled: true,
+	groqChunking: {
+		enabled: false,
+		minDurationSeconds: 45,
+		chunkSeconds: 20,
+		overlapSeconds: 1.5,
+		maxConcurrency: 3,
+		fallbackToFullAudio: true,
+	},
 	statsThresholds: {
 		latencyP95WarnMs: 2500,
 		latencyP95BadMs: 4000,
@@ -254,6 +262,36 @@ export const PathsSchema = z.object({
 	history: z.string().default(defaultPaths.history),
 });
 
+export const GroqChunkingSchema = z
+	.object({
+		enabled: z.boolean().default(defaultTranscription.groqChunking.enabled),
+		minDurationSeconds: z
+			.number()
+			.min(1)
+			.default(defaultTranscription.groqChunking.minDurationSeconds),
+		chunkSeconds: z
+			.number()
+			.min(1)
+			.default(defaultTranscription.groqChunking.chunkSeconds),
+		overlapSeconds: z
+			.number()
+			.min(0)
+			.default(defaultTranscription.groqChunking.overlapSeconds),
+		maxConcurrency: z
+			.number()
+			.int()
+			.min(1)
+			.max(8)
+			.default(defaultTranscription.groqChunking.maxConcurrency),
+		fallbackToFullAudio: z
+			.boolean()
+			.default(defaultTranscription.groqChunking.fallbackToFullAudio),
+	})
+	.refine((value) => value.overlapSeconds < value.chunkSeconds, {
+		path: ["overlapSeconds"],
+		message: "Groq chunk overlap must be smaller than chunk duration",
+	});
+
 export const TranscriptionSchema = z.object({
 	boostWords: z.array(z.string()).optional().refine(boostWordsValidator, {
 		message: "Boost words limit exceeded: Maximum 450 words allowed.",
@@ -262,6 +300,7 @@ export const TranscriptionSchema = z.object({
 	streaming: z.boolean().default(defaultTranscription.streaming),
 	deepgramBoosting: z.boolean().default(defaultTranscription.deepgramBoosting),
 	lexiconEnabled: z.boolean().default(defaultTranscription.lexiconEnabled),
+	groqChunking: GroqChunkingSchema.default(defaultTranscription.groqChunking),
 	statsThresholds: z
 		.object({
 			latencyP95WarnMs: z

@@ -217,6 +217,82 @@ describe("Config Loader", () => {
 		expect(config.transcription.formattingMode).toBe("clean");
 	});
 
+	test("should apply Groq chunking defaults", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		const config = loadConfig(CONFIG_FILE);
+		expect(config.transcription.groqChunking).toEqual({
+			enabled: false,
+			minDurationSeconds: 45,
+			chunkSeconds: 20,
+			overlapSeconds: 1.5,
+			maxConcurrency: 3,
+			fallbackToFullAudio: true,
+		});
+	});
+
+	test("should load valid Groq chunking config", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+			transcription: {
+				groqChunking: {
+					enabled: true,
+					minDurationSeconds: 60,
+					chunkSeconds: 30,
+					overlapSeconds: 2,
+					maxConcurrency: 4,
+					fallbackToFullAudio: false,
+				},
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		const config = loadConfig(CONFIG_FILE);
+		expect(config.transcription.groqChunking).toEqual(
+			configData.transcription.groqChunking,
+		);
+	});
+
+	test("should reject invalid Groq chunking config", () => {
+		const invalidCases = [
+			[{ minDurationSeconds: 0 }, "Too small"],
+			[{ chunkSeconds: 0 }, "Too small"],
+			[
+				{ chunkSeconds: 20, overlapSeconds: 20 },
+				"Groq chunk overlap must be smaller than chunk duration",
+			],
+			[{ maxConcurrency: 0 }, "Too small"],
+			[{ maxConcurrency: 9 }, "Too big"],
+		] as const;
+
+		for (const [groqChunking, expectedMessage] of invalidCases) {
+			const configData = {
+				apiKeys: {
+					groq: "gsk_1234567890",
+					deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+				},
+				transcription: {
+					groqChunking,
+				},
+			};
+			writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+			chmodSync(CONFIG_FILE, 0o600);
+
+			expect(() => loadConfig(CONFIG_FILE)).toThrow(expectedMessage);
+		}
+	});
+
 	test("should allow maxDuration up to 600 seconds", () => {
 		const configData = {
 			apiKeys: {

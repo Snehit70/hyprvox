@@ -17,16 +17,16 @@ import { configService } from "../config/service";
 import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
 import { notify } from "../output/notification";
 import type { DaemonStatus } from "../shared/ipc-types";
+import { appendStatsAggregateEntry } from "../stats/aggregate";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
 import {
 	DeepgramStreamingTranscriber,
 	type StreamingFailureReason,
 	type StreamingStopReason,
 } from "../transcribe/deepgram-streaming";
-import { GroqClient } from "../transcribe/groq";
+import { GroqClient, getGroqChunkingFailureReason } from "../transcribe/groq";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { assessLongRecordingQuality } from "../transcribe/long-recording";
-import { appendStatsAggregateEntry } from "../stats/aggregate";
 import {
 	type MergeReason,
 	type MergeResult,
@@ -108,6 +108,13 @@ interface TranscriptionMetrics {
 	deepgramEndpointingMs: number;
 	deepgramReceivedFinalChunk: boolean;
 	deepgramHadSpeechFinal: boolean;
+	groqChunkingEnabled: boolean;
+	groqChunkingUsed: boolean;
+	groqChunkCount: number;
+	groqChunkDurationSeconds: number;
+	groqChunkOverlapSeconds: number;
+	groqChunkFallback: boolean;
+	groqChunkFailureReason: string | null;
 
 	// Outcome
 	engine: string;
@@ -444,7 +451,12 @@ export class DaemonService {
 		args: string[];
 		mode: "electron_direct" | "bun_fallback";
 	} {
-		const directElectronPath = join(overlayPath, "node_modules", ".bin", "electron");
+		const directElectronPath = join(
+			overlayPath,
+			"node_modules",
+			".bin",
+			"electron",
+		);
 		if (existsSync(directElectronPath)) {
 			return {
 				command: directElectronPath,
@@ -582,7 +594,12 @@ export class DaemonService {
 				}
 
 				logger.info(
-					{ pid, logFile: this.overlayLogFile, trigger, launchMode: launch.mode },
+					{
+						pid,
+						logFile: this.overlayLogFile,
+						trigger,
+						launchMode: launch.mode,
+					},
 					"Overlay started",
 				);
 			} catch (error) {
@@ -1018,6 +1035,15 @@ export class DaemonService {
 			deepgramEndpointingMs: -1,
 			deepgramReceivedFinalChunk: false,
 			deepgramHadSpeechFinal: false,
+			groqChunkingEnabled: this.config.transcription.groqChunking.enabled,
+			groqChunkingUsed: false,
+			groqChunkCount: 0,
+			groqChunkDurationSeconds:
+				this.config.transcription.groqChunking.chunkSeconds,
+			groqChunkOverlapSeconds:
+				this.config.transcription.groqChunking.overlapSeconds,
+			groqChunkFallback: false,
+			groqChunkFailureReason: null,
 			engine: "",
 			textLength: 0,
 			groqTextLength: 0,
@@ -1137,6 +1163,49 @@ export class DaemonService {
 			const audioFormat =
 				metrics.audioFormatStrategy === "opus" ? "opus" : "wav";
 
+			const transcribeGroqAudio = async (): Promise<string> => {
+				const groqChunking = this.config.transcription.groqChunking;
+
+				if (!groqChunking.enabled) {
+					return this.groq.transcribe(
+						audioBufferToTranscribe,
+						language,
+						boostWords,
+						audioFormat,
+						duration,
+					);
+				}
+
+				try {
+					const result = await this.groq.transcribeChunked({
+						rawAudioBuffer: audioBuffer,
+						fallbackAudioBuffer: audioBufferToTranscribe,
+						fallbackFormat: audioFormat,
+						language,
+						boostWords,
+						recordingDurationMs: duration,
+						chunking: groqChunking,
+					});
+
+					metrics.groqChunkingEnabled = result.chunking.enabled;
+					metrics.groqChunkingUsed = result.chunking.used;
+					metrics.groqChunkCount = result.chunking.chunkCount;
+					metrics.groqChunkDurationSeconds =
+						result.chunking.chunkDurationSeconds;
+					metrics.groqChunkOverlapSeconds = result.chunking.overlapSeconds;
+					metrics.groqChunkFallback = result.chunking.fallback;
+					metrics.groqChunkFailureReason = result.chunking.failureReason;
+
+					return result.text;
+				} catch (error: unknown) {
+					const chunkFailureReason = getGroqChunkingFailureReason(error);
+					if (chunkFailureReason) {
+						metrics.groqChunkFailureReason = chunkFailureReason;
+					}
+					throw error;
+				}
+			};
+
 			if (useStreaming) {
 				if (!deepgramStopPromise) {
 					throw new Error(
@@ -1147,18 +1216,10 @@ export class DaemonService {
 				// with Groq transcription.
 				const [groqTimed, deepgramTimed] = await Promise.all([
 					timeAsync(() =>
-						this.groq
-							.transcribe(
-								audioBufferToTranscribe,
-								language,
-								boostWords,
-								audioFormat,
-								duration,
-							)
-							.catch((err) => {
-								groqErr = err;
-								return "";
-							}),
+						transcribeGroqAudio().catch((err) => {
+							groqErr = err;
+							return "";
+						}),
 					),
 					deepgramStopPromise,
 				]);
@@ -1204,18 +1265,10 @@ export class DaemonService {
 			} else {
 				const [groqTimed, deepgramTimed] = await Promise.all([
 					timeAsync(() =>
-						this.groq
-							.transcribe(
-								audioBufferToTranscribe,
-								language,
-								boostWords,
-								audioFormat,
-								duration,
-							)
-							.catch((err) => {
-								groqErr = err;
-								return "";
-							}),
+						transcribeGroqAudio().catch((err) => {
+							groqErr = err;
+							return "";
+						}),
 					),
 					timeAsync(() =>
 						this.deepgram

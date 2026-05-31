@@ -75,6 +75,7 @@ Before provider calls, the daemon builds technical-term hints from configured bo
 1.  **Groq (Whisper Large V3)**:
     - **Strength**: Unrivaled technical accuracy and word recognition.
     - **Usage**: Primary source for content.
+    - **Optional chunking**: When `transcription.groqChunking.enabled` is true and the recording meets the configured minimum duration, Groq uses overlapping chunks from the original recorder WAV with bounded parallel requests. The ordered chunk text is joined before the normal merge pipeline.
 2.  **Deepgram (Nova-3)**:
     - **Strength**: Exceptional punctuation, capitalization, and formatting.
     - **Usage**: Primary source for structure.

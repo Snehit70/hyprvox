@@ -4,6 +4,7 @@ import { loadConfig } from "../config/loader";
 import { TranscriptionError } from "../utils/errors";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
+import { createPcmWavChunks, type WavAudioChunk } from "./wav-chunker";
 
 const BASE_TRANSCRIPTION_PROMPT = [
 	"Technical English dictation about software development, Linux, and AI.",
@@ -56,6 +57,42 @@ function getErrorStatus(error: unknown): number | undefined {
 	return typeof status === "number" ? status : undefined;
 }
 
+export interface GroqChunkingOptions {
+	enabled: boolean;
+	minDurationSeconds: number;
+	chunkSeconds: number;
+	overlapSeconds: number;
+	maxConcurrency: number;
+	fallbackToFullAudio: boolean;
+}
+
+export interface GroqChunkingMetrics {
+	enabled: boolean;
+	used: boolean;
+	chunkCount: number;
+	chunkDurationSeconds: number;
+	overlapSeconds: number;
+	fallback: boolean;
+	failureReason: string | null;
+}
+
+export interface GroqChunkedTranscriptionRequest {
+	rawAudioBuffer: Buffer;
+	fallbackAudioBuffer: Buffer;
+	fallbackFormat: "opus" | "wav";
+	language?: string;
+	boostWords?: string[];
+	recordingDurationMs?: number;
+	chunking: GroqChunkingOptions;
+}
+
+export interface GroqChunkedTranscriptionResult {
+	text: string;
+	chunking: GroqChunkingMetrics;
+}
+
+const GROQ_CHUNKING_FAILURE_REASON_KEY = "groqChunkingFailureReason";
+
 export { buildTranscriptionPrompt, MAX_TRANSCRIPTION_PROMPT_CHARS };
 
 function getErrorMessage(error: unknown): string | undefined {
@@ -65,6 +102,93 @@ function getErrorMessage(error: unknown): string | undefined {
 
 	const { message } = error as { message?: unknown };
 	return typeof message === "string" ? message : undefined;
+}
+
+function normalizeTranscriptParts(parts: string[]): string {
+	return parts
+		.map((part) => part.trim())
+		.filter((part) => part.length > 0)
+		.join(" ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function getFailureReason(error: unknown): string {
+	const message = getErrorMessage(error);
+	return message && message.length > 0 ? message : String(error);
+}
+
+function attachGroqChunkingFailureReason(
+	error: unknown,
+	reason: string,
+): unknown {
+	if (typeof error === "object" && error !== null) {
+		Object.defineProperty(error, GROQ_CHUNKING_FAILURE_REASON_KEY, {
+			value: reason,
+			configurable: true,
+		});
+		return error;
+	}
+
+	const wrapped = new Error(reason);
+	Object.defineProperty(wrapped, GROQ_CHUNKING_FAILURE_REASON_KEY, {
+		value: reason,
+		configurable: true,
+	});
+	return wrapped;
+}
+
+export function getGroqChunkingFailureReason(
+	error: unknown,
+): string | undefined {
+	if (typeof error !== "object" || error === null) {
+		return undefined;
+	}
+
+	const reason = (error as Record<string, unknown>)[
+		GROQ_CHUNKING_FAILURE_REASON_KEY
+	];
+	return typeof reason === "string" ? reason : undefined;
+}
+
+async function mapWithConcurrency<T, U>(
+	items: T[],
+	concurrency: number,
+	mapper: (item: T, index: number) => Promise<U>,
+): Promise<U[]> {
+	const workerCount = Math.min(
+		Math.max(1, Math.floor(concurrency)),
+		items.length,
+	);
+	const results: Array<U | undefined> = new Array(items.length);
+	let nextIndex = 0;
+
+	await Promise.all(
+		Array.from({ length: workerCount }, async () => {
+			while (true) {
+				const index = nextIndex;
+				nextIndex++;
+
+				if (index >= items.length) {
+					return;
+				}
+
+				const item = items[index];
+				if (item === undefined) {
+					return;
+				}
+
+				results[index] = await mapper(item, index);
+			}
+		}),
+	);
+
+	return results.map((result, index) => {
+		if (result === undefined) {
+			throw new Error(`Missing result for Groq chunk ${index}`);
+		}
+		return result;
+	});
 }
 
 export class GroqClient {
@@ -213,6 +337,172 @@ export class GroqClient {
 				boostWordsCount: boostWords.length,
 			});
 			throw error;
+		}
+	}
+
+	private buildChunkMetrics(
+		chunking: GroqChunkingOptions,
+		overrides: Partial<GroqChunkingMetrics> = {},
+	): GroqChunkingMetrics {
+		return {
+			enabled: chunking.enabled,
+			used: false,
+			chunkCount: 0,
+			chunkDurationSeconds: chunking.chunkSeconds,
+			overlapSeconds: chunking.overlapSeconds,
+			fallback: false,
+			failureReason: null,
+			...overrides,
+		};
+	}
+
+	private async transcribeChunkFallback(
+		request: GroqChunkedTranscriptionRequest,
+		failureReason: string,
+		chunkCount: number,
+	): Promise<GroqChunkedTranscriptionResult> {
+		logger.warn(
+			{
+				failureReason,
+				chunkCount,
+				fallbackFormat: request.fallbackFormat,
+				recordingDurationMs: request.recordingDurationMs,
+			},
+			"Groq chunked transcription failed; falling back to full audio",
+		);
+
+		const text = await this.transcribe(
+			request.fallbackAudioBuffer,
+			request.language,
+			request.boostWords,
+			request.fallbackFormat,
+			request.recordingDurationMs,
+		);
+
+		return {
+			text,
+			chunking: this.buildChunkMetrics(request.chunking, {
+				chunkCount,
+				fallback: true,
+				failureReason,
+			}),
+		};
+	}
+
+	public async transcribeChunked(
+		request: GroqChunkedTranscriptionRequest,
+	): Promise<GroqChunkedTranscriptionResult> {
+		const language = request.language ?? "en";
+		const boostWords = request.boostWords ?? [];
+		const recordingDurationMs = request.recordingDurationMs ?? 0;
+		const { chunking } = request;
+
+		if (
+			!chunking.enabled ||
+			recordingDurationMs < chunking.minDurationSeconds * 1000
+		) {
+			const text = await this.transcribe(
+				request.fallbackAudioBuffer,
+				language,
+				boostWords,
+				request.fallbackFormat,
+				request.recordingDurationMs,
+			);
+			return {
+				text,
+				chunking: this.buildChunkMetrics(chunking),
+			};
+		}
+
+		let chunks: WavAudioChunk[];
+		let durationSeconds = 0;
+		let dataBytesClamped = false;
+		let dataBytesTrimmed = false;
+		try {
+			const plan = createPcmWavChunks(request.rawAudioBuffer, {
+				chunkSeconds: chunking.chunkSeconds,
+				overlapSeconds: chunking.overlapSeconds,
+				minDurationSeconds: chunking.minDurationSeconds,
+			});
+			chunks = plan.chunks;
+			durationSeconds = plan.durationSeconds;
+			dataBytesClamped = plan.dataBytesClamped;
+			dataBytesTrimmed = plan.dataBytesTrimmed;
+
+			if (!plan.chunked) {
+				const text = await this.transcribe(
+					request.fallbackAudioBuffer,
+					language,
+					boostWords,
+					request.fallbackFormat,
+					request.recordingDurationMs,
+				);
+				return {
+					text,
+					chunking: this.buildChunkMetrics(chunking),
+				};
+			}
+		} catch (error: unknown) {
+			const failureReason = `chunk_preparation_failed: ${getFailureReason(error)}`;
+			if (chunking.fallbackToFullAudio) {
+				return this.transcribeChunkFallback(request, failureReason, 0);
+			}
+			throw attachGroqChunkingFailureReason(error, failureReason);
+		}
+
+		try {
+			logger.info(
+				{
+					chunkCount: chunks.length,
+					chunkSeconds: chunking.chunkSeconds,
+					overlapSeconds: chunking.overlapSeconds,
+					maxConcurrency: chunking.maxConcurrency,
+					durationSeconds,
+					dataBytesClamped,
+					dataBytesTrimmed,
+				},
+				"Groq chunked transcription started",
+			);
+
+			const transcripts = await mapWithConcurrency(
+				chunks,
+				chunking.maxConcurrency,
+				async (chunk) =>
+					this.transcribe(
+						chunk.buffer,
+						language,
+						boostWords,
+						"wav",
+						Math.round(chunk.durationSeconds * 1000),
+					),
+			);
+			const text = normalizeTranscriptParts(transcripts);
+
+			logger.info(
+				{
+					chunkCount: chunks.length,
+					textLength: text.length,
+				},
+				"Groq chunked transcription success",
+			);
+
+			return {
+				text,
+				chunking: this.buildChunkMetrics(chunking, {
+					used: true,
+					chunkCount: chunks.length,
+				}),
+			};
+		} catch (error: unknown) {
+			const failureReason = `chunk_request_failed: ${getFailureReason(error)}`;
+			if (chunking.fallbackToFullAudio) {
+				return this.transcribeChunkFallback(
+					request,
+					failureReason,
+					chunks.length,
+				);
+			}
+			throw attachGroqChunkingFailureReason(error, failureReason);
 		}
 	}
 }
