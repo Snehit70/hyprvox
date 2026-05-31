@@ -2,20 +2,9 @@ import { existsSync } from "node:fs";
 import { appendFile, chmod, mkdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { type PerfEvent, parsePerfEvent } from "./perf-event";
 
-export interface StatsAggregateEntry {
-	timestamp: string;
-	processingMs: number;
-	engine: string;
-	mergeStrategy: string;
-	mergeReason: string | null;
-	validationReasons: string[];
-	validationRetryCount: number;
-	validationFallbackSource: "none" | "groq" | "deepgram";
-	groqSttModel?: string;
-	deepgramModel?: string;
-	mergeModel?: string;
-}
+export type StatsAggregateEntry = PerfEvent;
 
 export const AGGREGATE_FILE = join(
 	homedir(),
@@ -43,9 +32,8 @@ export async function loadStatsAggregateEntries(
 	const entries: StatsAggregateEntry[] = [];
 	for (const line of selected) {
 		try {
-			const parsed = JSON.parse(line) as StatsAggregateEntry;
-			if (typeof parsed.processingMs !== "number") continue;
-			entries.push(parsed);
+			const parsed = parsePerfEvent(JSON.parse(line));
+			if (parsed) entries.push(parsed);
 		} catch {
 			// Ignore malformed lines.
 		}

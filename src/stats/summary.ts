@@ -5,30 +5,14 @@ import { AudioDeviceService } from "../audio/device-service";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
 import type { DaemonState } from "../daemon/service";
 import { detectEnvironment } from "../setup/environment";
-import { loadStatsAggregateEntries } from "./aggregate";
 import { type HistoryItem, loadHistory } from "../utils/history";
 import { loadStats } from "../utils/stats";
-
-export type QualityReason =
-	| "prompt_artifact"
-	| "cot_meta"
-	| "token_injection"
-	| "hallucination_suffix"
-	| "mixed_script"
-	| "garbage";
-
-interface PerfEvent {
-	timestamp: string;
-	processingMs: number;
-	mergeStrategy: string;
-	mergeReason: string | null;
-	validationReasons: QualityReason[];
-	validationRetryCount: number;
-	validationFallbackSource: "none" | "groq" | "deepgram";
-	groqSttModel?: string;
-	deepgramModel?: string;
-	mergeModel?: string;
-}
+import { loadStatsAggregateEntries } from "./aggregate";
+import {
+	type PerfEvent,
+	parsePerfEvent,
+	type QualityReason,
+} from "./perf-event";
 
 export interface StatsSummary {
 	generatedAt: string;
@@ -221,7 +205,9 @@ function readLogEntries(logDir: string | null): Array<Record<string, unknown>> {
 	return entries;
 }
 
-function readErrorSummary(logEntries: Array<Record<string, unknown>>): StatsSummary["errors"] {
+function readErrorSummary(
+	logEntries: Array<Record<string, unknown>>,
+): StatsSummary["errors"] {
 	let count = 0;
 	let latest: string | null = null;
 	const recent: Array<{ timestamp: string; message: string }> = [];
@@ -251,58 +237,14 @@ function readErrorSummary(logEntries: Array<Record<string, unknown>>): StatsSumm
 	return { count, latest, recent };
 }
 
-function readPerfEvents(logEntries: Array<Record<string, unknown>>): PerfEvent[] {
+function readPerfEvents(
+	logEntries: Array<Record<string, unknown>>,
+): PerfEvent[] {
 	const events: PerfEvent[] = [];
 	for (const entry of logEntries) {
 		if (entry.type !== "perf") continue;
-		const timestamp =
-			typeof entry.time === "string" ? entry.time : new Date().toISOString();
-		const processingMs =
-			typeof entry.processingMs === "number" ? entry.processingMs : -1;
-		if (!Number.isFinite(processingMs) || processingMs < 0) continue;
-		const rawValidation = Array.isArray(entry.validationReasons)
-			? entry.validationReasons
-			: [];
-		const validationReasons: QualityReason[] = rawValidation.filter(
-			(value): value is QualityReason =>
-				typeof value === "string" &&
-				[
-					"prompt_artifact",
-					"cot_meta",
-					"token_injection",
-					"hallucination_suffix",
-					"mixed_script",
-					"garbage",
-				].includes(value),
-		);
-		events.push({
-			timestamp,
-			processingMs,
-			mergeStrategy:
-				typeof entry.mergeStrategy === "string"
-					? entry.mergeStrategy
-					: "unknown",
-			mergeReason:
-				typeof entry.mergeReason === "string" ? entry.mergeReason : null,
-			validationReasons,
-			validationRetryCount:
-				typeof entry.validationRetryCount === "number"
-					? entry.validationRetryCount
-					: 0,
-			validationFallbackSource:
-				entry.validationFallbackSource === "groq" ||
-				entry.validationFallbackSource === "deepgram"
-					? entry.validationFallbackSource
-					: "none",
-			groqSttModel:
-				typeof entry.groqSttModel === "string" ? entry.groqSttModel : undefined,
-			deepgramModel:
-				typeof entry.deepgramModel === "string"
-					? entry.deepgramModel
-					: undefined,
-			mergeModel:
-				typeof entry.mergeModel === "string" ? entry.mergeModel : undefined,
-		});
+		const parsed = parsePerfEvent(entry);
+		if (parsed) events.push(parsed);
 	}
 	return events;
 }
@@ -328,28 +270,7 @@ async function loadPerfEventsHybrid(
 
 	const aggregateRows = await loadStatsAggregateEntries(8000);
 	if (aggregateRows.length > 0) {
-		const events: PerfEvent[] = aggregateRows.map((row) => ({
-			timestamp: row.timestamp,
-			processingMs: row.processingMs,
-			mergeStrategy: row.mergeStrategy,
-			mergeReason: row.mergeReason,
-			validationReasons: row.validationReasons.filter(
-				(value): value is QualityReason =>
-					[
-						"prompt_artifact",
-						"cot_meta",
-						"token_injection",
-						"hallucination_suffix",
-						"mixed_script",
-						"garbage",
-					].includes(value),
-			),
-			validationRetryCount: row.validationRetryCount,
-			validationFallbackSource: row.validationFallbackSource,
-			groqSttModel: row.groqSttModel,
-			deepgramModel: row.deepgramModel,
-			mergeModel: row.mergeModel,
-		}));
+		const events: PerfEvent[] = aggregateRows;
 		perfEventCache = {
 			expiresAt: now + cacheTtlMs,
 			events,
@@ -387,7 +308,9 @@ function pickThresholdsFromConfig(): StatsSummary["thresholds"] {
 	}
 }
 
-function pickThresholdsFromRawConfig(rawConfig: unknown): StatsSummary["thresholds"] {
+function pickThresholdsFromRawConfig(
+	rawConfig: unknown,
+): StatsSummary["thresholds"] {
 	try {
 		const parsed = rawConfig as {
 			transcription?: {
@@ -435,7 +358,11 @@ function pickStatsCacheTtlMsFromRawConfig(rawConfig: unknown): number {
 		: 10000;
 }
 
-function processingWindow(events: PerfEvent[], nowMs: number, windowMs: number): number[] {
+function processingWindow(
+	events: PerfEvent[],
+	nowMs: number,
+	windowMs: number,
+): number[] {
 	return eventsInWindow(events, nowMs, windowMs)
 		.slice()
 		.sort(
@@ -458,7 +385,11 @@ function eventsInWindow(
 	});
 }
 
-function ratePerHour(events: PerfEvent[], nowMs: number, windowMs: number): number {
+function ratePerHour(
+	events: PerfEvent[],
+	nowMs: number,
+	windowMs: number,
+): number {
 	const count = eventsInWindow(events, nowMs, windowMs).length;
 	return count / (windowMs / 3_600_000);
 }
@@ -508,7 +439,8 @@ export async function buildStatsSummary(): Promise<StatsSummary> {
 	);
 	const notifyReady = Boolean(envInfo.commands["notify-send"]?.path);
 	const systemdReady = Boolean(envInfo.commands.systemctl?.path);
-	const failCount = Number(!configLoaded) + Number(!apiReady) + Number(!hasMicPath);
+	const failCount =
+		Number(!configLoaded) + Number(!apiReady) + Number(!hasMicPath);
 	const warnCount =
 		Number(hasMicPath && (audioDeviceCount ?? 0) === 0) +
 		Number(!clipboardReady) +
@@ -593,7 +525,11 @@ export function buildStatsSummaryFromInput(
 	const events24h = eventsInWindow(sortedPerfEvents, nowMs, 24 * 3600_000);
 	const events1h = eventsInWindow(sortedPerfEvents, nowMs, 3600_000);
 	const baseline7d = eventsInWindow(sortedPerfEvents, nowMs, 7 * 24 * 3600_000);
-	const previous23h = eventsInWindow(sortedPerfEvents, nowMs - 3600_000, 23 * 3600_000);
+	const previous23h = eventsInWindow(
+		sortedPerfEvents,
+		nowMs - 3600_000,
+		23 * 3600_000,
+	);
 
 	const qualityWindow24h: Record<QualityReason, number> = {
 		prompt_artifact: 0,
@@ -642,8 +578,12 @@ export function buildStatsSummaryFromInput(
 	if (
 		p95 !== null &&
 		p95 > thresholds.latencyP95WarnMs &&
-		percentile(eventsInWindow(baseline7d, nowMs - 24 * 3600_000, 6 * 24 * 3600_000).map((event) => event.processingMs), 95) !==
-			null
+		percentile(
+			eventsInWindow(baseline7d, nowMs - 24 * 3600_000, 6 * 24 * 3600_000).map(
+				(event) => event.processingMs,
+			),
+			95,
+		) !== null
 	) {
 		regressionFlags.push("latency_p95_regressed");
 	}
@@ -659,7 +599,8 @@ export function buildStatsSummaryFromInput(
 		3600_000,
 	);
 	const priorQualityRate =
-		previous23h.filter((event) => event.validationReasons.length > 0).length / 23;
+		previous23h.filter((event) => event.validationReasons.length > 0).length /
+		23;
 	const spike = oneHourQualityRate >= Math.max(2, priorQualityRate * 2);
 	if (spike) {
 		regressionFlags.push("quality_spike_1h");
@@ -690,29 +631,28 @@ export function buildStatsSummaryFromInput(
 		daemon: input.daemon,
 		errors: input.errors,
 		paths: input.paths,
-		health:
-			input.health ?? {
-				checkedAt: now.toISOString(),
-				overall: "FAIL",
-				configLoaded: false,
-				apiKeysConfigured: {
-					groq: false,
-					deepgram: false,
-				},
-				audio: {
-					arecordAvailable: false,
-					deviceCount: null,
-				},
-				capabilities: {
-					clipboard: false,
-					notifications: false,
-					systemd: false,
-				},
-				session: {
-					type: "unknown",
-					container: false,
-				},
+		health: input.health ?? {
+			checkedAt: now.toISOString(),
+			overall: "FAIL",
+			configLoaded: false,
+			apiKeysConfigured: {
+				groq: false,
+				deepgram: false,
 			},
+			audio: {
+				arecordAvailable: false,
+				deviceCount: null,
+			},
+			capabilities: {
+				clipboard: false,
+				notifications: false,
+				systemd: false,
+			},
+			session: {
+				type: "unknown",
+				container: false,
+			},
+		},
 		quality: {
 			window24h: qualityWindow24h,
 			total24h: qualityTotal24h,
@@ -758,7 +698,11 @@ export function buildStatsSummaryFromInput(
 				window1h: processingWindow(sortedPerfEvents, nowMs, 60 * 60_000),
 				window6h: processingWindow(sortedPerfEvents, nowMs, 6 * 60 * 60_000),
 				window24h: processingWindow(sortedPerfEvents, nowMs, 24 * 60 * 60_000),
-				window7d: processingWindow(sortedPerfEvents, nowMs, 7 * 24 * 60 * 60_000),
+				window7d: processingWindow(
+					sortedPerfEvents,
+					nowMs,
+					7 * 24 * 60 * 60_000,
+				),
 			},
 		},
 	};
