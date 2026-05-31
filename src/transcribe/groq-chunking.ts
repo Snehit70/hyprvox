@@ -49,7 +49,7 @@ export interface GroqRecordingTranscriptionResult {
 export class GroqChunkedTranscriptionError extends Error {
 	public override readonly name = "GroqChunkedTranscriptionError";
 	public readonly chunking: GroqChunkingMetrics;
-	public readonly cause: unknown;
+	public override readonly cause: unknown;
 
 	public constructor(
 		message: string,
