@@ -58,6 +58,20 @@ function resolveAt(
 	resolve(value);
 }
 
+async function waitForAssertion(assertion: () => void): Promise<void> {
+	let lastError: unknown;
+	for (let attempt = 0; attempt < 50; attempt++) {
+		try {
+			assertion();
+			return;
+		} catch (error: unknown) {
+			lastError = error;
+			await new Promise((resolve) => setTimeout(resolve, 1));
+		}
+	}
+	throw lastError;
+}
+
 describe("GroqClient chunked transcription", () => {
 	it("preserves output order when chunks complete out of order", async () => {
 		const resolvers: Array<(value: string) => void> = [];
@@ -77,7 +91,7 @@ describe("GroqClient chunked transcription", () => {
 			transcribe,
 		});
 
-		await vi.waitFor(() => expect(resolvers).toHaveLength(3));
+		await waitForAssertion(() => expect(resolvers).toHaveLength(3));
 		resolveAt(resolvers, 2, "third");
 		resolveAt(resolvers, 0, "first");
 		resolveAt(resolvers, 1, "second");
@@ -176,7 +190,7 @@ describe("GroqClient chunked transcription", () => {
 			transcribe,
 		});
 
-		await vi.waitFor(() => expect(calls).toEqual(["chunk-0", "chunk-1"]));
+		await waitForAssertion(() => expect(calls).toEqual(["chunk-0", "chunk-1"]));
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		expect(calls).not.toContain("fallback");
 
