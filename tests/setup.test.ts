@@ -1,6 +1,8 @@
 import { describe, expect, test } from "vitest";
 import type { loadConfig } from "../src/config/loader";
+import { ConfigFileSchema } from "../src/config/schema";
 import { runSetupChecks } from "../src/setup/checks";
+import { mergeConfig } from "../src/setup/config-patch";
 import {
 	detectEnvironment,
 	type EnvironmentInfo,
@@ -67,6 +69,25 @@ describe("setup environment detection", () => {
 		expect(getInstallCommand("arch", "wayland")).toContain("pacman");
 		expect(getInstallCommand("ubuntu", "x11")).toContain("xclip");
 		expect(getInstallCommand("unknown", "wayland")).toBeNull();
+	});
+});
+
+describe("setup config patches", () => {
+	test("does not create empty apiKeys when patching unrelated sections", () => {
+		const nextConfig = mergeConfig({}, { behavior: { notifications: false } });
+
+		expect(nextConfig.apiKeys).toBeUndefined();
+		expect(ConfigFileSchema.safeParse(nextConfig).success).toBe(true);
+	});
+
+	test("preserves partial API keys during setup", () => {
+		const nextConfig = mergeConfig(
+			{ apiKeys: { groq: "gsk_existing" } },
+			{ transcription: { streaming: true } },
+		);
+
+		expect(nextConfig.apiKeys).toEqual({ groq: "gsk_existing" });
+		expect(ConfigFileSchema.safeParse(nextConfig).success).toBe(true);
 	});
 });
 

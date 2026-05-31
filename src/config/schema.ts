@@ -234,6 +234,16 @@ export const ApiKeysSchema = z.object({
 		),
 });
 
+export const ApiKeysFileSchema = ApiKeysSchema.partial().refine(
+	(keys) =>
+		keys.groq !== undefined ||
+		keys.deepgram !== undefined ||
+		keys.groqFallback !== undefined,
+	{
+		message: "At least one API key must be provided when apiKeys is present",
+	},
+);
+
 export const BehaviorSchema = z.object({
 	hotkey: z.string().default(defaultBehavior.hotkey).refine(hotkeyValidator, {
 		message:
@@ -377,7 +387,7 @@ export const ConfigSchema = z.object({
 });
 
 export const ConfigFileSchema = z.object({
-	apiKeys: ApiKeysSchema.optional(),
+	apiKeys: ApiKeysFileSchema.optional(),
 	behavior: BehaviorSchema.default(defaultBehavior),
 	paths: PathsSchema.default(defaultPaths),
 	transcription: TranscriptionSchema.default(defaultTranscription),

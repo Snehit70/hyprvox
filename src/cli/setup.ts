@@ -1,6 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { Command } from "commander";
@@ -15,6 +14,12 @@ import {
 	type SetupCheckStatus,
 	type SetupReport,
 } from "../setup/checks";
+import {
+	type ConfigPatch,
+	loadPartialConfig,
+	mergeConfig,
+	rollbackProfileDerivedFields,
+} from "../setup/config-patch";
 import { getInstallCommand } from "../setup/environment";
 import {
 	collectDeviceSignals,
@@ -44,7 +49,11 @@ function abortIfQuit(value: string): void {
 }
 
 function askYesNoQuit(prompt: string): boolean {
-	const idx = readlineSync.keyInSelect(["Yes", "No", "Quit setup"], `${prompt} (or q to quit)`, { cancel: false });
+	const idx = readlineSync.keyInSelect(
+		["Yes", "No", "Quit setup"],
+		`${prompt} (or q to quit)`,
+		{ cancel: false },
+	);
 	if (idx === 2) throw new SetupAbortedError();
 	return idx === 0;
 }
@@ -54,21 +63,37 @@ function askSelectionQuit(choices: string[], prompt: string): number {
 		console.log(`[${idx + 1}] ${choices[idx]}`);
 	}
 	while (true) {
-		const raw = readlineSync.question(`${prompt} (or q to quit) [1...${choices.length}]: `);
+		const raw = readlineSync.question(
+			`${prompt} (or q to quit) [1...${choices.length}]: `,
+		);
 		abortIfQuit(raw);
 		const selected = Number.parseInt(raw, 10);
-		if (Number.isFinite(selected) && selected >= 1 && selected <= choices.length) {
+		if (
+			Number.isFinite(selected) &&
+			selected >= 1 &&
+			selected <= choices.length
+		) {
 			return selected - 1;
 		}
-		console.log(colors.red(`Choose a number between 1 and ${choices.length}, or q.`));
+		console.log(
+			colors.red(`Choose a number between 1 and ${choices.length}, or q.`),
+		);
 	}
 }
 
-function askIntQuit(prompt: string, min: number, max: number, defaultValue: number): number {
+function askIntQuit(
+	prompt: string,
+	min: number,
+	max: number,
+	defaultValue: number,
+): number {
 	while (true) {
-		const raw = readlineSync.question(`${prompt} [${defaultValue}] (or q to quit): `, {
-			defaultInput: String(defaultValue),
-		});
+		const raw = readlineSync.question(
+			`${prompt} [${defaultValue}] (or q to quit): `,
+			{
+				defaultInput: String(defaultValue),
+			},
+		);
 		abortIfQuit(raw);
 		const value = Number.parseInt(raw, 10);
 		if (Number.isFinite(value) && value >= min && value <= max) return value;
@@ -145,7 +170,8 @@ function printReport(report: ReturnType<typeof runSetupChecks>): void {
 				)
 				.map((check) => check.fix)
 				.filter(
-					(fix): fix is string => Boolean(fix) && !requiredSteps.includes(fix),
+					(fix): fix is string =>
+						typeof fix === "string" && !requiredSteps.includes(fix),
 				),
 		),
 	];
@@ -237,66 +263,17 @@ function hasConfiguredApiKeys(config: ConfigFile): boolean {
 	);
 }
 
-function mergeConfig(base: ConfigFile, updates: ConfigFile): ConfigFile {
-	return {
-		...base,
-		...updates,
-		apiKeys: {
-			...(base.apiKeys ?? {}),
-			...(updates.apiKeys ?? {}),
-		},
-		behavior: {
-			...(base.behavior ?? {}),
-			...(updates.behavior ?? {}),
-			clipboard: {
-				...(base.behavior?.clipboard ?? {}),
-				...(updates.behavior?.clipboard ?? {}),
-			},
-		},
-		transcription: {
-			...(base.transcription ?? {}),
-			...(updates.transcription ?? {}),
-			statsThresholds: {
-				...(base.transcription?.statsThresholds ?? {}),
-				...(updates.transcription?.statsThresholds ?? {}),
-			},
-		},
-	};
-}
-
-function loadPartialConfig(): ConfigFile {
-	if (!existsSync(DEFAULT_CONFIG_FILE)) return {};
-	try {
-		return JSON.parse(readFileSync(DEFAULT_CONFIG_FILE, "utf-8")) as ConfigFile;
-	} catch {
-		return {};
-	}
-}
-
-const SETUP_REPORT_FILE = join(homedir(), ".config", "hypr", "vox", "setup-report.json");
+const SETUP_REPORT_FILE = join(
+	homedir(),
+	".config",
+	"hypr",
+	"vox",
+	"setup-report.json",
+);
 
 function writeSetupReport(payload: Record<string, unknown>): void {
 	mkdirSync(dirname(SETUP_REPORT_FILE), { recursive: true });
 	writeFileSync(SETUP_REPORT_FILE, JSON.stringify(payload, null, 2));
-}
-
-function rollbackProfileDerivedFields(
-	current: ConfigFile,
-	baseline: ConfigFile,
-): ConfigFile {
-	return mergeConfig(current, {
-		transcription: {
-			streaming: baseline.transcription?.streaming,
-			deepgramBoosting: baseline.transcription?.deepgramBoosting,
-			mergeModel: baseline.transcription?.mergeModel,
-			statsMinSampleSize: baseline.transcription?.statsMinSampleSize,
-			statsThresholds: baseline.transcription?.statsThresholds,
-		},
-		behavior: {
-			notifications: baseline.behavior?.notifications,
-			hotkey: baseline.behavior?.hotkey,
-		},
-	});
 }
 
 function runPostApplySmokeTest(apiKeysConfigured: boolean): {
@@ -306,14 +283,19 @@ function runPostApplySmokeTest(apiKeysConfigured: boolean): {
 	const reasons: string[] = [];
 	const report = runSetupChecks();
 	if (!apiKeysConfigured) reasons.push("api_keys_incomplete");
-	if (!report.environment.commands.arecord?.path) reasons.push("arecord_missing");
+	if (!report.environment.commands.arecord?.path)
+		reasons.push("arecord_missing");
 	if (
 		report.environment.sessionType === "wayland" &&
 		!report.environment.commands["wl-copy"]?.path
 	) {
 		reasons.push("wl_copy_missing");
 	}
-	if (report.checks.some((check) => check.id.startsWith("config.") && check.status === "fail")) {
+	if (
+		report.checks.some(
+			(check) => check.id.startsWith("config.") && check.status === "fail",
+		)
+	) {
 		reasons.push("config_check_failed");
 	}
 	return { passed: reasons.length === 0, reasons };
@@ -322,8 +304,8 @@ function runPostApplySmokeTest(apiKeysConfigured: boolean): {
 async function collectInteractiveWizardUpdates(
 	baseConfig: ConfigFile,
 	options: SetupOptions,
-): Promise<ConfigFile> {
-	const updates: ConfigFile = {};
+): Promise<ConfigPatch> {
+	const updates: ConfigPatch = {};
 
 	const groqKey = askOptionalSecret(
 		"Enter Groq API Key (starts with gsk_) [enter to keep current]: ",
@@ -353,7 +335,7 @@ async function collectInteractiveWizardUpdates(
 	updates.behavior = {
 		...updates.behavior,
 		hotkey: useBuiltInHotkey
-			? baseConfig.behavior?.hotkey ?? "Right Control"
+			? (baseConfig.behavior?.hotkey ?? "Right Control")
 			: "disabled",
 	};
 
@@ -381,7 +363,9 @@ async function collectInteractiveWizardUpdates(
 
 	if (options.advanced) {
 		const streaming = askYesNoQuit("[Advanced] Enable streaming mode?");
-		const deepgramBoosting = askYesNoQuit("[Advanced] Enable Deepgram boosting?");
+		const deepgramBoosting = askYesNoQuit(
+			"[Advanced] Enable Deepgram boosting?",
+		);
 		updates.transcription = {
 			...updates.transcription,
 			streaming,
@@ -397,7 +381,11 @@ async function runSetupWizard(
 	options: SetupOptions,
 ): Promise<{ nextConfig: ConfigFile; apiKeysConfigured: boolean }> {
 	if (options.nonInteractive) {
-		console.log(colors.dim("Non-interactive mode: skipping prompts and preserving existing values."));
+		console.log(
+			colors.dim(
+				"Non-interactive mode: skipping prompts and preserving existing values.",
+			),
+		);
 		return {
 			nextConfig: workingConfig,
 			apiKeysConfigured: hasConfiguredApiKeys(workingConfig),
@@ -431,13 +419,19 @@ async function configureInteractively(options: SetupOptions): Promise<boolean> {
 		console.log(
 			colors.green(`Config found at ${colors.dim(DEFAULT_CONFIG_FILE)}`),
 		);
-		if (!options.nonInteractive && !askYesNoQuit("Do you want to update configuration now?")) {
+		if (
+			!options.nonInteractive &&
+			!askYesNoQuit("Do you want to update configuration now?")
+		) {
 			return true;
 		}
 	}
 
 	const config = existingConfig ?? loadPartialConfig();
-	const { nextConfig, apiKeysConfigured } = await runSetupWizard(config, options);
+	const { nextConfig, apiKeysConfigured } = await runSetupWizard(
+		config,
+		options,
+	);
 
 	const changes = diffConfig(config, nextConfig);
 	console.log(colors.bold("\nPlanned setup changes"));
@@ -453,7 +447,9 @@ async function configureInteractively(options: SetupOptions): Promise<boolean> {
 	}
 
 	if (!options.dryRun && changes.length > 0) saveConfig(nextConfig);
-	console.log(`${colors.green("✓")} ${options.dryRun ? "Would save" : "Saved"} config at ${DEFAULT_CONFIG_FILE}`);
+	console.log(
+		`${colors.green("✓")} ${options.dryRun ? "Would save" : "Saved"} config at ${DEFAULT_CONFIG_FILE}`,
+	);
 
 	if (!apiKeysConfigured) {
 		console.log(
@@ -535,9 +531,7 @@ function configureWaylandBehavior(options: SetupOptions): void {
 		"Built-in global hotkeys are limited on Wayland. Native compositor bindings are more reliable.",
 	);
 
-	if (
-		!askYesNoQuit("Use compositor binding and disable built-in hotkey?")
-	) {
+	if (!askYesNoQuit("Use compositor binding and disable built-in hotkey?")) {
 		return;
 	}
 
@@ -561,6 +555,9 @@ function installServiceIfRequested(
 	report: SetupReport,
 	apiKeysConfigured: boolean,
 ): void {
+	const executable = process.argv[0] ?? "bun";
+	const entrypoint = process.argv[1] ?? "index.ts";
+
 	if (options.skipService) {
 		console.log(
 			colors.yellow("Skipping service install because --skip-service was set."),
@@ -594,15 +591,13 @@ function installServiceIfRequested(
 			console.log(colors.green("✓ Would run hyprvox install"));
 			return;
 		}
-		execFileSync(process.argv[0], [process.argv[1] ?? "index.ts", "install"], {
+		execFileSync(executable, [entrypoint, "install"], {
 			stdio: "inherit",
 		});
 		return;
 	}
 
-	if (
-		!askYesNoQuit("Install and start the systemd user service now?")
-	) {
+	if (!askYesNoQuit("Install and start the systemd user service now?")) {
 		return;
 	}
 
@@ -611,7 +606,7 @@ function installServiceIfRequested(
 		return;
 	}
 
-	execFileSync(process.argv[0], [process.argv[1] ?? "index.ts", "install"], {
+	execFileSync(executable, [entrypoint, "install"], {
 		stdio: "inherit",
 	});
 }
@@ -627,7 +622,10 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 	const audioDevices = initialReport.environment.commands.arecord?.path
 		? await new AudioDeviceService().listDevices().catch(() => [])
 		: [];
-	const signals = collectDeviceSignals(initialReport.environment, audioDevices.length);
+	const signals = collectDeviceSignals(
+		initialReport.environment,
+		audioDevices.length,
+	);
 	const recommendation = recommendProfile(signals);
 	selectedProfileConfidence = recommendation.confidence;
 	const recommendedBundle = getProfileBundle(recommendation.profile);
@@ -672,7 +670,10 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 			for (const line of profileDiff) console.log(`  - ${line}`);
 		}
 
-		if (options.nonInteractive || askYesNoQuit("Apply this profile before setup questions?")) {
+		if (
+			options.nonInteractive ||
+			askYesNoQuit("Apply this profile before setup questions?")
+		) {
 			if (!options.dryRun) saveConfig(proposedConfig);
 			console.log(
 				`${colors.green("✓")} ${options.dryRun ? "Would apply" : "Applied"} profile ${selectedBundle.label}`,
@@ -707,7 +708,9 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 	const apiKeysConfigured = await runConfigSetup(options);
 	const smoke = runPostApplySmokeTest(apiKeysConfigured);
 	if (!smoke.passed && selectedProfileId && profileDiff.length > 0) {
-		console.log(colors.yellow("Smoke test failed; rolling back profile-derived fields."));
+		console.log(
+			colors.yellow("Smoke test failed; rolling back profile-derived fields."),
+		);
 		const current = loadPartialConfig();
 		const rolledBack = rollbackProfileDerivedFields(current, preProfileConfig);
 		if (!options.dryRun) saveConfig(rolledBack);
@@ -745,7 +748,10 @@ export const setupCommand = new Command("setup")
 	.option("--json", "Print setup check output as JSON")
 	.option("--dry-run", "Show what setup would change without writing")
 	.option("--skip-service", "Do not install or start the systemd user service")
-	.option("--non-interactive", "Run setup without prompts (automation-friendly)")
+	.option(
+		"--non-interactive",
+		"Run setup without prompts (automation-friendly)",
+	)
 	.option("--advanced", "Enable advanced setup questions")
 	.action(async (options: SetupOptions) => {
 		try {

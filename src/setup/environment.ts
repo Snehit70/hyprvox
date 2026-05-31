@@ -9,24 +9,6 @@ export interface CommandProbe {
 	path: string | null;
 }
 
-export interface EnvironmentInfo {
-	platform: NodeJS.Platform;
-	isLinux: boolean;
-	isContainer: boolean;
-	distro: LinuxDistro;
-	sessionType: SessionType;
-	isHyprland: boolean;
-	commands: Record<string, CommandProbe>;
-}
-
-export interface EnvironmentProbeOptions {
-	env?: NodeJS.ProcessEnv;
-	exists?: (path: string) => boolean;
-	readFile?: (path: string) => string;
-	which?: (command: string) => string | null;
-	platform?: NodeJS.Platform;
-}
-
 const REQUIRED_COMMANDS = [
 	"bun",
 	"ffmpeg",
@@ -38,6 +20,27 @@ const REQUIRED_COMMANDS = [
 	"systemctl",
 	"hyprctl",
 ] as const;
+
+export type RequiredCommand = (typeof REQUIRED_COMMANDS)[number];
+export type CommandProbeMap = Record<RequiredCommand, CommandProbe>;
+
+export interface EnvironmentInfo {
+	platform: NodeJS.Platform;
+	isLinux: boolean;
+	isContainer: boolean;
+	distro: LinuxDistro;
+	sessionType: SessionType;
+	isHyprland: boolean;
+	commands: CommandProbeMap;
+}
+
+export interface EnvironmentProbeOptions {
+	env?: NodeJS.ProcessEnv;
+	exists?: (path: string) => boolean;
+	readFile?: (path: string) => string;
+	which?: (command: string) => string | null;
+	platform?: NodeJS.Platform;
+}
 
 const defaultWhich = (command: string): string | null => {
 	try {
@@ -130,7 +133,7 @@ export function detectEnvironment(
 	const platform = options.platform ?? process.platform;
 	const commands = Object.fromEntries(
 		REQUIRED_COMMANDS.map((name) => [name, { name, path: which(name) }]),
-	) as Record<string, CommandProbe>;
+	) as CommandProbeMap;
 	const sessionType = detectSession(env);
 
 	return {

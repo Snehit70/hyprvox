@@ -2,7 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
-import type { EnvironmentInfo } from "./environment";
+import type { EnvironmentInfo, RequiredCommand } from "./environment";
 import { detectEnvironment, getInstallCommand } from "./environment";
 
 export type SetupCheckStatus = "pass" | "warn" | "fail" | "skip";
@@ -37,7 +37,7 @@ const defaultStatMode = (path: string): number => statSync(path).mode & 0o777;
 function addCommandCheck(
 	checks: SetupCheck[],
 	env: EnvironmentInfo,
-	command: string,
+	command: RequiredCommand,
 	label: string,
 	fix?: string,
 	statusWhenMissing: SetupCheckStatus = "fail",

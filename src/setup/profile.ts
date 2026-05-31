@@ -136,9 +136,14 @@ export function collectDeviceSignals(
 	};
 }
 
-export function recommendProfile(signals: DeviceSignals): ProfileRecommendation {
+export function recommendProfile(
+	signals: DeviceSignals,
+): ProfileRecommendation {
 	const reasons: string[] = [];
-	if (signals.environment.isContainer || signals.environment.sessionType === "headless") {
+	if (
+		signals.environment.isContainer ||
+		signals.environment.sessionType === "headless"
+	) {
 		reasons.push("container/headless session detected");
 		return { profile: "container-headless", confidence: "high", reasons };
 	}
@@ -179,11 +184,21 @@ export function recommendProfile(signals: DeviceSignals): ProfileRecommendation 
 	return { profile, confidence, reasons };
 }
 
+type ConfigDiffPath = readonly [
+	keyof ConfigFile,
+	...(string | number | symbol)[],
+];
+
+function pickConfigValue(obj: ConfigFile, path: ConfigDiffPath): unknown {
+	return path.reduce<unknown>((acc, key) => {
+		if (typeof acc !== "object" || acc === null) return undefined;
+		return (acc as Record<string | number | symbol, unknown>)[key];
+	}, obj);
+}
+
 export function diffConfig(before: ConfigFile, after: ConfigFile): string[] {
 	const lines: string[] = [];
-	const pick = (obj: any, path: string[]) =>
-		path.reduce((acc, key) => (acc && typeof acc === "object" ? acc[key] : undefined), obj);
-	const trackedPaths = [
+	const trackedPaths: ConfigDiffPath[] = [
 		["transcription", "streaming"],
 		["transcription", "deepgramBoosting"],
 		["transcription", "mergeModel"],
@@ -196,13 +211,15 @@ export function diffConfig(before: ConfigFile, after: ConfigFile): string[] {
 		["transcription", "statsThresholds", "qualityBadCount24h"],
 		["behavior", "notifications"],
 		["behavior", "hotkey"],
-	] as const;
+	];
 
 	for (const path of trackedPaths) {
-		const oldV = pick(before, path as unknown as string[]);
-		const newV = pick(after, path as unknown as string[]);
+		const oldV = pickConfigValue(before, path);
+		const newV = pickConfigValue(after, path);
 		if (JSON.stringify(oldV) !== JSON.stringify(newV)) {
-			lines.push(`${path.join(".")}: ${JSON.stringify(oldV)} -> ${JSON.stringify(newV)}`);
+			lines.push(
+				`${path.join(".")}: ${JSON.stringify(oldV)} -> ${JSON.stringify(newV)}`,
+			);
 		}
 	}
 	return lines;
