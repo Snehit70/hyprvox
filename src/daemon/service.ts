@@ -1,12 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import {
-	closeSync,
-	existsSync,
-	mkdirSync,
-	openSync,
-	readFileSync,
-	unlinkSync,
-} from "node:fs";
+import { unlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -28,18 +20,11 @@ import { GroqClient } from "../transcribe/groq";
 import {
 	createGroqChunkingMetrics,
 	GroqChunkedTranscriptionError,
-	type GroqChunkingMetrics,
 	transcribeGroqRecording,
 } from "../transcribe/groq-chunking";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { assessLongRecordingQuality } from "../transcribe/long-recording";
-import {
-	type MergeReason,
-	type MergeResult,
-	type MergeStrategy,
-	TranscriptMerger,
-} from "../transcribe/merger";
-import type { TranscriptQualityReason } from "../transcribe/quality";
+import { type MergeResult, TranscriptMerger } from "../transcribe/merger";
 import { validateTranscript } from "../transcribe/quality";
 import { recoverTranscriptQuality } from "../transcribe/recovery";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
@@ -50,6 +35,12 @@ import { incrementTranscriptionCount, loadStats } from "../utils/stats";
 import { checkHotkeyConflict } from "./conflict";
 import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
+import { OverlayProcessManager } from "./overlay-process";
+import {
+	createInitialTranscriptionMetrics,
+	type TranscriptionMetrics,
+	toGroqChunkingMetricFields,
+} from "./transcription-metrics";
 
 const HALLUCINATION_MAX_CHARS = 50;
 const projectRoot = join(import.meta.dir, "..", "..");
@@ -66,95 +57,6 @@ const HALLUCINATION_PATTERNS = [
 
 function containsHallucination(text: string): boolean {
 	return HALLUCINATION_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-// --- Instrumentation types ---
-
-type AudioFormatStrategy = "opus" | "raw";
-
-interface TranscriptionMetrics {
-	// Timings (ms, -1 = skipped)
-	totalMs: number;
-	processingMs: number; // user-perceived latency (up to clipboard write)
-	conversionMs: number;
-	groqMs: number;
-	deepgramMs: number;
-	mergeMs: number;
-	clipboardMs: number;
-	statsWriteMs: number;
-	historyAppendMs: number;
-	notificationEnqueueMs: number;
-
-	// Input characteristics
-	rawAudioBytes: number;
-	recordingDurationMs: number;
-	convertedAudioBytes: number;
-
-	// Decisions
-	streamingEnabled: boolean;
-	audioFormatStrategy: AudioFormatStrategy;
-	mergeStrategy: MergeStrategy | "skip_no_speech" | "skip_hallucination";
-	mergeReason: MergeReason | null;
-	validationReasons: TranscriptQualityReason[];
-	validationRetryCount: number;
-	validationFallbackSource: "none" | "groq" | "deepgram";
-	trimmedHallucinationSuffix: boolean;
-	longRecordingMode: boolean;
-	longRecordingFallbackSource: "none" | "groq" | "deepgram";
-	suspiciousMergeExpansion: boolean;
-	deepgramStopReason: StreamingStopReason | null;
-
-	// Deepgram early-stop observability
-	deepgramStopWallMs: number;
-	deepgramCriticalPathMs: number;
-	deepgramOverlapMs: number;
-	deepgramStartedEarly: boolean;
-	deepgramFinalizeWaitMs: number;
-	deepgramCloseWaitMs: number;
-	deepgramEndpointingMs: number;
-	deepgramReceivedFinalChunk: boolean;
-	deepgramHadSpeechFinal: boolean;
-	groqChunkingEnabled: boolean;
-	groqChunkingUsed: boolean;
-	groqChunkCount: number;
-	groqChunkDurationSeconds: number;
-	groqChunkOverlapSeconds: number;
-	groqChunkFallback: boolean;
-	groqChunkFailureReason: string | null;
-
-	// Outcome
-	engine: string;
-	textLength: number;
-	groqTextLength: number;
-	deepgramTextLength: number;
-	groqSttModel: string;
-	deepgramModel: string;
-	mergeModel: string;
-}
-
-type GroqChunkingMetricFields = Pick<
-	TranscriptionMetrics,
-	| "groqChunkingEnabled"
-	| "groqChunkingUsed"
-	| "groqChunkCount"
-	| "groqChunkDurationSeconds"
-	| "groqChunkOverlapSeconds"
-	| "groqChunkFallback"
-	| "groqChunkFailureReason"
->;
-
-function toGroqChunkingMetricFields(
-	chunking: GroqChunkingMetrics,
-): GroqChunkingMetricFields {
-	return {
-		groqChunkingEnabled: chunking.enabled,
-		groqChunkingUsed: chunking.used,
-		groqChunkCount: chunking.chunkCount,
-		groqChunkDurationSeconds: chunking.chunkDurationSeconds,
-		groqChunkOverlapSeconds: chunking.overlapSeconds,
-		groqChunkFallback: chunking.fallback,
-		groqChunkFailureReason: chunking.failureReason,
-	};
 }
 
 async function timeAsync<T>(
@@ -203,21 +105,11 @@ export class DaemonService {
 	private ipcServer: IPCServer;
 	private stateWriteDebounceTimer?: NodeJS.Timeout;
 	private pendingStateWrite = false;
-	private overlayProcess?: ChildProcess;
-	private overlayPidFile: string;
-	private overlayLogFile: string;
-	private overlayRestartTimer?: NodeJS.Timeout;
-	private overlayStopRequested = false;
-	private overlayRestartAttempts: number[] = [];
+	private overlay: OverlayProcessManager;
 	private lastOverlayAudioLevelAt = 0;
 	private smoothedOverlayLevel = 0;
 	private contextLexicon: string[] = [];
 	private providerBoostWords: string[] = [];
-
-	private static readonly OVERLAY_RESTART_INITIAL_DELAY_MS = 250;
-	private static readonly OVERLAY_RESTART_MAX_DELAY_MS = 2000;
-	private static readonly OVERLAY_RESTART_WINDOW_MS = 60000;
-	private static readonly OVERLAY_RESTART_MAX_ATTEMPTS = 5;
 
 	constructor() {
 		this.config = configService.get();
@@ -232,8 +124,11 @@ export class DaemonService {
 		const configDir = join(homedir(), ".config", "hypr", "vox");
 		this.pidFile = join(configDir, "daemon.pid");
 		this.stateFile = join(configDir, "daemon.state");
-		this.overlayPidFile = join(configDir, "overlay.pid");
-		this.overlayLogFile = join(this.config.paths.logs, "overlay.log");
+		this.overlay = new OverlayProcessManager(
+			this.config,
+			join(configDir, "overlay.pid"),
+			join(this.config.paths.logs, "overlay.log"),
+		);
 
 		const stats = loadStats();
 		this.transcriptionCountToday = stats.today;
@@ -252,6 +147,7 @@ export class DaemonService {
 				this.groq.reset();
 				this.deepgram.reset();
 				this.merger.reset();
+				this.overlay.updateConfig(this.config);
 				this.refreshContextLexicon();
 				logger.info("Config reloaded successfully");
 				notify("Config Reloaded", "Configuration updated", "info");
@@ -382,297 +278,6 @@ export class DaemonService {
 		);
 	}
 
-	private getOverlayPath(): string {
-		if (this.config.overlay?.binaryPath) {
-			return this.config.overlay.binaryPath;
-		}
-		return join(process.cwd(), "overlay");
-	}
-
-	private async waitForProcessExit(
-		pid: number,
-		timeoutMs = 3000,
-	): Promise<void> {
-		const start = Date.now();
-		while (Date.now() - start < timeoutMs) {
-			try {
-				process.kill(pid, 0);
-				await new Promise((r) => setTimeout(r, 50));
-			} catch {
-				return;
-			}
-		}
-		logger.debug({ pid, timeoutMs }, "Timeout waiting for process exit");
-	}
-
-	private pruneOverlayRestartAttempts(now = Date.now()): void {
-		this.overlayRestartAttempts = this.overlayRestartAttempts.filter(
-			(at) => now - at <= DaemonService.OVERLAY_RESTART_WINDOW_MS,
-		);
-	}
-
-	private removeOverlayPidFile(expectedPid?: number): void {
-		try {
-			if (expectedPid !== undefined) {
-				const raw = readFileSync(this.overlayPidFile, "utf8").trim();
-				const currentPid = parseInt(raw, 10);
-				if (currentPid !== expectedPid) {
-					return;
-				}
-			}
-			unlinkSync(this.overlayPidFile);
-		} catch (e) {
-			logger.debug({ err: e }, "Failed to remove overlay PID file");
-		}
-	}
-
-	private scheduleOverlayRestart(reason: string): void {
-		if (
-			this.overlayStopRequested ||
-			this.overlayRestartTimer ||
-			!this.config.overlay?.enabled ||
-			!this.config.overlay?.autoStart
-		) {
-			return;
-		}
-
-		const now = Date.now();
-		this.pruneOverlayRestartAttempts(now);
-		if (
-			this.overlayRestartAttempts.length >=
-			DaemonService.OVERLAY_RESTART_MAX_ATTEMPTS
-		) {
-			logger.error(
-				{
-					reason,
-					attempts: this.overlayRestartAttempts.length,
-					windowMs: DaemonService.OVERLAY_RESTART_WINDOW_MS,
-					logFile: this.overlayLogFile,
-				},
-				"Overlay crashed too often; automatic restart disabled",
-			);
-			return;
-		}
-
-		this.overlayRestartAttempts.push(now);
-		const restartDelayMs = Math.min(
-			DaemonService.OVERLAY_RESTART_INITIAL_DELAY_MS *
-				2 ** (this.overlayRestartAttempts.length - 1),
-			DaemonService.OVERLAY_RESTART_MAX_DELAY_MS,
-		);
-
-		logger.warn(
-			{
-				reason,
-				delayMs: restartDelayMs,
-				attempt: this.overlayRestartAttempts.length,
-				logFile: this.overlayLogFile,
-			},
-			"Scheduling overlay restart",
-		);
-
-		this.overlayRestartTimer = setTimeout(() => {
-			this.overlayRestartTimer = undefined;
-			this.startOverlay("restart");
-		}, restartDelayMs);
-	}
-
-	private resolveOverlayLaunchCommand(overlayPath: string): {
-		command: string;
-		args: string[];
-		mode: "electron_direct" | "bun_fallback";
-	} {
-		const directElectronPath = join(
-			overlayPath,
-			"node_modules",
-			".bin",
-			"electron",
-		);
-		if (existsSync(directElectronPath)) {
-			return {
-				command: directElectronPath,
-				args: ["."],
-				mode: "electron_direct",
-			};
-		}
-
-		return {
-			command: "bun",
-			args: ["run", "start"],
-			mode: "bun_fallback",
-		};
-	}
-
-	private startOverlay(trigger: "startup" | "restart" = "startup"): void {
-		if (!this.config.overlay?.enabled || !this.config.overlay?.autoStart) {
-			return;
-		}
-
-		if (
-			this.overlayProcess &&
-			this.overlayProcess.exitCode === null &&
-			this.overlayProcess.signalCode === null
-		) {
-			return;
-		}
-
-		this.overlayStopRequested = false;
-
-		(async () => {
-			try {
-				const raw = readFileSync(this.overlayPidFile, "utf8").trim();
-				const oldPid = parseInt(raw, 10);
-				if (!Number.isNaN(oldPid)) {
-					process.kill(oldPid, "SIGTERM");
-					logger.debug({ oldPid }, "Terminated stale overlay process");
-					await this.waitForProcessExit(oldPid);
-				}
-			} catch {
-				// PID file absent or process already dead
-			}
-
-			const overlayPath = this.getOverlayPath();
-
-			if (!existsSync(overlayPath)) {
-				logger.warn(
-					{ path: overlayPath },
-					"Overlay not found, skipping auto-start",
-				);
-				return;
-			}
-
-			try {
-				const launch = this.resolveOverlayLaunchCommand(overlayPath);
-
-				// Explicitly pass display environment for Wayland/X11 compatibility
-				const uid = process.getuid?.() ?? 1000;
-				const overlayEnv: NodeJS.ProcessEnv = { ...process.env };
-				let overlayLogFd: number | undefined;
-
-				// Only set display vars if already present in parent env — injecting
-				// WAYLAND_DISPLAY on a pure X11 system (or DISPLAY on Wayland-only)
-				// causes GTK/Electron to attempt a non-existent compositor socket.
-				if (!overlayEnv.WAYLAND_DISPLAY && !overlayEnv.DISPLAY) {
-					// No display detected at all — fall back to Wayland-first defaults
-					overlayEnv.WAYLAND_DISPLAY = "wayland-1";
-					overlayEnv.DISPLAY = ":0";
-				}
-
-				if (!overlayEnv.XDG_RUNTIME_DIR) {
-					overlayEnv.XDG_RUNTIME_DIR = `/run/user/${uid}`;
-				}
-
-				logger.debug(
-					{
-						WAYLAND_DISPLAY: overlayEnv.WAYLAND_DISPLAY,
-						DISPLAY: overlayEnv.DISPLAY,
-						XDG_RUNTIME_DIR: overlayEnv.XDG_RUNTIME_DIR,
-					},
-					"Starting overlay with display environment",
-				);
-
-				mkdirSync(this.config.paths.logs, { recursive: true, mode: 0o700 });
-				overlayLogFd = openSync(this.overlayLogFile, "a");
-
-				this.overlayProcess = spawn(launch.command, launch.args, {
-					cwd: overlayPath,
-					detached: true,
-					stdio: ["ignore", overlayLogFd, overlayLogFd],
-					env: overlayEnv,
-				});
-
-				this.overlayProcess.on("error", (err) => {
-					logger.warn({ err }, "Overlay process error");
-					this.scheduleOverlayRestart("spawn_error");
-				});
-
-				const overlayPid = this.overlayProcess.pid;
-				this.overlayProcess.on("exit", (code, signal) => {
-					if (this.overlayProcess?.pid === overlayPid) {
-						this.overlayProcess = undefined;
-					}
-					this.removeOverlayPidFile(overlayPid);
-					logger.warn(
-						{
-							pid: overlayPid,
-							code,
-							signal,
-							stopRequested: this.overlayStopRequested,
-							logFile: this.overlayLogFile,
-						},
-						"Overlay process exited",
-					);
-					if (!this.overlayStopRequested) {
-						this.scheduleOverlayRestart("process_exit");
-					}
-				});
-
-				this.overlayProcess.unref();
-
-				const pid = this.overlayProcess.pid;
-				if (pid) {
-					writeFile(this.overlayPidFile, pid.toString()).catch((e) => {
-						logger.debug({ err: e }, "Failed to write overlay PID file");
-					});
-				}
-
-				if (overlayLogFd !== undefined) {
-					closeSync(overlayLogFd);
-				}
-
-				if (trigger === "startup") {
-					this.overlayRestartAttempts = [];
-				}
-
-				logger.info(
-					{
-						pid,
-						logFile: this.overlayLogFile,
-						trigger,
-						launchMode: launch.mode,
-					},
-					"Overlay started",
-				);
-			} catch (error) {
-				logError("Failed to start overlay", error);
-				this.scheduleOverlayRestart("start_failure");
-			}
-		})();
-	}
-
-	private stopOverlay(): void {
-		this.overlayStopRequested = true;
-		if (this.overlayRestartTimer) {
-			clearTimeout(this.overlayRestartTimer);
-			this.overlayRestartTimer = undefined;
-		}
-
-		if (this.overlayProcess) {
-			try {
-				this.overlayProcess.kill("SIGTERM");
-			} catch (e) {
-				logger.debug({ err: e }, "Failed to kill overlay process");
-			}
-			this.overlayProcess = undefined;
-		}
-
-		try {
-			const raw = readFileSync(this.overlayPidFile, "utf8").trim();
-			const oldPid = parseInt(raw, 10);
-			if (!Number.isNaN(oldPid)) {
-				process.kill(oldPid, "SIGTERM");
-				logger.debug(
-					{ oldPid },
-					"Terminated stale overlay from previous session",
-				);
-			}
-		} catch {
-			// PID file absent or process already dead
-		}
-
-		this.removeOverlayPidFile();
-	}
-
 	private setStatus(status: DaemonStatus, error?: string) {
 		const oldStatus = this.status;
 		this.status = status;
@@ -791,7 +396,7 @@ export class DaemonService {
 			await writeFile(this.pidFile, process.pid.toString());
 			await this.ipcServer.start();
 			this.updateState();
-			this.startOverlay();
+			this.overlay.start();
 
 			const hotkeyDisabled =
 				this.config.behavior.hotkey.toLowerCase() === "disabled";
@@ -827,7 +432,7 @@ export class DaemonService {
 	public async stop() {
 		this.hotkeyListener.stop();
 		await this.recorder.stop(true);
-		this.stopOverlay();
+		this.overlay.stop();
 		process.off("SIGUSR1", this.signalHandler);
 		process.off("SIGUSR2", this.reloadSignalHandler);
 		if (this.keepAliveInterval) {
@@ -1030,54 +635,11 @@ export class DaemonService {
 	private async processAudio(audioBuffer: Buffer, duration: number) {
 		const totalStart = Date.now();
 		const groqChunkingConfig = this.config.transcription.groqChunking;
-		const initialGroqChunkingMetrics =
-			createGroqChunkingMetrics(groqChunkingConfig);
-
-		// Initialize metrics with defaults
-		const metrics: TranscriptionMetrics = {
-			totalMs: 0,
-			processingMs: 0,
-			conversionMs: -1,
-			groqMs: -1,
-			deepgramMs: -1,
-			mergeMs: -1,
-			clipboardMs: -1,
-			statsWriteMs: -1,
-			historyAppendMs: -1,
-			notificationEnqueueMs: -1,
-			rawAudioBytes: audioBuffer.length,
-			recordingDurationMs: duration,
-			convertedAudioBytes: -1,
-			streamingEnabled: !!this.config.transcription.streaming,
-			audioFormatStrategy: "raw", // Will be set based on compression decision
-			mergeStrategy: "skip_no_speech",
-			mergeReason: null,
-			validationReasons: [],
-			validationRetryCount: 0,
-			validationFallbackSource: "none",
-			trimmedHallucinationSuffix: false,
-			longRecordingMode: false,
-			longRecordingFallbackSource: "none",
-			suspiciousMergeExpansion: false,
-			deepgramStopReason: null,
-			deepgramStopWallMs: -1,
-			deepgramCriticalPathMs: -1,
-			deepgramOverlapMs: 0,
-			deepgramStartedEarly: false,
-			deepgramFinalizeWaitMs: -1,
-			deepgramCloseWaitMs: -1,
-			deepgramEndpointingMs: -1,
-			deepgramReceivedFinalChunk: false,
-			deepgramHadSpeechFinal: false,
-			...toGroqChunkingMetricFields(initialGroqChunkingMetrics),
-			engine: "",
-			textLength: 0,
-			groqTextLength: 0,
-			deepgramTextLength: 0,
-			groqSttModel: "whisper-large-v3",
-			deepgramModel: "nova-3",
-			mergeModel: this.config.transcription.mergeModel,
-		};
+		const metrics: TranscriptionMetrics = createInitialTranscriptionMetrics(
+			this.config,
+			audioBuffer.length,
+			duration,
+		);
 
 		try {
 			const language = this.config.transcription.language;
@@ -1611,16 +1173,9 @@ export class DaemonService {
 
 			void appendStatsAggregateEntry({
 				timestamp: new Date().toISOString(),
-				processingMs: processingTime,
+				...metrics,
 				engine: engineUsed,
-				mergeStrategy: metrics.mergeStrategy,
-				mergeReason: metrics.mergeReason,
-				validationReasons: metrics.validationReasons,
-				validationRetryCount: metrics.validationRetryCount,
-				validationFallbackSource: metrics.validationFallbackSource,
-				groqSttModel: metrics.groqSttModel,
-				deepgramModel: metrics.deepgramModel,
-				mergeModel: metrics.mergeModel,
+				processingMs: processingTime,
 			});
 
 			// --- Stage: Notification ---
