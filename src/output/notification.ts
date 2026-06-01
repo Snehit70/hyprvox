@@ -10,6 +10,15 @@ export const notify = (
 	type: NotificationType = "info",
 ) => {
 	try {
+		// Suppress desktop side effects only in explicit test runtime.
+		if (
+			process.env.HYPRVOX_TEST_MODE === "1" &&
+			process.env.NODE_ENV === "test"
+		) {
+			logger.debug({ title, type }, "Notification suppressed in test mode");
+			return;
+		}
+
 		const config = loadConfig();
 		if (!config.behavior.notifications) {
 			return;

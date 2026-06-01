@@ -66,11 +66,16 @@ The configuration is a JSON file structured into several sections.
     "formattingMode": "clean",
     "groqChunking": {
       "enabled": false,
+      "mode": "live",
       "minDurationSeconds": 45,
       "chunkSeconds": 20,
       "overlapSeconds": 1.5,
       "maxConcurrency": 3,
-      "fallbackToFullAudio": true
+      "chunkMaxRetries": 1,
+      "chunkRetryBackoffMs": 250,
+      "liveFinalizeTimeoutMs": 2500,
+      "fallbackToFullAudio": true,
+      "logChunkTranscripts": true
     },
     "boostWords": [
       "hyprvox",
@@ -172,11 +177,16 @@ Settings related to the speech-to-text engine.
 | `language` | String | `"en"` | ISO 639-1 language code for transcription. **Only English (`en`) is supported in v1.0.** | N/A |
 | `streaming` | Boolean | `false` | Enable real-time streaming transcription during recording. | N/A |
 | `groqChunking.enabled` | Boolean | `false` | Split longer recordings for Groq Whisper only. Deepgram still uses the full audio. | N/A |
+| `groqChunking.mode` | String | `"live"` | Dispatch Groq chunks while recording, then finalize quickly on stop. | Must be `"live"` |
 | `groqChunking.minDurationSeconds` | Number | `45` | Minimum recording duration before Groq chunking is considered. | `>= 1` |
 | `groqChunking.chunkSeconds` | Number | `20` | Target duration for each Groq WAV chunk. | `>= 1` |
 | `groqChunking.overlapSeconds` | Number | `1.5` | Audio overlap between adjacent Groq chunks. | `>= 0` and less than `chunkSeconds` |
 | `groqChunking.maxConcurrency` | Number | `3` | Maximum parallel Groq chunk requests. | Integer `1`-`8` |
+| `groqChunking.chunkMaxRetries` | Number | `1` | Retries per failed live chunk before marking chunking failed. | Integer `0`-`3` |
+| `groqChunking.chunkRetryBackoffMs` | Number | `250` | Backoff between live chunk retries. | Integer `50`-`5000` |
+| `groqChunking.liveFinalizeTimeoutMs` | Number | `2500` | Max wait after stop for in-flight live chunk requests before fallback. | Integer `500`-`10000` |
 | `groqChunking.fallbackToFullAudio` | Boolean | `true` | Fall back to the existing full-audio Groq request if chunking fails. | N/A |
+| `groqChunking.logChunkTranscripts` | Boolean | `true` | Log per-chunk Groq source text for quality debugging. | N/A |
 | `boostWords` | Array | `[]` | List of words to prioritize for better accuracy (e.g., names, jargon). | Max 450 words total. |
 | `mergeModel` | String | `"llama-3.3-70b-versatile"` | Groq model used to merge transcripts from Groq Whisper and Deepgram. | Must be a valid Groq model ID. |
 | `formattingMode` | String | `"clean"` | Controls how aggressively the merger formats dictated text. | `"verbatim"`, `"clean"`, or `"structured"`. |
@@ -215,7 +225,7 @@ The `streaming` option controls whether transcription happens in real-time durin
 
 #### Groq Chunking
 
-`groqChunking` is an opt-in Groq-only path for longer recordings. When enabled and the recording meets `minDurationSeconds`, Hyprvox splits the original recorder WAV into overlapping PCM WAV chunks, sends those chunks to Groq with bounded parallelism, joins the ordered Groq text, then continues through the normal Groq + Deepgram merge and quality pipeline. Deepgram, history, clipboard, and validation behavior are unchanged.
+`groqChunking` is an opt-in Groq-only path for longer recordings. In `mode: "live"`, Hyprvox starts dispatching Groq chunk requests while recording is still in progress (once `minDurationSeconds` is crossed), then does a short finalize wait on stop and joins ordered chunk text before the normal Groq + Deepgram merge pipeline. Deepgram, history, clipboard, and validation behavior are unchanged.
 
 Keep this disabled unless you are collecting timing and quality logs. If WAV preparation or a chunk request fails and `fallbackToFullAudio` is true, Hyprvox logs the reason and runs the existing full-audio Groq request.
 

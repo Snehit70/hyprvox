@@ -175,11 +175,16 @@ const defaultTranscription = {
 	lexiconEnabled: true,
 	groqChunking: {
 		enabled: false,
+		mode: "live",
 		minDurationSeconds: 45,
 		chunkSeconds: 20,
 		overlapSeconds: 1.5,
 		maxConcurrency: 3,
+		chunkMaxRetries: 1,
+		chunkRetryBackoffMs: 250,
+		liveFinalizeTimeoutMs: 2500,
 		fallbackToFullAudio: true,
+		logChunkTranscripts: true,
 	},
 	statsThresholds: {
 		latencyP95WarnMs: 2500,
@@ -275,6 +280,7 @@ export const PathsSchema = z.object({
 export const GroqChunkingSchema = z
 	.object({
 		enabled: z.boolean().default(defaultTranscription.groqChunking.enabled),
+		mode: z.literal("live").default(defaultTranscription.groqChunking.mode),
 		minDurationSeconds: z
 			.number()
 			.min(1)
@@ -293,9 +299,28 @@ export const GroqChunkingSchema = z
 			.min(1)
 			.max(8)
 			.default(defaultTranscription.groqChunking.maxConcurrency),
+		chunkMaxRetries: z
+			.number()
+			.int()
+			.min(0)
+			.max(3)
+			.default(defaultTranscription.groqChunking.chunkMaxRetries),
+		chunkRetryBackoffMs: z
+			.number()
+			.min(0)
+			.max(5000)
+			.default(defaultTranscription.groqChunking.chunkRetryBackoffMs),
+		liveFinalizeTimeoutMs: z
+			.number()
+			.min(1)
+			.max(30000)
+			.default(defaultTranscription.groqChunking.liveFinalizeTimeoutMs),
 		fallbackToFullAudio: z
 			.boolean()
 			.default(defaultTranscription.groqChunking.fallbackToFullAudio),
+		logChunkTranscripts: z
+			.boolean()
+			.default(defaultTranscription.groqChunking.logChunkTranscripts),
 	})
 	.refine((value) => value.overlapSeconds < value.chunkSeconds, {
 		path: ["overlapSeconds"],

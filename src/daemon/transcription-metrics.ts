@@ -51,6 +51,13 @@ export interface TranscriptionMetrics {
 	groqChunkOverlapSeconds: number;
 	groqChunkFallback: boolean;
 	groqChunkFailureReason: string | null;
+	groqChunkMode: "live";
+	groqLiveCompletedBeforeStop: boolean;
+	groqLivePreStopCompletedChunks: number;
+	groqLivePostStopWaitMs: number;
+	groqLiveFinalizeTimedOut: boolean;
+	groqLiveFinalTailMs: number;
+	groqLiveBackgroundRequestMs: number;
 	engine: string;
 	textLength: number;
 	groqTextLength: number;
@@ -69,6 +76,13 @@ type GroqChunkingMetricFields = Pick<
 	| "groqChunkOverlapSeconds"
 	| "groqChunkFallback"
 	| "groqChunkFailureReason"
+	| "groqChunkMode"
+	| "groqLiveCompletedBeforeStop"
+	| "groqLivePreStopCompletedChunks"
+	| "groqLivePostStopWaitMs"
+	| "groqLiveFinalizeTimedOut"
+	| "groqLiveFinalTailMs"
+	| "groqLiveBackgroundRequestMs"
 >;
 
 export function toGroqChunkingMetricFields(
@@ -82,6 +96,13 @@ export function toGroqChunkingMetricFields(
 		groqChunkOverlapSeconds: chunking.overlapSeconds,
 		groqChunkFallback: chunking.fallback,
 		groqChunkFailureReason: chunking.failureReason,
+		groqChunkMode: chunking.mode,
+		groqLiveCompletedBeforeStop: chunking.liveCompletedBeforeStop,
+		groqLivePreStopCompletedChunks: chunking.livePreStopCompletedChunks,
+		groqLivePostStopWaitMs: chunking.livePostStopWaitMs,
+		groqLiveFinalizeTimedOut: chunking.liveFinalizeTimedOut,
+		groqLiveFinalTailMs: chunking.liveFinalTailMs,
+		groqLiveBackgroundRequestMs: chunking.liveBackgroundRequestMs,
 	};
 }
 

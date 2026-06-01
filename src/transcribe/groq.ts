@@ -126,6 +126,7 @@ export class GroqClient {
 		boostWords: string[] = [],
 		format: "opus" | "wav" = "opus",
 		recordingDurationMs?: number,
+		externalSignal?: AbortSignal,
 	): Promise<string> {
 		try {
 			const requestTimeoutMs =
@@ -136,6 +137,10 @@ export class GroqClient {
 
 			return await withRetry(
 				async (signal) => {
+					const requestSignal =
+						signal && externalSignal
+							? AbortSignal.any([signal, externalSignal])
+							: (externalSignal ?? signal);
 					const filename = format === "opus" ? "audio.opus" : "audio.wav";
 					const mimeType = format === "opus" ? "audio/opus" : "audio/wav";
 					const file = await toFile(audioBuffer, filename, {
@@ -153,7 +158,7 @@ export class GroqClient {
 							response_format: "json",
 						},
 						{
-							signal,
+							signal: requestSignal ?? new AbortController().signal,
 							timeout: requestTimeoutMs,
 							maxRetries: 0,
 						},

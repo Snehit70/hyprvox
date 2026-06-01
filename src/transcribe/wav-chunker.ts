@@ -199,6 +199,17 @@ function buildPcmWav(data: Buffer, format: PcmWavFormat): Buffer {
 	return Buffer.concat([header, data]);
 }
 
+export function buildPcm16kMonoWav(data: Buffer): Buffer {
+	return buildPcmWav(data, {
+		audioFormat: 1,
+		numChannels: 1,
+		sampleRate: 16000,
+		byteRate: 32000,
+		blockAlign: 2,
+		bitsPerSample: 16,
+	});
+}
+
 export function createPcmWavChunks(
 	buffer: Buffer,
 	options: WavChunkOptions,

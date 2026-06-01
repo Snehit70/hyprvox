@@ -3,7 +3,11 @@ import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { convertAudio } from "../audio/converter";
-import { type AudioLevelPayload, AudioRecorder } from "../audio/recorder";
+import {
+	type AudioLevelPayload,
+	AudioRecorder,
+	type PcmAudioPayload,
+} from "../audio/recorder";
 import type { Config } from "../config/schema";
 import { configService } from "../config/service";
 import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
@@ -19,9 +23,12 @@ import {
 import { GroqClient } from "../transcribe/groq";
 import {
 	createGroqChunkingMetrics,
-	GroqChunkedTranscriptionError,
-	transcribeGroqRecording,
+	GroqChunkingError,
+	type GroqChunkingMetrics,
 } from "../transcribe/groq-chunking";
+import {
+	GroqLiveChunkSession,
+} from "../transcribe/groq-live-chunking";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { assessLongRecordingQuality } from "../transcribe/long-recording";
 import { type MergeResult, TranscriptMerger } from "../transcribe/merger";
@@ -33,9 +40,18 @@ import { appendHistory } from "../utils/history";
 import { logError, logger } from "../utils/logger";
 import { incrementTranscriptionCount, loadStats } from "../utils/stats";
 import { checkHotkeyConflict } from "./conflict";
+import { shouldCompressAudio } from "./audio-strategy";
+import { runGroqTranscriptionWithLiveSession } from "./groq-transcription";
 import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
 import { OverlayProcessManager } from "./overlay-process";
+import {
+	attachStreamingPcmHandler,
+	createLiveGroqSession,
+	startDeepgramStreaming,
+	stopDeepgramStreaming,
+} from "./recording-session";
+import { handleProviderTranscriptionError } from "./transcription-error";
 import {
 	createInitialTranscriptionMetrics,
 	type TranscriptionMetrics,
@@ -87,7 +103,8 @@ export class DaemonService {
 	private groq: GroqClient;
 	private deepgram: DeepgramTranscriber;
 	private deepgramStreaming?: DeepgramStreamingTranscriber;
-	private streamingDataHandler?: (chunk: Buffer) => void;
+	private streamingPcmHandler?: (payload: PcmAudioPayload) => void;
+	private liveGroqSession?: GroqLiveChunkSession;
 	private merger: TranscriptMerger;
 	private clipboard: ClipboardManager;
 	private pidFile: string;
@@ -344,9 +361,9 @@ export class DaemonService {
 			this.errorCount++;
 			this.setStatus("error", err.message);
 
-			if (this.streamingDataHandler) {
-				this.recorder.off("data", this.streamingDataHandler);
-				this.streamingDataHandler = undefined;
+			if (this.streamingPcmHandler) {
+				this.recorder.off("pcm-data", this.streamingPcmHandler);
+				this.streamingPcmHandler = undefined;
 			}
 			if (this.deepgramStreaming) {
 				this.deepgramStreaming
@@ -458,168 +475,92 @@ export class DaemonService {
 			try {
 				this.setStatus("starting");
 
-				if (this.config.transcription.streaming) {
-					if (this.streamingDataHandler) {
-						this.recorder.off("data", this.streamingDataHandler);
-						logger.debug("Removed old streaming data handler");
+					if (this.streamingPcmHandler) {
+						this.recorder.off("pcm-data", this.streamingPcmHandler);
+						logger.debug("Removed old streaming PCM handler");
+					}
+					this.streamingPcmHandler = undefined;
+
+					this.liveGroqSession = createLiveGroqSession({
+						config: this.config,
+						boostWords: this.providerBoostWords,
+						transcribe: (buffer, language, boostWords, format, recordingMs, signal) =>
+							this.groq.transcribe(
+								buffer,
+								language,
+								boostWords,
+								format,
+								recordingMs,
+								signal,
+							),
+					});
+
+					if (this.config.transcription.streaming) {
+						this.deepgramStreaming = startDeepgramStreaming({
+							config: this.config,
+							boostWords: this.providerBoostWords,
+							onStreamingInterrupted: () => {
+								this.notifyStateChange(
+									"Streaming Interrupted",
+									"Using batch transcription",
+									"warning",
+								);
+							},
+						});
 					}
 
-					logger.info("Starting Deepgram streaming connection...");
-					this.deepgramStreaming = new DeepgramStreamingTranscriber();
-
-					this.deepgramStreaming.on("transcript", (text) => {
-						logger.info({ text }, "Received streaming transcript chunk");
-					});
-
-					this.deepgramStreaming.on("error", (err) => {
-						logger.error({ err }, "Deepgram streaming error");
-					});
-
-					this.deepgramStreaming.on(
-						"streaming_failed",
-						(reason: StreamingFailureReason) => {
-							logger.warn(
-								{
-									reason,
-									fallback: "batch mode",
-								},
-								"Streaming connection lost, will use batch transcription",
-							);
-							this.notifyStateChange(
-								"Streaming Interrupted",
-								"Using batch transcription",
-								"warning",
-							);
-						},
-					);
-
-					const startPromise = this.deepgramStreaming.start(
-						this.config.transcription.language,
-						this.config.transcription.deepgramBoosting
-							? this.providerBoostWords
-							: [],
-					);
-
-					// We catch synchronous errors from start(), but async connection errors go to 'error' event
-					startPromise.catch((err) => {
-						logError("Failed to initiate Deepgram streaming", err);
-					});
-
-					logger.info("Deepgram streaming initiated (background)");
-
-					// Check cancellation immediately (though less likely to be pending this fast)
 					if (this.cancelPending) {
 						logger.info("Recording cancelled during setup, cleaning up");
 						this.cancelPending = false;
-						if (this.streamingDataHandler) {
-							this.recorder.off("data", this.streamingDataHandler);
-							this.streamingDataHandler = undefined;
-						}
-						if (this.deepgramStreaming) {
-							try {
-								await this.deepgramStreaming.stop();
-							} catch (e) {
-								logError("Failed to stop streaming after cancellation", e);
-							}
-							this.deepgramStreaming = undefined;
-						}
+						await stopDeepgramStreaming(
+							this.deepgramStreaming,
+							"Failed to stop streaming after cancellation",
+						);
+						this.deepgramStreaming = undefined;
+						this.liveGroqSession = undefined;
 						this.setStatus("idle");
 						return;
 					}
 
-					let chunkCount = 0;
-					let isFirstChunk = true;
-					this.streamingDataHandler = (chunk: Buffer) => {
-						chunkCount++;
-						let audioData = chunk;
+					if (this.deepgramStreaming || this.liveGroqSession) {
+						this.streamingPcmHandler = attachStreamingPcmHandler({
+							recorder: this.recorder,
+							deepgramStreaming: this.deepgramStreaming,
+							liveGroqSession: this.liveGroqSession,
+						});
+					}
 
-						// Strip WAV header from first chunk (44 bytes)
-						// Recorder outputs WAV format but Deepgram expects raw PCM (linear16)
-						if (isFirstChunk) {
-							isFirstChunk = false;
-							if (
-								chunk.length >= 44 &&
-								chunk.subarray(0, 4).toString("ascii") === "RIFF" &&
-								chunk.subarray(8, 12).toString("ascii") === "WAVE"
-							) {
-								audioData = chunk.subarray(44);
-								logger.debug(
-									{
-										originalSize: chunk.length,
-										strippedSize: audioData.length,
-									},
-									"Stripped WAV header from first chunk",
-								);
-							}
+					if (this.cancelPending) {
+						logger.info("Recording cancelled before recorder start, cleaning up");
+						this.cancelPending = false;
+						if (this.streamingPcmHandler) {
+							this.recorder.off("pcm-data", this.streamingPcmHandler);
+							this.streamingPcmHandler = undefined;
 						}
-
-						if (audioData.length === 0) {
-							logger.debug(
-								{ chunkNumber: chunkCount },
-								"Skipping empty chunk (header-only)",
-							);
-							return;
-						}
-
-						logger.debug(
-							{ chunkNumber: chunkCount, chunkSize: audioData.length },
-							"Handler called with audio chunk",
+						await stopDeepgramStreaming(
+							this.deepgramStreaming,
+							"Failed to stop streaming after cancellation",
 						);
-						if (this.deepgramStreaming) {
-							this.deepgramStreaming.send(audioData);
-							logger.debug(
-								{ chunkNumber: chunkCount },
-								"Sent chunk to Deepgram",
-							);
-						} else {
-							logger.error(
-								{ chunkNumber: chunkCount },
-								"No streaming connection when chunk received!",
-							);
-						}
-					};
-
-					this.recorder.on("data", this.streamingDataHandler);
-					logger.info("Streaming data handler attached to recorder");
-				}
-
-				if (this.cancelPending) {
-					logger.info("Recording cancelled before recorder start, cleaning up");
-					this.cancelPending = false;
-					if (this.streamingDataHandler) {
-						this.recorder.off("data", this.streamingDataHandler);
-						this.streamingDataHandler = undefined;
-					}
-					if (this.deepgramStreaming) {
-						try {
-							await this.deepgramStreaming.stop();
-						} catch (e) {
-							logError("Failed to stop streaming after cancellation", e);
-						}
 						this.deepgramStreaming = undefined;
+						this.setStatus("idle");
+						return;
 					}
-					this.setStatus("idle");
-					return;
-				}
 
 				await this.recorder.start();
 			} catch (error) {
-				this.cancelPending = false;
-				logError("Failed to start recording", error);
-				if (this.streamingDataHandler) {
-					this.recorder.off("data", this.streamingDataHandler);
-					this.streamingDataHandler = undefined;
-				}
-				if (this.deepgramStreaming) {
-					try {
-						await this.deepgramStreaming.stop();
-					} catch (e) {
-						logError("Failed to stop streaming after start failure", e);
+					this.cancelPending = false;
+					logError("Failed to start recording", error);
+					if (this.streamingPcmHandler) {
+						this.recorder.off("pcm-data", this.streamingPcmHandler);
+						this.streamingPcmHandler = undefined;
 					}
+					await stopDeepgramStreaming(
+						this.deepgramStreaming,
+						"Failed to stop streaming after start failure",
+					);
 					this.deepgramStreaming = undefined;
+					this.setStatus("idle");
 				}
-				this.setStatus("idle");
-			}
 		} else if (this.status === "recording") {
 			this.setStatus("stopping");
 			await this.recorder.stop();
@@ -704,15 +645,11 @@ export class DaemonService {
 			const compressionThreshold = this.config.audio.compressionThreshold;
 			const bufferSize = audioBuffer.length;
 
-			let shouldCompress: boolean;
-			if (compressionMode === "always") {
-				shouldCompress = true;
-			} else if (compressionMode === "never") {
-				shouldCompress = false;
-			} else {
-				// "auto" mode: compress only if buffer exceeds threshold
-				shouldCompress = bufferSize >= compressionThreshold;
-			}
+			const shouldCompress = shouldCompressAudio(
+				compressionMode,
+				bufferSize,
+				compressionThreshold,
+			);
 
 			let audioBufferToTranscribe: Buffer;
 			if (shouldCompress) {
@@ -753,31 +690,26 @@ export class DaemonService {
 
 			const runGroqTranscription = async () => {
 				try {
-					return await transcribeGroqRecording({
-						rawAudioBuffer: audioBuffer,
-						fallbackAudioBuffer: audioBufferToTranscribe,
-						fallbackFormat: audioFormat,
+					return await runGroqTranscriptionWithLiveSession({
+						liveSession: this.liveGroqSession,
+						audioBufferToTranscribe,
+						audioFormat,
 						language,
 						boostWords,
 						recordingDurationMs: duration,
 						chunking: groqChunkingConfig,
-						transcribe: (
-							buffer,
-							transcribeLanguage,
-							transcribeBoostWords,
-							format,
-							recordingDurationMs,
-						) =>
+						transcribe: (buffer, transcribeLanguage, transcribeBoostWords, format, recordingDurationMs, signal) =>
 							this.groq.transcribe(
 								buffer,
 								transcribeLanguage,
 								transcribeBoostWords,
 								format,
 								recordingDurationMs,
+								signal,
 							),
 					});
 				} catch (error: unknown) {
-					if (error instanceof GroqChunkedTranscriptionError) {
+					if (error instanceof GroqChunkingError) {
 						groqErr = error.cause ?? error;
 						return {
 							text: "",
@@ -892,36 +824,6 @@ export class DaemonService {
 				);
 			}
 
-			const handleTranscriptionError = (
-				err: unknown,
-				failedService: string,
-			) => {
-				const code = getErrorCode(err);
-
-				if (
-					code === "GROQ_INVALID_KEY" ||
-					code === "DEEPGRAM_INVALID_KEY" ||
-					errorIncludes(err, "Invalid API Key")
-				) {
-					const template =
-						failedService === "Groq"
-							? ErrorTemplates.API.GROQ_INVALID_KEY
-							: ErrorTemplates.API.DEEPGRAM_INVALID_KEY;
-					notify("Configuration Error", formatUserError(template), "error");
-				} else if (
-					code === "RATE_LIMIT_EXCEEDED" ||
-					errorIncludes(err, "Rate limit exceeded")
-				) {
-					const template =
-						ErrorTemplates.API.RATE_LIMIT_EXCEEDED(failedService);
-					notify("Rate Limit", formatUserError(template), "error");
-				} else if (code === "TIMEOUT" || errorIncludes(err, "timed out")) {
-					logger.warn(`${failedService} API timed out`);
-				} else {
-					logError(`${failedService} failed`, err);
-				}
-			};
-
 			// --- Early exits (no speech / hallucination) ---
 			if (!groqText && !deepgramText) {
 				if (!groqErr && !deepgramErr) {
@@ -935,8 +837,8 @@ export class DaemonService {
 					return;
 				}
 
-				if (groqErr) handleTranscriptionError(groqErr, "Groq");
-				if (deepgramErr) handleTranscriptionError(deepgramErr, "Deepgram");
+				if (groqErr) handleProviderTranscriptionError(groqErr, "Groq");
+				if (deepgramErr) handleProviderTranscriptionError(deepgramErr, "Deepgram");
 
 				const template = ErrorTemplates.API.BOTH_SERVICES_FAILED;
 				notify("Transcription Failed", formatUserError(template), "error");
@@ -1000,7 +902,10 @@ export class DaemonService {
 				const error = !groqText ? groqErr : deepgramErr;
 
 				if (error) {
-					handleTranscriptionError(error, failedService);
+					handleProviderTranscriptionError(
+						error,
+						failedService as "Groq" | "Deepgram",
+					);
 					notify(
 						"Warning",
 						`${failedService} failed, using fallback`,
@@ -1238,11 +1143,12 @@ export class DaemonService {
 				this.setStatus("idle");
 			}
 
-			if (this.streamingDataHandler) {
-				this.recorder.off("data", this.streamingDataHandler);
-				this.streamingDataHandler = undefined;
+			if (this.streamingPcmHandler) {
+				this.recorder.off("pcm-data", this.streamingPcmHandler);
+				this.streamingPcmHandler = undefined;
 			}
 			this.deepgramStreaming = undefined;
+			this.liveGroqSession = undefined;
 		}
 	}
 }

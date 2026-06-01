@@ -230,11 +230,16 @@ describe("Config Loader", () => {
 		const config = loadConfig(CONFIG_FILE);
 		expect(config.transcription.groqChunking).toEqual({
 			enabled: false,
+			mode: "live",
 			minDurationSeconds: 45,
 			chunkSeconds: 20,
 			overlapSeconds: 1.5,
 			maxConcurrency: 3,
+			chunkMaxRetries: 1,
+			chunkRetryBackoffMs: 250,
+			liveFinalizeTimeoutMs: 2500,
 			fallbackToFullAudio: true,
+			logChunkTranscripts: true,
 		});
 	});
 
@@ -247,11 +252,16 @@ describe("Config Loader", () => {
 			transcription: {
 				groqChunking: {
 					enabled: true,
+					mode: "live",
 					minDurationSeconds: 60,
 					chunkSeconds: 30,
 					overlapSeconds: 2,
 					maxConcurrency: 4,
+					chunkMaxRetries: 2,
+					chunkRetryBackoffMs: 500,
+					liveFinalizeTimeoutMs: 3000,
 					fallbackToFullAudio: false,
+					logChunkTranscripts: false,
 				},
 			},
 		};

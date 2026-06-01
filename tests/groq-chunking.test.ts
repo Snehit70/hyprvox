@@ -1,237 +1,116 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-	GroqChunkedTranscriptionError,
-	type GroqChunkingOptions,
-	transcribeGroqRecording,
-} from "../src/transcribe/groq-chunking";
-import { TranscriptionError } from "../src/utils/errors";
-
-const SAMPLE_RATE = 16000;
-
-function buildWav(samples: number[]): Buffer {
-	const data = Buffer.alloc(samples.length * 2);
-	for (const [index, sample] of samples.entries()) {
-		data.writeInt16LE(sample, index * 2);
-	}
-
-	const header = Buffer.alloc(44);
-	header.write("RIFF", 0, "ascii");
-	header.writeUInt32LE(36 + data.length, 4);
-	header.write("WAVE", 8, "ascii");
-	header.write("fmt ", 12, "ascii");
-	header.writeUInt32LE(16, 16);
-	header.writeUInt16LE(1, 20);
-	header.writeUInt16LE(1, 22);
-	header.writeUInt32LE(SAMPLE_RATE, 24);
-	header.writeUInt32LE(SAMPLE_RATE * 2, 28);
-	header.writeUInt16LE(2, 32);
-	header.writeUInt16LE(16, 34);
-	header.write("data", 36, "ascii");
-	header.writeUInt32LE(data.length, 40);
-
-	return Buffer.concat([header, data]);
-}
+import type { GroqChunkingOptions } from "../src/transcribe/groq-chunking";
+import { GroqLiveChunkSession } from "../src/transcribe/groq-live-chunking";
 
 function chunkingOptions(
 	overrides: Partial<GroqChunkingOptions> = {},
 ): GroqChunkingOptions {
 	return {
 		enabled: true,
+		mode: "live",
 		minDurationSeconds: 0,
-		chunkSeconds: 3 / SAMPLE_RATE,
+		chunkSeconds: 0.05,
 		overlapSeconds: 0,
 		maxConcurrency: 3,
+		chunkMaxRetries: 1,
+		chunkRetryBackoffMs: 5,
+		liveFinalizeTimeoutMs: 200,
 		fallbackToFullAudio: true,
+		logChunkTranscripts: false,
 		...overrides,
 	};
 }
 
-function resolveAt(
-	resolvers: Array<(value: string) => void>,
-	index: number,
-	value: string,
-): void {
-	const resolve = resolvers[index];
-	if (!resolve) {
-		throw new Error(`Missing resolver ${index}`);
-	}
-	resolve(value);
+function pcmFromSamples(sampleCount: number): Buffer {
+	return Buffer.alloc(sampleCount * 2, 1);
 }
 
-async function waitForAssertion(assertion: () => void): Promise<void> {
-	let lastError: unknown;
-	for (let attempt = 0; attempt < 50; attempt++) {
-		try {
-			assertion();
-			return;
-		} catch (error: unknown) {
-			lastError = error;
-			await new Promise((resolve) => setTimeout(resolve, 1));
-		}
-	}
-	throw lastError;
-}
-
-describe("GroqClient chunked transcription", () => {
-	it("preserves output order when chunks complete out of order", async () => {
+describe("Groq live chunk session", () => {
+	it("preserves output order when chunk completion is out of order", async () => {
 		const resolvers: Array<(value: string) => void> = [];
 		const transcribe = vi.fn().mockImplementation(
-			() =>
-				new Promise<string>((resolve) => {
-					resolvers.push(resolve);
-				}),
+			() => new Promise<string>((resolve) => resolvers.push(resolve)),
 		);
-
-		const resultPromise = transcribeGroqRecording({
-			rawAudioBuffer: buildWav([1, 2, 3, 4, 5, 6, 7, 8, 9]),
-			fallbackAudioBuffer: Buffer.from("fallback"),
-			fallbackFormat: "wav",
-			recordingDurationMs: 1000,
-			chunking: chunkingOptions(),
+		const session = new GroqLiveChunkSession({
+			chunking: chunkingOptions({ chunkSeconds: 0.01 }),
+			language: "en",
+			boostWords: [],
 			transcribe,
 		});
 
-		await waitForAssertion(() => expect(resolvers).toHaveLength(3));
-		resolveAt(resolvers, 2, "third");
-		resolveAt(resolvers, 0, "first");
-		resolveAt(resolvers, 1, "second");
+		session.acceptPcmData(pcmFromSamples(160 * 3));
+		expect(resolvers).toHaveLength(3);
+		resolvers[2]?.("third");
+		resolvers[0]?.("first");
+		resolvers[1]?.("second");
 
-		const result = await resultPromise;
-
+		const result = await session.finish();
+		expect(result.kind).toBe("ready");
+		if (result.kind !== "ready") return;
 		expect(result.text).toBe("first second third");
-		expect(result.chunking.used).toBe(true);
 		expect(result.chunking.chunkCount).toBe(3);
-		expect(result.chunking.fallback).toBe(false);
 	});
 
 	it("respects maxConcurrency", async () => {
 		let active = 0;
 		let maxActive = 0;
-
 		const transcribe = vi.fn().mockImplementation(async () => {
-			active++;
+			active += 1;
 			maxActive = Math.max(maxActive, active);
-			await new Promise((resolve) => setTimeout(resolve, 5));
-			active--;
+			await new Promise((resolve) => setTimeout(resolve, 10));
+			active -= 1;
 			return "chunk";
 		});
 
-		const result = await transcribeGroqRecording({
-			rawAudioBuffer: buildWav([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]),
-			fallbackAudioBuffer: Buffer.from("fallback"),
-			fallbackFormat: "wav",
-			recordingDurationMs: 1000,
-			chunking: chunkingOptions({ maxConcurrency: 2 }),
+		const session = new GroqLiveChunkSession({
+			chunking: chunkingOptions({ maxConcurrency: 2, chunkSeconds: 0.01 }),
+			language: "en",
+			boostWords: [],
 			transcribe,
 		});
-
-		expect(transcribe).toHaveBeenCalledTimes(4);
+		session.acceptPcmData(pcmFromSamples(160 * 6));
+		await session.finish();
 		expect(maxActive).toBeLessThanOrEqual(2);
-		expect(result.text).toBe("chunk chunk chunk chunk");
 	});
 
-	it("falls back to full audio when a chunk request fails", async () => {
-		const fallbackAudioBuffer = Buffer.from("full audio");
+	it("returns fallback when a chunk fails and aborts active chunk requests", async () => {
+		const signals: AbortSignal[] = [];
+		let released = false;
 		const transcribe = vi
 			.fn()
-			.mockRejectedValueOnce(new Error("chunk failed"))
-			.mockResolvedValueOnce("full transcript");
+			.mockImplementationOnce(async () => {
+				throw new Error("chunk failed");
+			})
+			.mockImplementation(async (...args: unknown[]) => {
+				const signal = args[5] as AbortSignal | undefined;
+				if (signal) signals.push(signal);
+				await new Promise<void>((resolve, reject) => {
+					const timer = setTimeout(resolve, 50);
+					signal?.addEventListener("abort", () => {
+						clearTimeout(timer);
+						reject(new Error("aborted"));
+					});
+				});
+				released = true;
+				return "late";
+			});
 
-		const result = await transcribeGroqRecording({
-			rawAudioBuffer: buildWav([1, 2, 3, 4, 5, 6]),
-			fallbackAudioBuffer,
-			fallbackFormat: "wav",
-			recordingDurationMs: 1000,
-			chunking: chunkingOptions({ maxConcurrency: 1 }),
+		const session = new GroqLiveChunkSession({
+			chunking: chunkingOptions({
+				maxConcurrency: 2,
+				chunkSeconds: 0.01,
+				chunkMaxRetries: 0,
+			}),
+			language: "en",
+			boostWords: [],
 			transcribe,
 		});
-
-		expect(result.text).toBe("full transcript");
-		expect(result.chunking.used).toBe(false);
-		expect(result.chunking.fallback).toBe(true);
-		expect(result.chunking.failureReason).toContain("chunk_request_failed");
-		expect(transcribe).toHaveBeenLastCalledWith(
-			fallbackAudioBuffer,
-			"en",
-			[],
-			"wav",
-			1000,
-		);
-	});
-
-	it("waits for active chunks and stops scheduling before fallback", async () => {
-		const fallbackAudioBuffer = Buffer.from("full audio");
-		const calls: string[] = [];
-		let releaseActiveChunk: ((value: string) => void) | undefined;
-
-		const transcribe = vi.fn().mockImplementation((audioBuffer: Buffer) => {
-			if (audioBuffer === fallbackAudioBuffer) {
-				calls.push("fallback");
-				return Promise.resolve("full transcript");
-			}
-
-			if (!calls.includes("chunk-0")) {
-				calls.push("chunk-0");
-				return Promise.reject(new Error("chunk failed"));
-			}
-
-			calls.push("chunk-1");
-			return new Promise<string>((resolve) => {
-				releaseActiveChunk = resolve;
-			});
-		});
-
-		const resultPromise = transcribeGroqRecording({
-			rawAudioBuffer: buildWav(Array.from({ length: 12 }, (_, index) => index)),
-			fallbackAudioBuffer,
-			fallbackFormat: "wav",
-			recordingDurationMs: 1000,
-			chunking: chunkingOptions({ maxConcurrency: 2 }),
-			transcribe,
-		});
-
-		await waitForAssertion(() => expect(calls).toEqual(["chunk-0", "chunk-1"]));
-		await new Promise((resolve) => setTimeout(resolve, 0));
-		expect(calls).not.toContain("fallback");
-
-		if (!releaseActiveChunk) {
-			throw new Error("Expected second chunk to be active");
-		}
-		releaseActiveChunk("late chunk result");
-
-		const result = await resultPromise;
-
-		expect(result.text).toBe("full transcript");
-		expect(calls).toEqual(["chunk-0", "chunk-1", "fallback"]);
-		expect(transcribe).toHaveBeenCalledTimes(3);
-	});
-
-	it("propagates chunk errors when fallback is disabled", async () => {
-		const providerError = new TranscriptionError(
-			"Groq",
-			"RATE_LIMIT_EXCEEDED",
-			"Groq: Rate limit exceeded",
-		);
-		const transcribe = vi.fn().mockRejectedValue(providerError);
-
-		try {
-			await transcribeGroqRecording({
-				rawAudioBuffer: buildWav([1, 2, 3, 4, 5, 6]),
-				fallbackAudioBuffer: Buffer.from("fallback"),
-				fallbackFormat: "wav",
-				recordingDurationMs: 1000,
-				chunking: chunkingOptions({ fallbackToFullAudio: false }),
-				transcribe,
-			});
-			throw new Error("Expected transcribeChunked to fail");
-		} catch (error: unknown) {
-			expect(error).toBeInstanceOf(GroqChunkedTranscriptionError);
-			expect((error as GroqChunkedTranscriptionError).cause).toBe(
-				providerError,
-			);
-			expect(
-				(error as GroqChunkedTranscriptionError).chunking.failureReason,
-			).toContain("chunk_request_failed");
-		}
+		session.acceptPcmData(pcmFromSamples(160 * 3));
+		const result = await session.finish();
+		expect(result.kind).toBe("fallback");
+		if (result.kind !== "fallback") return;
+		expect(result.failureReason).toContain("live_chunk_failed");
+		expect(signals.some((signal) => signal.aborted)).toBe(true);
+		expect(released).toBe(false);
 	});
 });

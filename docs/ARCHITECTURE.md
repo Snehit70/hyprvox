@@ -118,8 +118,12 @@ For details on using these modules programmatically, see the [Programmatic API R
 We use [Vitest](https://vitest.dev/) for testing.
 - **Run all tests**: `bun test`
 - **Run with coverage**: `bun test --coverage`
+- **Run safe local suite (no integration)**: `bun run test:safe`
+- **Run isolated integration suite**: `bun run test:integration`
+- **Run full integration suite (no HOME/runtime isolation)**: `bun run test:integration:full`
 - **Unit tests**: Located in `tests/` directory, mirroring the `src/` structure.
 - **Integration tests**: Located in `tests/integration/`.
+- **Test runtime safety**: test scripts set `HYPRVOX_TEST_MODE=1`, which suppresses desktop notifications so integration tests do not send real user popups.
 
 ### Code Style
 - Follow the existing functional programming patterns where appropriate.

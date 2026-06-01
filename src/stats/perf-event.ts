@@ -42,6 +42,13 @@ export const PerfEventSchema = z
 		groqChunkOverlapSeconds: z.number().nonnegative().optional(),
 		groqChunkFallback: z.boolean().optional(),
 		groqChunkFailureReason: z.string().nullable().optional(),
+		groqChunkMode: z.literal("live").optional(),
+		groqLiveCompletedBeforeStop: z.boolean().optional(),
+		groqLivePreStopCompletedChunks: z.number().int().nonnegative().optional(),
+		groqLivePostStopWaitMs: z.number().optional(),
+		groqLiveFinalizeTimedOut: z.boolean().optional(),
+		groqLiveFinalTailMs: z.number().optional(),
+		groqLiveBackgroundRequestMs: z.number().optional(),
 	})
 	.passthrough();
 

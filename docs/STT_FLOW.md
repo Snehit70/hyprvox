@@ -75,7 +75,7 @@ Before provider calls, the daemon builds technical-term hints from configured bo
 1.  **Groq (Whisper Large V3)**:
     - **Strength**: Unrivaled technical accuracy and word recognition.
     - **Usage**: Primary source for content.
-    - **Optional chunking**: When `transcription.groqChunking.enabled` is true and the recording meets the configured minimum duration, Groq uses overlapping chunks from the original recorder WAV with bounded parallel requests. The ordered chunk text is joined before the normal merge pipeline.
+    - **Optional live chunking**: When `transcription.groqChunking.enabled` is true (`mode: "live"`), Groq starts overlapping chunk requests during recording after the minimum duration gate opens. On stop, Hyprvox waits briefly for in-flight chunks, joins the ordered chunk text, and falls back to full-audio Groq if live chunking fails or times out.
 2.  **Deepgram (Nova-3)**:
     - **Strength**: Exceptional punctuation, capitalization, and formatting.
     - **Usage**: Primary source for structure.
