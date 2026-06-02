@@ -105,10 +105,12 @@ function hasSuspiciousWordShape(clean: string): boolean {
 
 	const vowelMatches = clean.match(VOWEL_PATTERN);
 	const vowelCount = vowelMatches ? vowelMatches.length : 0;
-	const consonantRuns = clean.match(/[bcdfghjklmnpqrstvwxyz]{5,}/g) ?? [];
+	// English clusters top out at 5 consonants ("strengths", "twelfths");
+	// require 6+ so ordinary words are not flagged as garbage.
+	const consonantRuns = clean.match(/[bcdfghjklmnpqrstvwxyz]{6,}/g) ?? [];
 
 	return (
-		vowelCount <= 1 ||
+		vowelCount === 0 ||
 		consonantRuns.length > 0 ||
 		(vowelCount / clean.length < 0.2 && clean.length >= 10)
 	);

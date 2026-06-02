@@ -141,6 +141,28 @@ describe("transcript quality validation", () => {
 		}
 	});
 
+	it("does not flag ordinary English words with long consonant clusters", () => {
+		const ordinary = [
+			"What are our strengths",
+			"She counted twelfths and eighths",
+			"The two lengths differ",
+			"He has the rights",
+		];
+
+		for (const text of ordinary) {
+			const result = validateTranscript(text);
+			expect(result.valid, `unexpected garbage flag for: ${text}`).toBe(true);
+			expect(result.reasons).not.toContain("garbage");
+		}
+	});
+
+	it("still flags consonant-heavy garbage tokens", () => {
+		const result = validateTranscript("Puighmmbrquy Loy Gotta");
+
+		expect(result.valid).toBe(false);
+		expect(result.reasons).toContain("garbage");
+	});
+
 	it("detects injected file and command token bursts", () => {
 		const result = validateTranscript(
 			"Let's run the review and update the plan. test-audio.mp3 benchmark-audio.ts test-audio.mp3",
