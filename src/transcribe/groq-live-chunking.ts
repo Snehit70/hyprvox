@@ -88,6 +88,18 @@ export class GroqLiveChunkSession {
 		this.pump();
 	}
 
+	/**
+	 * Abandon the session without finalizing: stop accepting audio, mark it
+	 * failed so in-flight retries bail after their backoff, and abort every
+	 * outstanding request. Called when the owning recording is cancelled or
+	 * torn down so live chunk requests don't keep running after teardown.
+	 */
+	public cancel(): void {
+		this.stopped = true;
+		if (!this.failedReason) this.failedReason = "session_cancelled";
+		this.abortActiveRequests();
+	}
+
 	public async finish(): Promise<GroqLiveChunkFinishResult> {
 		this.stopped = true;
 		this.preStopCompletedCount = this.completedCount;
@@ -111,6 +123,7 @@ export class GroqLiveChunkSession {
 		if (!settled) {
 			const failureReason =
 				"live_finalize_timeout: unfinished live chunk requests";
+			this.failedReason = failureReason;
 			this.abortActiveRequests();
 			return {
 				kind: "fallback",
@@ -308,6 +321,9 @@ export class GroqLiveChunkSession {
 					await new Promise((resolve) =>
 						setTimeout(resolve, this.chunking.chunkRetryBackoffMs),
 					);
+					// The session may have been cancelled or hit a finalize timeout
+					// while we slept; don't fire another request into a dead session.
+					if (this.failedReason) return;
 					continue;
 				}
 				this.failedReason = `live_chunk_failed: ${getFailureReason(error)}`;
