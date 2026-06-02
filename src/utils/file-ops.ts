@@ -1,4 +1,9 @@
-import { existsSync } from "node:fs";
+import {
+	existsSync,
+	renameSync,
+	unlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 
 export async function atomicWriteFile(
@@ -13,6 +18,23 @@ export async function atomicWriteFile(
 	} catch (e) {
 		try {
 			await unlink(tmpPath);
+		} catch {}
+		throw e;
+	}
+}
+
+export function atomicWriteFileSync(
+	filePath: string,
+	data: string,
+	options?: { mode?: number },
+): void {
+	const tmpPath = `${filePath}.tmp-${Date.now()}-${process.pid}`;
+	try {
+		writeFileSync(tmpPath, data, options);
+		renameSync(tmpPath, filePath);
+	} catch (e) {
+		try {
+			unlinkSync(tmpPath);
 		} catch {}
 		throw e;
 	}
