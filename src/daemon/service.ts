@@ -363,18 +363,7 @@ export class DaemonService {
 			this.errorCount++;
 			this.setStatus("error", err.message);
 
-			if (this.streamingPcmHandler) {
-				this.recorder.off("pcm-data", this.streamingPcmHandler);
-				this.streamingPcmHandler = undefined;
-			}
-			if (this.deepgramStreaming) {
-				this.deepgramStreaming
-					.stop()
-					.catch((e) =>
-						logError("Failed to stop streaming on recorder error", e),
-					);
-				this.deepgramStreaming = undefined;
-			}
+			void this.teardownStreaming("Failed to stop streaming on recorder error");
 
 			let title = "Error";
 			let message = err.message;
@@ -460,6 +449,7 @@ export class DaemonService {
 		if (this.stateWriteDebounceTimer) {
 			clearTimeout(this.stateWriteDebounceTimer);
 		}
+		await this.teardownStreaming("Failed to stop streaming during shutdown");
 		await this.ipcServer.stop();
 		for (const file of [this.pidFile, this.stateFile]) {
 			try {
@@ -469,6 +459,26 @@ export class DaemonService {
 			}
 		}
 		logger.info("Daemon stopped");
+	}
+
+	/**
+	 * Detach the streaming PCM handler and tear down both live transcription
+	 * sessions (Deepgram streaming + live Groq chunking). Safe to call when no
+	 * session is active — each branch no-ops on an undefined field. Used by
+	 * stop(), the start-failure path, cancellation, and recorder errors so a
+	 * half-started recording never leaks an open socket or in-flight chunk.
+	 */
+	private async teardownStreaming(reason: string): Promise<void> {
+		if (this.streamingPcmHandler) {
+			this.recorder.off("pcm-data", this.streamingPcmHandler);
+			this.streamingPcmHandler = undefined;
+		}
+		await stopDeepgramStreaming(this.deepgramStreaming, reason);
+		this.deepgramStreaming = undefined;
+		if (this.liveGroqSession) {
+			this.liveGroqSession.cancel();
+			this.liveGroqSession = undefined;
+		}
 	}
 
 	private async handleTrigger() {
@@ -523,12 +533,9 @@ export class DaemonService {
 					if (this.cancelPending) {
 						logger.info("Recording cancelled during setup, cleaning up");
 						this.cancelPending = false;
-						await stopDeepgramStreaming(
-							this.deepgramStreaming,
+						await this.teardownStreaming(
 							"Failed to stop streaming after cancellation",
 						);
-						this.deepgramStreaming = undefined;
-						this.liveGroqSession = undefined;
 						this.setStatus("idle");
 						return;
 					}
@@ -544,15 +551,9 @@ export class DaemonService {
 					if (this.cancelPending) {
 						logger.info("Recording cancelled before recorder start, cleaning up");
 						this.cancelPending = false;
-						if (this.streamingPcmHandler) {
-							this.recorder.off("pcm-data", this.streamingPcmHandler);
-							this.streamingPcmHandler = undefined;
-						}
-						await stopDeepgramStreaming(
-							this.deepgramStreaming,
+						await this.teardownStreaming(
 							"Failed to stop streaming after cancellation",
 						);
-						this.deepgramStreaming = undefined;
 						this.setStatus("idle");
 						return;
 					}
@@ -561,15 +562,9 @@ export class DaemonService {
 			} catch (error) {
 					this.cancelPending = false;
 					logError("Failed to start recording", error);
-					if (this.streamingPcmHandler) {
-						this.recorder.off("pcm-data", this.streamingPcmHandler);
-						this.streamingPcmHandler = undefined;
-					}
-					await stopDeepgramStreaming(
-						this.deepgramStreaming,
+					await this.teardownStreaming(
 						"Failed to stop streaming after start failure",
 					);
-					this.deepgramStreaming = undefined;
 					this.setStatus("idle");
 				}
 		} else if (this.status === "recording") {
