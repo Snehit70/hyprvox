@@ -79,6 +79,14 @@ export async function convertAudio(inputBuffer: Buffer): Promise<Buffer> {
 			}
 		});
 
+		// ffmpeg may exit (e.g. on bad input) before stdin is fully written,
+		// producing an EPIPE on the pipe. Without a listener that becomes an
+		// unhandled error that crashes the process; the 'close' handler above
+		// still rejects with the real exit code/stderr.
+		ffmpeg.stdin.on("error", (err) => {
+			logger.debug({ err }, "ffmpeg stdin closed before write completed");
+		});
+
 		ffmpeg.stdin.write(inputBuffer);
 		ffmpeg.stdin.end();
 	});

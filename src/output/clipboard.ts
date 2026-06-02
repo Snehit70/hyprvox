@@ -76,6 +76,10 @@ export class ClipboardManager {
 			});
 
 			child.on("error", reject);
+			// If wl-copy exits early (e.g. no clipboard manager), writing to its
+			// stdin emits an EPIPE on the pipe. Route it through reject so write()
+			// falls back to clipboardy instead of crashing on an unhandled error.
+			child.stdin.on("error", reject);
 			child.on("close", (code: number) => {
 				if (code === 0) resolve();
 				else
