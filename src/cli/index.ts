@@ -199,7 +199,7 @@ program
 			}
 		}
 		console.log(colors.cyan("Starting daemon..."));
-		const supervisor = new DaemonSupervisor(join(process.cwd(), "index.ts"));
+		const supervisor = new DaemonSupervisor(join(projectRoot, "index.ts"));
 		supervisor.start();
 	});
 
