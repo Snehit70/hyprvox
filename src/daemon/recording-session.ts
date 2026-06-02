@@ -1,5 +1,6 @@
 import type { AudioRecorder, PcmAudioPayload } from "../audio/recorder";
 import type { Config } from "../config/schema";
+import type { GroqSingleFileTranscriber } from "../transcribe/groq-chunking";
 import { DeepgramStreamingTranscriber } from "../transcribe/deepgram-streaming";
 import { GroqLiveChunkSession } from "../transcribe/groq-live-chunking";
 import { logError, logger } from "../utils/logger";
@@ -13,14 +14,7 @@ interface StartDeepgramStreamingInput {
 interface CreateLiveGroqSessionInput {
 	config: Config;
 	boostWords: string[];
-	transcribe: (
-		buffer: Buffer,
-		language: string,
-		boostWords: string[],
-		format: "opus" | "wav",
-		recordingMs?: number,
-		signal?: AbortSignal,
-	) => Promise<string>;
+	transcribe: GroqSingleFileTranscriber;
 }
 
 interface AttachStreamingPcmHandlerInput {

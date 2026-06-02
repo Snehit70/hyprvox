@@ -15,11 +15,14 @@ export type ConfigPatch = Omit<
 	transcription?: Partial<
 		Omit<
 			NonNullable<ConfigFile["transcription"]>,
-			"groqChunking" | "statsThresholds"
+			"groqChunking" | "debugAudio" | "statsThresholds"
 		>
 	> & {
 		groqChunking?: Partial<
 			NonNullable<NonNullable<ConfigFile["transcription"]>["groqChunking"]>
+		>;
+		debugAudio?: Partial<
+			NonNullable<NonNullable<ConfigFile["transcription"]>["debugAudio"]>
 		>;
 		statsThresholds?: Partial<
 			NonNullable<NonNullable<ConfigFile["transcription"]>["statsThresholds"]>
@@ -78,6 +81,15 @@ export function mergeConfig(
 			next.transcription.groqChunking = {
 				...(base.transcription?.groqChunking ?? {}),
 				...(updates.transcription?.groqChunking ?? {}),
+			};
+		}
+		if (
+			base.transcription?.debugAudio !== undefined ||
+			updates.transcription?.debugAudio !== undefined
+		) {
+			next.transcription.debugAudio = {
+				...(base.transcription?.debugAudio ?? {}),
+				...(updates.transcription?.debugAudio ?? {}),
 			};
 		}
 		if (

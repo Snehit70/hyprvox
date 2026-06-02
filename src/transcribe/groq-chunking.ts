@@ -29,6 +29,8 @@ export interface GroqChunkingMetrics {
 	liveFinalizeTimedOut: boolean;
 	liveFinalTailMs: number;
 	liveBackgroundRequestMs: number;
+	liveDroppedChunks: number;
+	liveRecoveredChunks: number;
 }
 
 export type GroqSingleFileTranscriber = (
@@ -37,6 +39,7 @@ export type GroqSingleFileTranscriber = (
 	boostWords: string[],
 	format: GroqAudioFormat,
 	recordingDurationMs?: number,
+	contextHint?: string,
 	signal?: AbortSignal,
 ) => Promise<string>;
 
@@ -75,6 +78,8 @@ export function createGroqChunkingMetrics(
 		liveFinalizeTimedOut: false,
 		liveFinalTailMs: -1,
 		liveBackgroundRequestMs: -1,
+		liveDroppedChunks: 0,
+		liveRecoveredChunks: 0,
 		...overrides,
 	};
 }

@@ -22,6 +22,7 @@ interface RunGroqTranscriptionInput {
 		boostWords: string[],
 		format: GroqAudioFormat,
 		recordingDurationMs?: number,
+		contextHint?: string,
 		signal?: AbortSignal,
 	) => Promise<string>;
 }

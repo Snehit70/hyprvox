@@ -186,6 +186,11 @@ const defaultTranscription = {
 		fallbackToFullAudio: true,
 		logChunkTranscripts: true,
 	},
+	debugAudio: {
+		enabled: true,
+		keepLast: 5,
+		directory: "~/.config/hypr/vox/debug-audio",
+	},
 	statsThresholds: {
 		latencyP95WarnMs: 2500,
 		latencyP95BadMs: 4000,
@@ -327,6 +332,17 @@ export const GroqChunkingSchema = z
 		message: "Groq chunk overlap must be smaller than chunk duration",
 	});
 
+export const DebugAudioSchema = z.object({
+	enabled: z.boolean().default(defaultTranscription.debugAudio.enabled),
+	keepLast: z
+		.number()
+		.int()
+		.min(1)
+		.max(100)
+		.default(defaultTranscription.debugAudio.keepLast),
+	directory: z.string().default(defaultTranscription.debugAudio.directory),
+});
+
 export const TranscriptionSchema = z.object({
 	boostWords: z.array(z.string()).optional().refine(boostWordsValidator, {
 		message: "Boost words limit exceeded: Maximum 450 words allowed.",
@@ -336,6 +352,7 @@ export const TranscriptionSchema = z.object({
 	deepgramBoosting: z.boolean().default(defaultTranscription.deepgramBoosting),
 	lexiconEnabled: z.boolean().default(defaultTranscription.lexiconEnabled),
 	groqChunking: GroqChunkingSchema.default(defaultTranscription.groqChunking),
+	debugAudio: DebugAudioSchema.default(defaultTranscription.debugAudio),
 	statsThresholds: z
 		.object({
 			latencyP95WarnMs: z

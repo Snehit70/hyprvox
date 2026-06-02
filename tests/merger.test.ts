@@ -337,7 +337,7 @@ describe("buildMergeUserPrompt", () => {
 			[],
 		);
 
-		expect(prompt).toContain("Preserve these exact tokens");
+		expect(prompt).toContain("Exact tokens with source support");
 		expect(prompt).toContain("AGENTS.md");
 		expect(prompt).toContain("CRUD");
 	});
@@ -350,7 +350,7 @@ describe("buildMergeUserPrompt", () => {
 			["AGENTS.md", "CodeRabbit"],
 		);
 
-		expect(prompt).toContain("Known project terms: AGENTS.md, CodeRabbit.");
+		expect(prompt).toContain("Project lexicon: AGENTS.md, CodeRabbit.");
 	});
 
 	it("includes the selected formatting mode instruction", () => {
@@ -362,7 +362,7 @@ describe("buildMergeUserPrompt", () => {
 			"structured",
 		);
 
-		expect(prompt).toContain("Formatting mode: structured");
+		expect(prompt).toContain("Formatting target: structured");
 		expect(prompt).toContain("format them as a readable list");
 	});
 
@@ -373,7 +373,7 @@ describe("buildMergeUserPrompt", () => {
 			[],
 		);
 
-		expect(prompt).not.toContain("Preserve these exact tokens");
+		expect(prompt).not.toContain("Exact tokens with source support");
 	});
 });
 

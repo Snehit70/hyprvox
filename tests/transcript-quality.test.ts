@@ -4,6 +4,7 @@ import {
 	validateTranscript,
 } from "../src/transcribe/quality";
 import {
+	garbageFixtures,
 	mixedScriptFixtures,
 	promptArtifactFalsePositiveFixtures,
 	promptArtifactFixtures,
@@ -14,6 +15,15 @@ describe("transcript quality validation", () => {
 	it("detects preserve-the-following instruction artifacts", () => {
 		const result = validateTranscript(
 			"The issue is clear. Preserve the following terms in the following order.",
+		);
+
+		expect(result.valid).toBe(false);
+		expect(result.reasons).toContain("prompt_artifact");
+	});
+
+	it("detects vocabulary-hint prompt artifacts", () => {
+		const result = validateTranscript(
+			"Likely vocabulary includes commands, file paths, acronyms, project names, and code terms.",
 		);
 
 		expect(result.valid).toBe(false);
@@ -149,6 +159,18 @@ describe("transcript quality validation", () => {
 	});
 
 	it.each(mixedScriptFixtures)("detects mixed-script fixture: $name", ({
+		input,
+		expectedReasons,
+	}) => {
+		const result = validateTranscript(input);
+
+		expect(result.valid).toBe(false);
+		for (const reason of expectedReasons) {
+			expect(result.reasons).toContain(reason);
+		}
+	});
+
+	it.each(garbageFixtures)("detects garbage fixture: $name", ({
 		input,
 		expectedReasons,
 	}) => {

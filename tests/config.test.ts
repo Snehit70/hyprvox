@@ -241,6 +241,11 @@ describe("Config Loader", () => {
 			fallbackToFullAudio: true,
 			logChunkTranscripts: true,
 		});
+		expect(config.transcription.debugAudio).toEqual({
+			enabled: true,
+			keepLast: 5,
+			directory: join(homedir(), ".config", "hypr", "vox", "debug-audio"),
+		});
 	});
 
 	test("should load valid Groq chunking config", () => {
@@ -263,6 +268,11 @@ describe("Config Loader", () => {
 					fallbackToFullAudio: false,
 					logChunkTranscripts: false,
 				},
+				debugAudio: {
+					enabled: false,
+					keepLast: 9,
+					directory: "~/captures",
+				},
 			},
 		};
 		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
@@ -272,6 +282,11 @@ describe("Config Loader", () => {
 		expect(config.transcription.groqChunking).toEqual(
 			configData.transcription.groqChunking,
 		);
+		expect(config.transcription.debugAudio).toEqual({
+			enabled: false,
+			keepLast: 9,
+			directory: join(homedir(), "captures"),
+		});
 	});
 
 	test("should reject invalid Groq chunking config", () => {
@@ -301,6 +316,25 @@ describe("Config Loader", () => {
 
 			expect(() => loadConfig(CONFIG_FILE)).toThrow(expectedMessage);
 		}
+	});
+
+	test("should reject invalid debug audio config", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+			transcription: {
+				debugAudio: {
+					enabled: true,
+					keepLast: 0,
+				},
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		expect(() => loadConfig(CONFIG_FILE)).toThrow("Too small");
 	});
 
 	test("should allow maxDuration up to 600 seconds", () => {

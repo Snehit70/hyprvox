@@ -58,6 +58,10 @@ export interface TranscriptionMetrics {
 	groqLiveFinalizeTimedOut: boolean;
 	groqLiveFinalTailMs: number;
 	groqLiveBackgroundRequestMs: number;
+	groqLiveDroppedChunks: number;
+	groqLiveRecoveredChunks: number;
+	groqLiveQualityFallback: boolean;
+	groqLiveQualityFallbackReason: string | null;
 	engine: string;
 	textLength: number;
 	groqTextLength: number;
@@ -83,6 +87,10 @@ type GroqChunkingMetricFields = Pick<
 	| "groqLiveFinalizeTimedOut"
 	| "groqLiveFinalTailMs"
 	| "groqLiveBackgroundRequestMs"
+	| "groqLiveDroppedChunks"
+	| "groqLiveRecoveredChunks"
+	| "groqLiveQualityFallback"
+	| "groqLiveQualityFallbackReason"
 >;
 
 export function toGroqChunkingMetricFields(
@@ -103,6 +111,10 @@ export function toGroqChunkingMetricFields(
 		groqLiveFinalizeTimedOut: chunking.liveFinalizeTimedOut,
 		groqLiveFinalTailMs: chunking.liveFinalTailMs,
 		groqLiveBackgroundRequestMs: chunking.liveBackgroundRequestMs,
+		groqLiveDroppedChunks: chunking.liveDroppedChunks,
+		groqLiveRecoveredChunks: chunking.liveRecoveredChunks,
+		groqLiveQualityFallback: false,
+		groqLiveQualityFallbackReason: null,
 	};
 }
 

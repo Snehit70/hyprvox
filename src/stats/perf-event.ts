@@ -49,6 +49,10 @@ export const PerfEventSchema = z
 		groqLiveFinalizeTimedOut: z.boolean().optional(),
 		groqLiveFinalTailMs: z.number().optional(),
 		groqLiveBackgroundRequestMs: z.number().optional(),
+		groqLiveDroppedChunks: z.number().int().nonnegative().optional(),
+		groqLiveRecoveredChunks: z.number().int().nonnegative().optional(),
+		groqLiveQualityFallback: z.boolean().optional(),
+		groqLiveQualityFallbackReason: z.string().nullable().optional(),
 	})
 	.passthrough();
 

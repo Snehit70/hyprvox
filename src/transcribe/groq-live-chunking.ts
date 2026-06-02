@@ -6,6 +6,7 @@ import {
 	type GroqChunkingOptions,
 	type GroqSingleFileTranscriber,
 } from "./groq-chunking";
+import { trimHallucinationSuffix, validateTranscript } from "./quality";
 import { buildPcm16kMonoWav } from "./wav-chunker";
 
 interface LiveChunkJob {
@@ -13,6 +14,12 @@ interface LiveChunkJob {
 	startSample: number;
 	endSample: number;
 	buffer: Buffer;
+}
+
+interface RejectedChunkJob {
+	job: LiveChunkJob;
+	text: string;
+	reasons: string[];
 }
 
 export type GroqLiveChunkFinishResult =
@@ -37,6 +44,8 @@ export class GroqLiveChunkSession {
 	private readonly stepSamples: number;
 
 	private pcmBuffer = Buffer.alloc(0);
+	private bufferStartSample = 0;
+	private totalRecordedSamples = 0;
 	private totalSamples = 0;
 	private nextChunkStartSample = 0;
 	private nextChunkIndex = 0;
@@ -46,11 +55,14 @@ export class GroqLiveChunkSession {
 	private failedReason: string | null = null;
 	private pendingQueue: LiveChunkJob[] = [];
 	private chunkTexts = new Map<number, string>();
+	private rejectedChunks = new Map<number, RejectedChunkJob>();
 	private completedCount = 0;
 	private preStopCompletedCount = 0;
 	private accumulatedRequestMs = 0;
 	private liveFinalTailMs = -1;
 	private activeControllers = new Set<AbortController>();
+	private droppedChunkCount = 0;
+	private recoveredChunkCount = 0;
 
 	public constructor(options: GroqLiveChunkSessionOptions) {
 		this.chunking = options.chunking;
@@ -67,8 +79,10 @@ export class GroqLiveChunkSession {
 
 	public acceptPcmData(pcm: Buffer): void {
 		if (this.stopped || this.failedReason || pcm.length === 0) return;
+		const sampleCount = Math.floor(pcm.length / 2);
 		this.pcmBuffer = Buffer.concat([this.pcmBuffer, pcm]);
-		this.totalSamples += Math.floor(pcm.length / 2);
+		this.totalRecordedSamples += sampleCount;
+		this.totalSamples += sampleCount;
 		this.maybeOpenGate();
 		this.enqueueClosedChunks();
 		this.pump();
@@ -112,6 +126,8 @@ export class GroqLiveChunkSession {
 					liveFinalizeTimedOut: true,
 					liveFinalTailMs: this.liveFinalTailMs,
 					liveBackgroundRequestMs: this.accumulatedRequestMs,
+					liveDroppedChunks: this.droppedChunkCount,
+					liveRecoveredChunks: this.recoveredChunkCount,
 				}),
 			};
 		}
@@ -131,17 +147,19 @@ export class GroqLiveChunkSession {
 					liveFinalizeTimedOut: false,
 					liveFinalTailMs: this.liveFinalTailMs,
 					liveBackgroundRequestMs: this.accumulatedRequestMs,
+					liveDroppedChunks: this.droppedChunkCount,
+					liveRecoveredChunks: this.recoveredChunkCount,
 				}),
 			};
 		}
 
-		const text = [...this.chunkTexts.entries()]
+		await this.repairRejectedChunks();
+
+		const text = this.joinChunkTexts(
+			[...this.chunkTexts.entries()]
 			.sort((a, b) => a[0] - b[0])
-			.map((entry) => entry[1].trim())
-			.filter((entry) => entry.length > 0)
-			.join(" ")
-			.replace(/\s+/g, " ")
-			.trim();
+			.map((entry) => entry[1]),
+		);
 		return {
 			kind: "ready",
 			text,
@@ -155,6 +173,8 @@ export class GroqLiveChunkSession {
 				liveFinalizeTimedOut: false,
 				liveFinalTailMs: this.liveFinalTailMs,
 				liveBackgroundRequestMs: this.accumulatedRequestMs,
+				liveDroppedChunks: this.droppedChunkCount,
+				liveRecoveredChunks: this.recoveredChunkCount,
 			}),
 		};
 	}
@@ -162,7 +182,7 @@ export class GroqLiveChunkSession {
 	private maybeOpenGate(): void {
 		if (this.gateOpened) return;
 		const minSamples = Math.round(this.chunking.minDurationSeconds * 16000);
-		if (this.totalSamples >= minSamples) {
+		if (this.totalRecordedSamples >= minSamples) {
 			this.gateOpened = true;
 		}
 	}
@@ -171,13 +191,15 @@ export class GroqLiveChunkSession {
 		while (this.nextChunkStartSample + this.chunkSamples <= this.totalSamples) {
 			const start = this.nextChunkStartSample;
 			const end = start + this.chunkSamples;
+			const absoluteStart = this.bufferStartSample + start;
+			const absoluteEnd = this.bufferStartSample + end;
 			const startByte = start * 2;
 			const endByte = end * 2;
 			const pcmSlice = this.pcmBuffer.subarray(startByte, endByte);
 			this.pendingQueue.push({
 				index: this.nextChunkIndex++,
-				startSample: start,
-				endSample: end,
+				startSample: absoluteStart,
+				endSample: absoluteEnd,
 				buffer: buildPcm16kMonoWav(Buffer.from(pcmSlice)),
 			});
 			this.nextChunkStartSample += this.stepSamples;
@@ -189,18 +211,20 @@ export class GroqLiveChunkSession {
 		if (this.nextChunkStartSample >= this.totalSamples) return 0;
 		const start = this.nextChunkStartSample;
 		const end = this.totalSamples;
+		const absoluteStart = this.bufferStartSample + start;
+		const absoluteEnd = this.bufferStartSample + end;
 		const startByte = start * 2;
 		const endByte = end * 2;
 		const pcmSlice = this.pcmBuffer.subarray(startByte, endByte);
 		if (pcmSlice.length < 2) return 0;
 		this.pendingQueue.push({
 			index: this.nextChunkIndex++,
-			startSample: start,
-			endSample: end,
+			startSample: absoluteStart,
+			endSample: absoluteEnd,
 			buffer: buildPcm16kMonoWav(Buffer.from(pcmSlice)),
 		});
 		this.pump();
-		return Math.round(((end - start) / 16000) * 1000);
+		return Math.round(((absoluteEnd - absoluteStart) / 16000) * 1000);
 	}
 
 	private pump(): void {
@@ -233,12 +257,14 @@ export class GroqLiveChunkSession {
 					this.boostWords,
 					"wav",
 					durationMs,
+					undefined,
 					abortController.signal,
 				);
 				const requestMs = Date.now() - start;
 				this.accumulatedRequestMs += requestMs;
 				this.completedCount++;
-				this.chunkTexts.set(job.index, text);
+				const cleanedText = trimHallucinationSuffix(text).text;
+				this.chunkTexts.set(job.index, cleanedText);
 				if (this.chunking.logChunkTranscripts) {
 					logger.info(
 						{
@@ -253,6 +279,28 @@ export class GroqLiveChunkSession {
 						"Groq live chunk transcript",
 					);
 				}
+				const validation = validateTranscript(cleanedText);
+				if (this.shouldDropChunkText(validation.text, validation.reasons)) {
+					this.droppedChunkCount++;
+					this.rejectedChunks.set(job.index, {
+						job,
+						text: cleanedText,
+						reasons: validation.reasons,
+					});
+					logger.warn(
+						{
+							chunkIndex: job.index,
+							startSeconds: job.startSample / 16000,
+							endSeconds: job.endSample / 16000,
+							reasons: validation.reasons,
+							textLength: cleanedText.length,
+						},
+						"Dropping invalid live Groq chunk transcript from stitched output",
+					);
+					this.chunkTexts.delete(job.index);
+					return;
+				}
+				this.rejectedChunks.delete(job.index);
 				return;
 			} catch (error: unknown) {
 				if (abortController.signal.aborted) return;
@@ -285,6 +333,73 @@ export class GroqLiveChunkSession {
 		this.activeControllers.clear();
 	}
 
+	private async repairRejectedChunks(): Promise<void> {
+		if (this.rejectedChunks.size === 0 || this.failedReason) return;
+
+		const rejected = [...this.rejectedChunks.values()].sort(
+			(a, b) => a.job.index - b.job.index,
+		);
+		for (const candidate of rejected) {
+			const contextHint = this.buildContextHint(candidate.job.index);
+			if (!contextHint) continue;
+
+			const durationMs = Math.round(
+				((candidate.job.endSample - candidate.job.startSample) / 16000) * 1000,
+			);
+			try {
+				const text = await this.transcribe(
+					candidate.job.buffer,
+					this.language,
+					this.boostWords,
+					"wav",
+					durationMs,
+					contextHint,
+				);
+				const cleanedText = trimHallucinationSuffix(text).text;
+				const validation = validateTranscript(cleanedText);
+				if (this.shouldDropChunkText(validation.text, validation.reasons)) {
+					logger.debug(
+						{
+							chunkIndex: candidate.job.index,
+							startSeconds: candidate.job.startSample / 16000,
+							endSeconds: candidate.job.endSample / 16000,
+							reasons: validation.reasons,
+							contextHintLength: contextHint.length,
+						},
+						"Rejected live Groq chunk remained invalid after contextual repair",
+					);
+					continue;
+				}
+
+				this.chunkTexts.set(candidate.job.index, cleanedText);
+				this.rejectedChunks.delete(candidate.job.index);
+				this.recoveredChunkCount++;
+				logger.info(
+					{
+						chunkIndex: candidate.job.index,
+						startSeconds: candidate.job.startSample / 16000,
+						endSeconds: candidate.job.endSample / 16000,
+						contextHintLength: contextHint.length,
+						originalReasons: candidate.reasons,
+						repairedTextLength: cleanedText.length,
+					},
+					"Recovered dropped live Groq chunk transcript with contextual repair",
+				);
+			} catch (error: unknown) {
+				logger.debug(
+					{
+						chunkIndex: candidate.job.index,
+						startSeconds: candidate.job.startSample / 16000,
+						endSeconds: candidate.job.endSample / 16000,
+						contextHintLength: contextHint.length,
+						error: getFailureReason(error),
+					},
+					"Contextual live Groq chunk repair failed",
+				);
+			}
+		}
+	}
+
 	private compactConsumedPcm(): void {
 		const trimSamples = Math.max(0, this.nextChunkStartSample - this.overlapSamples);
 		if (trimSamples <= 0) return;
@@ -292,11 +407,145 @@ export class GroqLiveChunkSession {
 		if (trimBytes <= 0 || trimBytes >= this.pcmBuffer.length) return;
 
 		this.pcmBuffer = Buffer.from(this.pcmBuffer.subarray(trimBytes));
+		this.bufferStartSample += trimSamples;
 		this.totalSamples -= trimSamples;
 		this.nextChunkStartSample -= trimSamples;
-		for (const job of this.pendingQueue) {
-			job.startSample -= trimSamples;
-			job.endSample -= trimSamples;
+	}
+
+	private joinChunkTexts(parts: string[]): string {
+		const normalizedParts = parts
+			.map((part) => part.trim().replace(/\s+/g, " "))
+			.filter((part) => part.length > 0);
+		if (normalizedParts.length === 0) return "";
+
+		let joined = normalizedParts[0] ?? "";
+		for (let index = 1; index < normalizedParts.length; index += 1) {
+			const next = normalizedParts[index];
+			if (!next) continue;
+			joined = this.appendWithBoundaryOverlap(joined, next);
 		}
+
+		return trimHallucinationSuffix(joined).text;
+	}
+
+	private buildContextHint(chunkIndex: number): string {
+		const accepted = [...this.chunkTexts.entries()].sort((a, b) => a[0] - b[0]);
+		let previousText = "";
+		let nextText = "";
+
+		for (const [index, text] of accepted) {
+			if (index < chunkIndex) {
+				previousText = text;
+				continue;
+			}
+			if (index > chunkIndex) {
+				nextText = text;
+				break;
+			}
+		}
+
+		const previousTail = this.takeLastWords(previousText, 18);
+		const nextHead = this.takeFirstWords(nextText, 18);
+		const hintParts = [
+			previousTail ? `Previous accepted chunk ended with: ${previousTail}` : "",
+			nextHead ? `Next accepted chunk begins with: ${nextHead}` : "",
+		].filter(Boolean);
+
+		return hintParts.join(" ");
+	}
+
+	private appendWithBoundaryOverlap(previous: string, next: string): string {
+		const previousTokens = previous.split(/\s+/);
+		const nextTokens = next.split(/\s+/);
+		const maxOverlap = Math.min(previousTokens.length, nextTokens.length, 12);
+
+		for (let size = maxOverlap; size >= 3; size -= 1) {
+			const previousSuffix = previousTokens
+				.slice(previousTokens.length - size)
+				.join(" ")
+				.toLowerCase();
+			const nextPrefix = nextTokens.slice(0, size).join(" ").toLowerCase();
+			if (previousSuffix === nextPrefix) {
+				const remaining = nextTokens.slice(size).join(" ");
+				return remaining.length > 0 ? `${previous} ${remaining}` : previous;
+			}
+		}
+
+		for (let previousSize = maxOverlap; previousSize >= 4; previousSize -= 1) {
+			for (
+				let nextSize = Math.min(nextTokens.length, previousSize + 1);
+				nextSize >= previousSize;
+				nextSize -= 1
+			) {
+				const previousCanonical = this.toCanonicalBoundaryTokens(
+					previousTokens.slice(previousTokens.length - previousSize),
+				);
+				const nextCanonical = this.toCanonicalBoundaryTokens(
+					nextTokens.slice(0, nextSize),
+				);
+				if (
+					previousCanonical.length >= 4 &&
+					previousCanonical.join(" ") === nextCanonical.join(" ")
+				) {
+					const remaining = nextTokens.slice(nextSize).join(" ");
+					return remaining.length > 0 ? `${previous} ${remaining}` : previous;
+				}
+			}
+		}
+
+		return `${previous} ${next}`.replace(/\s+/g, " ").trim();
+	}
+
+	private toCanonicalBoundaryTokens(tokens: string[]): string[] {
+		return tokens
+			.map((token) => token.toLowerCase().replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, ""))
+			.filter((token) => token.length > 0 && !["a", "an", "the"].includes(token));
+	}
+
+	private takeLastWords(text: string, count: number): string {
+		const words = text.split(/\s+/).filter(Boolean);
+		return words.slice(Math.max(0, words.length - count)).join(" ");
+	}
+
+	private takeFirstWords(text: string, count: number): string {
+		const words = text.split(/\s+/).filter(Boolean);
+		return words.slice(0, count).join(" ");
+	}
+
+	private shouldDropChunkText(text: string, reasons: string[]): boolean {
+		if (text.length === 0) return true;
+		if (this.isLowValueShortChunkText(text)) return true;
+		if (reasons.length === 0) return false;
+		const blockingReasons = reasons.filter(
+			(reason) => reason !== "hallucination_suffix",
+		);
+		if (blockingReasons.length === 0) return false;
+		if (
+			blockingReasons.includes("prompt_artifact") ||
+			blockingReasons.includes("mixed_script") ||
+			blockingReasons.includes("garbage")
+		) {
+			return true;
+		}
+		const wordCount = text.split(/\s+/).filter(Boolean).length;
+		return wordCount <= 20;
+	}
+
+	private isLowValueShortChunkText(text: string): boolean {
+		const normalized = text.trim().replace(/\s+/g, " ");
+		const words = normalized.split(/\s+/).filter(Boolean);
+		if (words.length === 0 || words.length > 3) return false;
+		if (
+			words.length === 1 &&
+			/^(?:a|an|the|and|or|but|so|if|then|that|this|it)$/i.test(words[0] ?? "")
+		) {
+			return true;
+		}
+		if (/[./\\_-]/.test(normalized) || /\d/.test(normalized)) return false;
+		const lower = normalized.toLowerCase();
+		if (/^(?:okay|ok|yes|no|done|thanks?|thank you)[.!?]*$/.test(lower)) {
+			return false;
+		}
+		return /[,;:]/.test(normalized) || words.some((word) => word.length >= 8);
 	}
 }

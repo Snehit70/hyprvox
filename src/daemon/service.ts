@@ -29,6 +29,7 @@ import {
 import {
 	GroqLiveChunkSession,
 } from "../transcribe/groq-live-chunking";
+import { assessGroqLiveQualityFallback } from "../transcribe/groq-live-quality";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { assessLongRecordingQuality } from "../transcribe/long-recording";
 import { type MergeResult, TranscriptMerger } from "../transcribe/merger";
@@ -41,6 +42,7 @@ import { logError, logger } from "../utils/logger";
 import { incrementTranscriptionCount, loadStats } from "../utils/stats";
 import { checkHotkeyConflict } from "./conflict";
 import { shouldCompressAudio } from "./audio-strategy";
+import { saveDebugAudioCapture } from "./debug-audio";
 import { runGroqTranscriptionWithLiveSession } from "./groq-transcription";
 import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
@@ -484,13 +486,22 @@ export class DaemonService {
 					this.liveGroqSession = createLiveGroqSession({
 						config: this.config,
 						boostWords: this.providerBoostWords,
-						transcribe: (buffer, language, boostWords, format, recordingMs, signal) =>
+						transcribe: (
+							buffer,
+							language,
+							boostWords,
+							format,
+							recordingMs,
+							contextHint,
+							signal,
+						) =>
 							this.groq.transcribe(
 								buffer,
 								language,
 								boostWords,
 								format,
 								recordingMs,
+								contextHint,
 								signal,
 							),
 					});
@@ -581,6 +592,9 @@ export class DaemonService {
 			audioBuffer.length,
 			duration,
 		);
+		void saveDebugAudioCapture(this.config, audioBuffer, duration).catch((error) => {
+			logError("Failed to save debug transcription audio", error);
+		});
 
 		try {
 			const language = this.config.transcription.language;
@@ -698,13 +712,22 @@ export class DaemonService {
 						boostWords,
 						recordingDurationMs: duration,
 						chunking: groqChunkingConfig,
-						transcribe: (buffer, transcribeLanguage, transcribeBoostWords, format, recordingDurationMs, signal) =>
+						transcribe: (
+							buffer,
+							transcribeLanguage,
+							transcribeBoostWords,
+							format,
+							recordingDurationMs,
+							contextHint,
+							signal,
+						) =>
 							this.groq.transcribe(
 								buffer,
 								transcribeLanguage,
 								transcribeBoostWords,
 								format,
 								recordingDurationMs,
+								contextHint,
 								signal,
 							),
 					});
@@ -806,6 +829,55 @@ export class DaemonService {
 				metrics.deepgramCriticalPathMs = deepgramTimed.durationMs;
 				groqText = groqTimed.result.text;
 				deepgramText = deepgramTimed.result;
+			}
+
+			const liveQualityFallback = assessGroqLiveQualityFallback({
+				chunkingUsed: metrics.groqChunkingUsed,
+				fallbackToFullAudio: groqChunkingConfig.fallbackToFullAudio,
+				liveGroqText: groqText,
+				deepgramText,
+				boostWords,
+			});
+			if (liveQualityFallback.shouldFallback) {
+				metrics.groqLiveQualityFallback = true;
+				metrics.groqLiveQualityFallbackReason = liveQualityFallback.reason;
+				logger.warn(
+					{
+						reason: liveQualityFallback.reason,
+						liveGroqLength: groqText.length,
+						deepgramLength: deepgramText.length,
+						recordingDurationMs: duration,
+					},
+					"Live Groq transcript looks incomplete; running full-audio Groq quality fallback",
+				);
+				try {
+					const fullGroqTimed = await timeAsync(() =>
+						this.groq.transcribe(
+							audioBufferToTranscribe,
+							language,
+							boostWords,
+							audioFormat,
+							duration,
+						),
+					);
+					metrics.groqMs += fullGroqTimed.durationMs;
+					groqText = fullGroqTimed.result;
+					logger.info(
+						{
+							reason: liveQualityFallback.reason,
+							requestMs: fullGroqTimed.durationMs,
+							textLength: groqText.length,
+							recordingDurationMs: duration,
+						},
+						"Full-audio Groq quality fallback completed",
+					);
+				} catch (error: unknown) {
+					groqErr = error;
+					logError("Full-audio Groq quality fallback failed", error, {
+						reason: liveQualityFallback.reason,
+						recordingDurationMs: duration,
+					});
+				}
 			}
 
 			metrics.groqTextLength = groqText.length;
