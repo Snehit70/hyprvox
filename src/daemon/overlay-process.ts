@@ -11,6 +11,7 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Config } from "../config/schema";
 import { logError, logger } from "../utils/logger";
+import { getBundledOverlayPath } from "../utils/project-paths";
 
 type OverlayTrigger = "startup" | "restart";
 
@@ -122,7 +123,7 @@ export class OverlayProcessManager {
 		if (this.config.overlay?.binaryPath) {
 			return this.config.overlay.binaryPath;
 		}
-		return join(process.cwd(), "overlay");
+		return getBundledOverlayPath();
 	}
 
 	private resolveLaunchCommand(overlayPath: string): {

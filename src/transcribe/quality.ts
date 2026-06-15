@@ -122,10 +122,12 @@ function isGarbageTranscript(text: string): boolean {
 
 	const suspiciousWords = words.filter((word) => {
 		const clean = word.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+		if (/^\d+$/.test(clean)) {
+			return false;
+		}
 		return (
 			clean.length > 3 &&
-			(/\d{2,}/.test(clean) ||
-				/[a-z]{15,}/.test(clean) ||
+			(/[a-z]{15,}/.test(clean) ||
 				/(.)\1{3,}/.test(clean) ||
 				hasSuspiciousWordShape(clean))
 		);

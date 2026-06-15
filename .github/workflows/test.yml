@@ -33,5 +33,5 @@ jobs:
       - name: Smoke test Bun global install
         run: |
           PACKAGE_TGZ=$(ls hyprvox-*.tgz)
-          bun add -g "./$PACKAGE_TGZ"
+          bun add -g "$PWD/$PACKAGE_TGZ"
           hyprvox --help

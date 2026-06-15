@@ -163,6 +163,20 @@ describe("transcript quality validation", () => {
 		expect(result.reasons).toContain("garbage");
 	});
 
+	it("does not reject short technical transcripts with normal numbers", () => {
+		const phrases = [
+			"Set timeout to 3000",
+			"Use port 8080",
+			"Retry after 429",
+		];
+
+		for (const text of phrases) {
+			const result = validateTranscript(text);
+			expect(result.valid, `unexpected garbage flag for: ${text}`).toBe(true);
+			expect(result.reasons).not.toContain("garbage");
+		}
+	});
+
 	it("detects injected file and command token bursts", () => {
 		const result = validateTranscript(
 			"Let's run the review and update the plan. test-audio.mp3 benchmark-audio.ts test-audio.mp3",
