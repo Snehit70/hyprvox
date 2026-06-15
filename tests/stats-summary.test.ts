@@ -85,4 +85,56 @@ describe("stats summary", () => {
 		expect(summary.regression.window24hCount).toBe(1);
 		expect(summary.cache.source).toBe("logs");
 	});
+
+	test("uses 24h-scoped errors, baseline-aware latency regression, and newest-event lag", () => {
+		const summary = buildStatsSummaryFromInput({
+			stats: { today: 2, total: 10 },
+			history,
+			daemon: { running: true, status: "idle", pid: 123 },
+			errors: { count: 1, latest: "recent error", recent: [] },
+			paths: {
+				config: "/config.json",
+				history: "/history.json",
+				logs: "/logs",
+			},
+			now: new Date("2026-05-23T12:00:00.000Z"),
+			perfEvents: [
+				{
+					timestamp: "2026-05-22T07:00:00.000Z",
+					processingMs: 1700,
+					mergeStrategy: "llm",
+					mergeReason: "llm_succeeded",
+					validationReasons: [],
+					validationRetryCount: 0,
+					validationFallbackSource: "none",
+				},
+				{
+					timestamp: "2026-05-22T08:00:00.000Z",
+					processingMs: 1750,
+					mergeStrategy: "llm",
+					mergeReason: "llm_succeeded",
+					validationReasons: [],
+					validationRetryCount: 0,
+					validationFallbackSource: "none",
+				},
+				{
+					timestamp: "2026-05-21T06:00:00.000Z",
+					processingMs: 1600,
+					mergeStrategy: "llm",
+					mergeReason: "llm_succeeded",
+					validationReasons: [],
+					validationRetryCount: 0,
+					validationFallbackSource: "none",
+				},
+			],
+			cacheMeta: {
+				source: "aggregate",
+				lastRebuildAt: "2026-05-23T11:59:00.000Z",
+				hitRate: 0.95,
+			},
+		});
+
+		expect(summary.regression.flags).not.toContain("latency_p95_regressed");
+		expect(summary.cache.eventLagMs).toBe(28 * 60 * 60 * 1000);
+	});
 });

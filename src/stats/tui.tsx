@@ -2,7 +2,7 @@ import { watch } from "node:fs";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot, useTerminalDimensions } from "@opentui/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { StatsSummary } from "./summary";
+import type { BuildStatsSummaryOptions, StatsSummary } from "./summary";
 import { exportSnapshot, readStatsUiConfig, resolveWatchPaths } from "./tui-io";
 import {
 	nextFilter,
@@ -31,11 +31,11 @@ function StatApp({
 	loadSummary,
 	onQuit,
 	startedAtMs,
-}: {
-	loadSummary: () => Promise<StatsSummary>;
-	onQuit: () => void;
-	startedAtMs: number;
-}) {
+	}: {
+		loadSummary: (options?: BuildStatsSummaryOptions) => Promise<StatsSummary>;
+		onQuit: () => void;
+		startedAtMs: number;
+	}) {
 	const { width, height } = useTerminalDimensions();
 	const [summary, setSummary] = useState<StatsSummary | null>(null);
 	const [autoRefresh, setAutoRefresh] = useState(true);
@@ -76,15 +76,15 @@ function StatApp({
 	const watchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 	const minSampleSize = statsUiConfig.minSampleSize;
 
-	const refresh = useCallback(() => {
-		void loadSummary()
+	const refresh = useCallback((options?: BuildStatsSummaryOptions) => {
+		const refreshStartedAt = Date.now();
+		void loadSummary(options)
 			.then((data) => {
-				const renderBeganAt = Date.now();
 				setSummary(data);
 				setLastRefreshAt(Date.now());
 				setTtfpMs((current) => current ?? Date.now() - startedAtMs);
 				setDegradedMode(
-					Date.now() - renderBeganAt > statsUiConfig.renderBudgetMs,
+					Date.now() - refreshStartedAt > statsUiConfig.renderBudgetMs,
 				);
 			})
 			.catch((error) => {
@@ -126,13 +126,13 @@ function StatApp({
 		for (const path of watchPaths) {
 			try {
 				const watcher = watch(path, () => {
-					if (watchTimer.current) clearTimeout(watchTimer.current);
-					watchTimer.current = setTimeout(() => {
-						setStatusMessage("event update");
-						refresh();
-					}, WATCH_DEBOUNCE_MS);
-				});
-				watchers.push(watcher);
+						if (watchTimer.current) clearTimeout(watchTimer.current);
+						watchTimer.current = setTimeout(() => {
+							setStatusMessage("event update");
+							refresh({ forceRefresh: true });
+						}, WATCH_DEBOUNCE_MS);
+					});
+					watchers.push(watcher);
 			} catch {
 				// Ignore unsupported watch path.
 			}
@@ -149,11 +149,11 @@ function StatApp({
 
 	useEffect(() => {
 		if (!loadedTabs.has(activeTab)) {
-			setLoadedTabs((prev) => new Set([...prev, activeTab]));
-			setStatusMessage(`loaded ${tabLabel(activeTab)}`);
-			void loadSummary().then((data) => setSummary(data));
-		}
-	}, [activeTab, loadedTabs, loadSummary]);
+				setLoadedTabs((prev) => new Set([...prev, activeTab]));
+				setStatusMessage(`loaded ${tabLabel(activeTab)}`);
+				void loadSummary().then((data) => setSummary(data));
+			}
+		}, [activeTab, loadedTabs, loadSummary]);
 
 	const rowsPerPage = Math.max(8, Math.min(12, height - 24));
 	const recentRows = useMemo(() => {
@@ -385,7 +385,7 @@ function StatApp({
 }
 
 export async function runStatsTui(
-	loadSummary: () => Promise<StatsSummary>,
+	loadSummary: (options?: BuildStatsSummaryOptions) => Promise<StatsSummary>,
 ): Promise<void> {
 	const startedAtMs = Date.now();
 	const renderer = await createCliRenderer({

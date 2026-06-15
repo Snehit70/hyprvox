@@ -134,6 +134,10 @@ export interface StatsSummaryInput {
 	now?: Date;
 }
 
+export interface BuildStatsSummaryOptions {
+	forceRefresh?: boolean;
+}
+
 const DEFAULT_THRESHOLDS: StatsSummary["thresholds"] = {
 	latencyP95WarnMs: 2500,
 	latencyP95BadMs: 4000,
@@ -208,6 +212,7 @@ function readLogEntries(logDir: string | null): Array<Record<string, unknown>> {
 function readErrorSummary(
 	logEntries: Array<Record<string, unknown>>,
 ): StatsSummary["errors"] {
+	const cutoffMs = Date.now() - 24 * 60 * 60 * 1000;
 	let count = 0;
 	let latest: string | null = null;
 	const recent: Array<{ timestamp: string; message: string }> = [];
@@ -215,6 +220,11 @@ function readErrorSummary(
 
 	for (const entry of logEntries) {
 		if (entry.level !== 50) continue;
+		const parsedTimestamp =
+			typeof entry.time === "string" || typeof entry.time === "number"
+				? new Date(entry.time).getTime()
+				: Number.NaN;
+		if (!Number.isFinite(parsedTimestamp) || parsedTimestamp < cutoffMs) continue;
 		count += 1;
 		const message =
 			typeof entry.msg === "string"
@@ -225,7 +235,9 @@ function readErrorSummary(
 					: "Unknown error";
 		latest = message;
 		const timestamp =
-			typeof entry.time === "string" ? entry.time : new Date().toISOString();
+			typeof entry.time === "string"
+				? entry.time
+				: new Date(parsedTimestamp).toISOString();
 		const key = `${timestamp}|${message}`;
 		if (!seen.has(key)) {
 			seen.add(key);
@@ -252,6 +264,7 @@ function readPerfEvents(
 async function loadPerfEventsHybrid(
 	logEntries: Array<Record<string, unknown>>,
 	cacheTtlMs: number,
+	forceRefresh = false,
 ): Promise<{
 	events: PerfEvent[];
 	source: "aggregate" | "logs";
@@ -259,7 +272,7 @@ async function loadPerfEventsHybrid(
 	hitRate: number;
 }> {
 	const now = Date.now();
-	if (perfEventCache && perfEventCache.expiresAt > now) {
+	if (!forceRefresh && perfEventCache && perfEventCache.expiresAt > now) {
 		return {
 			events: perfEventCache.events,
 			source: perfEventCache.source,
@@ -395,6 +408,12 @@ function ratePerHour(
 }
 
 export async function buildStatsSummary(): Promise<StatsSummary> {
+	return buildStatsSummaryWithOptions();
+}
+
+export async function buildStatsSummaryWithOptions(
+	options: BuildStatsSummaryOptions = {},
+): Promise<StatsSummary> {
 	const stats = loadStats();
 	const history = await loadHistory();
 	let historyPath: string | null = null;
@@ -450,7 +469,11 @@ export async function buildStatsSummary(): Promise<StatsSummary> {
 
 	const logEntries = readLogEntries(logsPath);
 	const ttlMs = pickStatsCacheTtlMsFromRawConfig(rawConfig);
-	const perfBundle = await loadPerfEventsHybrid(logEntries, ttlMs);
+	const perfBundle = await loadPerfEventsHybrid(
+		logEntries,
+		ttlMs,
+		options.forceRefresh,
+	);
 
 	return buildStatsSummaryFromInput({
 		stats,
@@ -575,15 +598,17 @@ export function buildStatsSummaryFromInput(
 		events24h.map((event) => event.processingMs),
 		95,
 	);
+	const baselineP95 = percentile(
+		eventsInWindow(baseline7d, nowMs - 24 * 3600_000, 6 * 24 * 3600_000).map(
+			(event) => event.processingMs,
+		),
+		95,
+	);
 	if (
 		p95 !== null &&
 		p95 > thresholds.latencyP95WarnMs &&
-		percentile(
-			eventsInWindow(baseline7d, nowMs - 24 * 3600_000, 6 * 24 * 3600_000).map(
-				(event) => event.processingMs,
-			),
-			95,
-		) !== null
+		baselineP95 !== null &&
+		p95 > baselineP95 + 250
 	) {
 		regressionFlags.push("latency_p95_regressed");
 	}
@@ -671,27 +696,18 @@ export function buildStatsSummaryFromInput(
 			flags: regressionFlags,
 		},
 		thresholds,
-		cache: {
-			source: input.cacheMeta?.source ?? "logs",
-			lastRebuildAt: input.cacheMeta?.lastRebuildAt ?? now.toISOString(),
-			hitRate: input.cacheMeta?.hitRate ?? 0,
-			eventLagMs: Math.max(
-				0,
-				nowMs -
-					(events24h.length > 0
-						? new Date(
-								events24h
-									.slice()
-									.sort(
-										(a, b) =>
-											new Date(a.timestamp).getTime() -
-											new Date(b.timestamp).getTime(),
-									)
-									.at(-1)?.timestamp ?? now,
-							).getTime()
-						: nowMs),
-			),
-		},
+			cache: {
+				source: input.cacheMeta?.source ?? "logs",
+				lastRebuildAt: input.cacheMeta?.lastRebuildAt ?? now.toISOString(),
+				hitRate: input.cacheMeta?.hitRate ?? 0,
+				eventLagMs: Math.max(
+					0,
+					nowMs -
+						(sortedPerfEvents.length > 0
+							? new Date(sortedPerfEvents.at(-1)?.timestamp ?? now).getTime()
+							: nowMs),
+				),
+			},
 		trends: {
 			processingMs: {
 				window15m: processingWindow(sortedPerfEvents, nowMs, 15 * 60_000),

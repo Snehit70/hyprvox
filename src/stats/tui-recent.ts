@@ -25,26 +25,13 @@ function scoreSeverity(
 		score += 2;
 		flags.push("LAT");
 	}
-	if (summary.errors.count > 0) {
-		score += 1;
-		flags.push("ERR");
-	}
-	if (summary.quality.total24h >= summary.thresholds.qualityBadCount24h) {
+	const qualityIssueCount = item.validationReasons?.length ?? 0;
+	if (qualityIssueCount >= summary.thresholds.qualityBadCount24h) {
 		score += 2;
 		flags.push("QTY");
-	} else if (
-		summary.quality.total24h >= summary.thresholds.qualityWarnCount24h
-	) {
+	} else if (qualityIssueCount > 0) {
 		score += 1;
 		flags.push("QTY");
-	}
-	if (
-		summary.pipeline.fallbacks24h.groq +
-			summary.pipeline.fallbacks24h.deepgram >
-		0
-	) {
-		score += 1;
-		flags.push("FB");
 	}
 	if (score >= 4) return { severity: "bad", score, flags };
 	if (score >= 2) return { severity: "warn", score, flags };
