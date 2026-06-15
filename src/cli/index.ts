@@ -21,6 +21,8 @@ import { healthCommand } from "./health";
 import { historyCommand } from "./history";
 import { logsCommand } from "./logs";
 import { overlayCommand } from "./overlay";
+import { setupCommand } from "./setup";
+import { statsCommand } from "./stats";
 
 const program = new Command();
 const configDir = join(homedir(), ".config", "hypr", "vox");
@@ -197,7 +199,7 @@ program
 			}
 		}
 		console.log(colors.cyan("Starting daemon..."));
-		const supervisor = new DaemonSupervisor(join(process.cwd(), "index.ts"));
+		const supervisor = new DaemonSupervisor(join(projectRoot, "index.ts"));
 		supervisor.start();
 	});
 
@@ -471,11 +473,31 @@ program
 	.action(async () => {
 		const deviceService = new AudioDeviceService();
 		try {
+			try {
+				execSync("which arecord", { stdio: "ignore" });
+			} catch {
+				console.log(colors.red("Cannot list microphones: arecord is missing."));
+				console.log(
+					colors.dim("Install alsa-utils, then run hyprvox list-mics again."),
+				);
+				console.log(
+					colors.cyan(
+						"Debian/Ubuntu: sudo apt install alsa-utils\nFedora: sudo dnf install -y alsa-utils\nArch: sudo pacman -S alsa-utils",
+					),
+				);
+				return;
+			}
+
 			console.log("Scanning for audio devices...");
 			const devices = await deviceService.listDevices();
 
 			if (devices.length === 0) {
-				console.log("No audio devices found.");
+				console.log(colors.yellow("No audio devices found."));
+				console.log(
+					colors.dim(
+						"Check that a microphone is connected and visible to ALSA/PipeWire.",
+					),
+				);
 				return;
 			}
 
@@ -492,7 +514,10 @@ program
 			);
 			console.log('"behavior": { "audioDevice": "YOUR_DEVICE_ID" }');
 		} catch (error) {
-			console.error("Failed to list microphones:", error);
+			console.error(
+				colors.red("Failed to list microphones:"),
+				(error as Error).message,
+			);
 		}
 	});
 
@@ -503,5 +528,7 @@ program.addCommand(healthCommand);
 program.addCommand(errorsCommand);
 program.addCommand(historyCommand);
 program.addCommand(overlayCommand);
+program.addCommand(setupCommand);
+program.addCommand(statsCommand);
 
 export { program };

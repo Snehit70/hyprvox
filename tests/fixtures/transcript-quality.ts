@@ -31,6 +31,26 @@ export const promptArtifactFixtures: QualityFixture[] = [
 		expectedReasons: ["prompt_artifact"],
 	},
 	{
+		name: "preserve first terms leaked",
+		input: "The timer issue is still fragile. Preserve the first two terms.",
+		expectedValid: false,
+		expectedReasons: ["prompt_artifact"],
+	},
+	{
+		name: "preserve whole layer leaked",
+		input:
+			"Preserve the whole threatened layer and then also improve the whole performance of it.",
+		expectedValid: false,
+		expectedReasons: ["prompt_artifact"],
+	},
+	{
+		name: "preserve min max wording leaked",
+		input:
+			"Preserve the minimum of words and sentences in the language. Preserve the maximum of words and sentences in the language.",
+		expectedValid: false,
+		expectedReasons: ["prompt_artifact"],
+	},
+	{
 		name: "merge instruction leaked",
 		input:
 			"Use the Deepgram version for the first sentence. Merge the two transcripts.",
@@ -119,6 +139,22 @@ export const mixedScriptFixtures: QualityFixture[] = [
 		input: "The fallback path should not include random สวัสดี characters.",
 		expectedValid: false,
 		expectedReasons: ["mixed_script"],
+	},
+	{
+		name: "cyrillic fragment",
+		input: "The replay output should not keep странный garbage in English mode.",
+		expectedValid: false,
+		expectedReasons: ["mixed_script"],
+	},
+];
+
+export const garbageFixtures: QualityFixture[] = [
+	{
+		name: "pseudo english word salad",
+		input:
+			"For people like me whose transcription go up to 5-10 minutes. unters Puighmmbrquy, Loy Gotta W olla!",
+		expectedValid: false,
+		expectedReasons: ["garbage"],
 	},
 ];
 

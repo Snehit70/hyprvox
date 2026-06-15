@@ -6,12 +6,13 @@ import { Command } from "commander";
 import * as colors from "yoctocolors";
 import { loadConfig } from "../config/loader";
 import { SOCKET_PATH } from "../daemon/ipc";
+import { getBundledOverlayPath } from "../utils/project-paths";
 
 const configDir = join(homedir(), ".config", "hypr", "vox");
 const overlayPidFile = join(configDir, "overlay.pid");
 
 function getDefaultOverlayPath(): string {
-	return join(process.cwd(), "overlay");
+	return getBundledOverlayPath();
 }
 
 function getOverlayBinaryPath(): string {

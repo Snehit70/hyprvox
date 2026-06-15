@@ -58,7 +58,7 @@ sequenceDiagram
   - Format: WAV (LPCM 16-bit)
 - **Safety Limits**:
   - **Min Duration**: 0.6 seconds (rejects accidental triggers).
-  - **Max Duration**: 5 minutes (auto-stops to prevent runaway resource usage).
+  - **Max Duration**: 10 minutes (auto-stops to prevent runaway resource usage).
   - **Warning**: Desktop notifications at 4:00 and 4:30 minutes.
   - **Silence Detection**: Warns the user if the recorded audio contains no detectable speech (RMS threshold).
 
@@ -75,6 +75,7 @@ Before provider calls, the daemon builds technical-term hints from configured bo
 1.  **Groq (Whisper Large V3)**:
     - **Strength**: Unrivaled technical accuracy and word recognition.
     - **Usage**: Primary source for content.
+    - **Optional live chunking**: When `transcription.groqChunking.enabled` is true (`mode: "live"`), Groq starts overlapping chunk requests during recording after the minimum duration gate opens. On stop, Hyprvox waits briefly for in-flight chunks, joins the ordered chunk text, and falls back to full-audio Groq if live chunking fails or times out. Invalid chunk transcripts are dropped before stitching and can be repaired once with neighboring chunk context.
 2.  **Deepgram (Nova-3)**:
     - **Strength**: Exceptional punctuation, capitalization, and formatting.
     - **Usage**: Primary source for structure.
@@ -85,7 +86,13 @@ Before provider calls, the daemon builds technical-term hints from configured bo
 
 **Replay Logging**: The daemon also logs the raw Groq source transcript at info level so merge-quality experiments can replay exact source pairs later.
 
+**Replay WAV Capture**: When `transcription.debugAudio.enabled` is on, Hyprvox also saves the original raw recorder WAV asynchronously after processing. This makes it possible to rerun the same audio through live Groq chunking, full-audio Groq, Deepgram, and the merge/recovery pipeline without speaking again.
+
+**Replay Harness**: `scripts/replay-debug-audio.ts` is the fixed-input tuning loop for saved WAV captures. It prints raw source outputs plus a compact compare report with per-run text lengths, candidate issue summaries per source, completeness flags, normalized edit distances, merge-source selection, live-quality fallback status, and aggregate verdict stats so chunking changes can be judged on the exact same recording.
+
 **Deepgram Finalization Metrics**: In streaming mode, each session records `deepgramFinalizeWaitMs`, `deepgramCloseWaitMs`, `deepgramEndpointingMs`, `deepgramReceivedFinalChunk`, and `deepgramHadSpeechFinal`. These explain whether stop latency came from waiting for the final transcript, closing the WebSocket, or missing Deepgram finalization signals.
+
+**Live Groq Chunk Metrics**: Live chunking perf events include chunk counts, finalize wait, final-tail length, background request time, dropped/recovered chunk counts, and quality fallback status. `groqLiveDroppedChunks` tracks chunk-local outputs removed before stitching; `groqLiveRecoveredChunks` tracks dropped chunks recovered by contextual repair; `groqLiveQualityFallback` records when a clean-looking live Groq transcript was materially shorter than Deepgram and Hyprvox ran one full-audio Groq request before merge.
 
 ### 5. Merge And Quality Pipeline
 If both Groq and Deepgram return results, Hyprvox first decides whether deterministic selection is enough or whether an LLM merge is needed. The merge model is configured by `transcription.mergeModel`.

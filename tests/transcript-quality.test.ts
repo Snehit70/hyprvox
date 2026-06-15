@@ -4,6 +4,7 @@ import {
 	validateTranscript,
 } from "../src/transcribe/quality";
 import {
+	garbageFixtures,
 	mixedScriptFixtures,
 	promptArtifactFalsePositiveFixtures,
 	promptArtifactFixtures,
@@ -14,6 +15,15 @@ describe("transcript quality validation", () => {
 	it("detects preserve-the-following instruction artifacts", () => {
 		const result = validateTranscript(
 			"The issue is clear. Preserve the following terms in the following order.",
+		);
+
+		expect(result.valid).toBe(false);
+		expect(result.reasons).toContain("prompt_artifact");
+	});
+
+	it("detects vocabulary-hint prompt artifacts", () => {
+		const result = validateTranscript(
+			"Likely vocabulary includes commands, file paths, acronyms, project names, and code terms.",
 		);
 
 		expect(result.valid).toBe(false);
@@ -105,6 +115,68 @@ describe("transcript quality validation", () => {
 		expect(result.reasons).toContain("cot_meta");
 	});
 
+	it("flags meta reasoning that references the user's request", () => {
+		const result = validateTranscript(
+			"Let me think step by step about the user's request and produce the answer.",
+		);
+
+		expect(result.valid).toBe(false);
+		expect(result.reasons).toContain("cot_meta");
+	});
+
+	it("does not flag ordinary first-person speech as cot meta", () => {
+		const ordinary = [
+			"Let me answer your next five questions.",
+			"Let me think about this for a moment.",
+			"I should figure out the bug before lunch.",
+			"We need to address the failing tests today.",
+		];
+
+		for (const text of ordinary) {
+			const result = validateTranscript(text);
+			expect(
+				result.reasons,
+				`unexpected cot_meta flag for: ${text}`,
+			).not.toContain("cot_meta");
+		}
+	});
+
+	it("does not flag ordinary English words with long consonant clusters", () => {
+		const ordinary = [
+			"What are our strengths",
+			"She counted twelfths and eighths",
+			"The two lengths differ",
+			"He has the rights",
+		];
+
+		for (const text of ordinary) {
+			const result = validateTranscript(text);
+			expect(result.valid, `unexpected garbage flag for: ${text}`).toBe(true);
+			expect(result.reasons).not.toContain("garbage");
+		}
+	});
+
+	it("still flags consonant-heavy garbage tokens", () => {
+		const result = validateTranscript("Puighmmbrquy Loy Gotta");
+
+		expect(result.valid).toBe(false);
+		expect(result.reasons).toContain("garbage");
+	});
+
+	it("does not reject short technical transcripts with normal numbers", () => {
+		const phrases = [
+			"Set timeout to 3000",
+			"Use port 8080",
+			"Retry after 429",
+		];
+
+		for (const text of phrases) {
+			const result = validateTranscript(text);
+			expect(result.valid, `unexpected garbage flag for: ${text}`).toBe(true);
+			expect(result.reasons).not.toContain("garbage");
+		}
+	});
+
 	it("detects injected file and command token bursts", () => {
 		const result = validateTranscript(
 			"Let's run the review and update the plan. test-audio.mp3 benchmark-audio.ts test-audio.mp3",
@@ -123,6 +195,18 @@ describe("transcript quality validation", () => {
 	});
 
 	it.each(mixedScriptFixtures)("detects mixed-script fixture: $name", ({
+		input,
+		expectedReasons,
+	}) => {
+		const result = validateTranscript(input);
+
+		expect(result.valid).toBe(false);
+		for (const reason of expectedReasons) {
+			expect(result.reasons).toContain(reason);
+		}
+	});
+
+	it.each(garbageFixtures)("detects garbage fixture: $name", ({
 		input,
 		expectedReasons,
 	}) => {

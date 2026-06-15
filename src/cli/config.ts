@@ -207,7 +207,30 @@ async function interactiveBind(): Promise<string | null> {
 
 export const configCommand = new Command("config")
 	.description("Manage configuration settings")
-	.summary("manage config");
+	.summary("manage config")
+	.addHelpText(
+		"after",
+		`
+Default:
+  hyprvox config              Launch interactive configuration
+
+Direct examples:
+  hyprvox config get apiKeys.groq
+  hyprvox config set behavior.hotkey disabled
+  hyprvox config bind
+`,
+	)
+	.action(async () => {
+		try {
+			const { runConfigSetup } = await import("./setup");
+			await runConfigSetup({ skipService: true });
+		} catch (error) {
+			console.error(
+				colors.red("Failed to run config setup:"),
+				(error as Error).message,
+			);
+		}
+	});
 
 configCommand
 	.command("init")
@@ -379,6 +402,21 @@ configCommand
 		} catch (error) {
 			console.error(
 				colors.red("Failed to set config value:"),
+				(error as Error).message,
+			);
+		}
+	});
+
+configCommand
+	.command("setup")
+	.description("Interactively update configuration")
+	.action(async () => {
+		try {
+			const { runConfigSetup } = await import("./setup");
+			await runConfigSetup({ skipService: true });
+		} catch (error) {
+			console.error(
+				colors.red("Failed to run config setup:"),
 				(error as Error).message,
 			);
 		}

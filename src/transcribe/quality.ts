@@ -16,11 +16,16 @@ export interface TranscriptQualityResult {
 const PROMPT_ARTIFACT_PATTERNS = [
 	/preserve\s+the\s+following/i,
 	/preserve\s+the\s+following\s+(terms|commands|questions)/i,
+	/\bpreserve\s+(?:the\s+)?(?:first|second|third|last|\d+(?:st|nd|rd|th)?|whole)\b[^.?!]{0,80}\b(?:terms?|words?|commands?|tasks?|layers?|format|order)\b/i,
+	/\bpreserve\s+the\s+(?:minimum|maximum)\b[^.?!]{0,80}\b(?:words?|sentences?|language)\b/i,
 	/preserve\s+the\s+defaults\s+of\s+the\s+speaker/i,
 	/when\s+the\s+speaker\s+clearly\s+dictates/i,
 	/the\s+speaker\s+clearly/i,
 	/prefer\s+literal\s+symbols/i,
 	/preserve\s+spoken\s+content/i,
+	/likely\s+vocabulary\s+includes\s+(?:commands?|file\s+paths?|acronyms?|project\s+names?|code\s+terms?)/i,
+	/\bvocabulary:\s*(?:commands?|file\s+paths?|acronyms?|project\s+names?|code\s+terms?)/i,
+	/\brecent\s+text:\s+/i,
 	/format\s+as\s+a\s+headed\s+numbered\s+list/i,
 	/merge\s+the\s+two\s+transcripts/i,
 	/output\s+only\s+the\s+final\s+transcript/i,
@@ -29,7 +34,12 @@ const PROMPT_ARTIFACT_PATTERNS = [
 
 const COT_META_PATTERNS = [
 	/<\/?think\b/i,
-	/\b(?:we need to|i need to|i should|let me)\s+(?:answer|analyze|reason|think|figure out)\b/i,
+	// LLM-style meta reasoning: requires both a first-person planning phrase
+	// AND a meta-context anchor referring to the user/request/prompt/etc.
+	// This avoids flagging ordinary speech like "Let me answer your next five
+	// questions" while still catching leaks like "We need to analyze the user
+	// request" or "Let me think step by step about the prompt".
+	/\b(?:we need to|i need to|i should|let me|let's|first,? (?:i|we)(?:'| a)?m? going to)\s+(?:answer|analyze|reason(?:\s+about)?|think|figure out|address|respond to|handle|approach|consider|examine|interpret|process)\b[^.?!]{0,80}?\b(?:the\s+(?:user(?:'s)?|request|prompt|input|task|instruction|question|transcript|merge|failed\s+output)|what\s+(?:the\s+user|they)|this\s+(?:carefully|methodically|systematically)|step[-\s]by[-\s]step)\b/i,
 	/\bthe user (?:wants|asked|is asking|requested)(?:(?:\s*[:,-])|(?:\s+that\b)|(?:\s+me\s+to\b))?/i,
 	/\b(?:my|the) (?:reasoning|analysis|thought process)\b/i,
 	/\bas an ai(?: language model)?\b/i,
@@ -47,8 +57,9 @@ const DETACHABLE_SUFFIX_PATTERNS = [
 ];
 
 const NON_LATIN_SCRIPT_PATTERN =
-	/[\u0600-\u06FF\u0750-\u077F\u0E00-\u0E7F\u1100-\u11FF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
+	/[\u0400-\u04FF\u0600-\u06FF\u0750-\u077F\u0E00-\u0E7F\u1100-\u11FF\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/;
 const LATIN_SCRIPT_PATTERN = /\p{Script=Latin}/u;
+const VOWEL_PATTERN = /[aeiouy]/g;
 
 function hasPromptArtifact(text: string): boolean {
 	return PROMPT_ARTIFACT_PATTERNS.some((pattern) => pattern.test(text));
@@ -89,21 +100,48 @@ function hasMixedScriptGarbage(text: string): boolean {
 	return NON_LATIN_SCRIPT_PATTERN.test(text) && LATIN_SCRIPT_PATTERN.test(text);
 }
 
+function hasSuspiciousWordShape(clean: string): boolean {
+	if (clean.length < 8) return false;
+
+	const vowelMatches = clean.match(VOWEL_PATTERN);
+	const vowelCount = vowelMatches ? vowelMatches.length : 0;
+	// English clusters top out at 5 consonants ("strengths", "twelfths");
+	// require 6+ so ordinary words are not flagged as garbage.
+	const consonantRuns = clean.match(/[bcdfghjklmnpqrstvwxyz]{6,}/g) ?? [];
+
+	return (
+		vowelCount === 0 ||
+		consonantRuns.length > 0 ||
+		(vowelCount / clean.length < 0.2 && clean.length >= 10)
+	);
+}
+
 function isGarbageTranscript(text: string): boolean {
 	const words = text.split(/\s+/).filter(Boolean);
 	if (words.length === 0) return false;
 
 	const suspiciousWords = words.filter((word) => {
 		const clean = word.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+		if (/^\d+$/.test(clean)) {
+			return false;
+		}
 		return (
 			clean.length > 3 &&
-			(/\d{2,}/.test(clean) ||
-				/[a-z]{15,}/.test(clean) ||
-				/(.)\1{3,}/.test(clean))
+			(/[a-z]{15,}/.test(clean) ||
+				/(.)\1{3,}/.test(clean) ||
+				hasSuspiciousWordShape(clean))
 		);
 	});
+	const longestSuspiciousLength = suspiciousWords.reduce((longest, word) => {
+		const clean = word.replace(/[^\p{L}\p{N}]/gu, "").toLowerCase();
+		return Math.max(longest, clean.length);
+	}, 0);
 
-	return suspiciousWords.length > words.length * 0.3;
+	return (
+		suspiciousWords.length > words.length * 0.3 ||
+		(suspiciousWords.length >= 1 && words.length <= 8) ||
+		(longestSuspiciousLength >= 10 && words.length <= 20)
+	);
 }
 
 export function trimHallucinationSuffix(text: string): {

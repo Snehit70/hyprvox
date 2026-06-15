@@ -9,6 +9,7 @@ import {
 	type MergeReason,
 	type MergeStrategy,
 	shouldRouteFormattingToLlm,
+	stripReasoningArtifacts,
 	TranscriptMerger,
 } from "../src/transcribe/merger";
 import { exactTokenFixtures } from "./fixtures/transcript-quality";
@@ -336,7 +337,7 @@ describe("buildMergeUserPrompt", () => {
 			[],
 		);
 
-		expect(prompt).toContain("Preserve these exact tokens");
+		expect(prompt).toContain("Exact tokens with source support");
 		expect(prompt).toContain("AGENTS.md");
 		expect(prompt).toContain("CRUD");
 	});
@@ -349,7 +350,7 @@ describe("buildMergeUserPrompt", () => {
 			["AGENTS.md", "CodeRabbit"],
 		);
 
-		expect(prompt).toContain("Known project terms: AGENTS.md, CodeRabbit.");
+		expect(prompt).toContain("Project lexicon: AGENTS.md, CodeRabbit.");
 	});
 
 	it("includes the selected formatting mode instruction", () => {
@@ -361,7 +362,7 @@ describe("buildMergeUserPrompt", () => {
 			"structured",
 		);
 
-		expect(prompt).toContain("Formatting mode: structured");
+		expect(prompt).toContain("Formatting target: structured");
 		expect(prompt).toContain("format them as a readable list");
 	});
 
@@ -372,7 +373,7 @@ describe("buildMergeUserPrompt", () => {
 			[],
 		);
 
-		expect(prompt).not.toContain("Preserve these exact tokens");
+		expect(prompt).not.toContain("Exact tokens with source support");
 	});
 });
 
@@ -503,5 +504,31 @@ describe("request-too-large detection", () => {
 		};
 
 		expect(isRequestTooLargeError(error)).toBe(false);
+	});
+});
+
+describe("stripReasoningArtifacts", () => {
+	it("removes a complete <think>...</think> block", () => {
+		const input =
+			"<think>Okay, the user wants me to clean this up.</think>\nThe final transcript.";
+
+		expect(stripReasoningArtifacts(input)).toBe("The final transcript.");
+	});
+
+	it("drops content preceding an orphan </think> closer", () => {
+		const input =
+			"Okay, let's reason about this carefully.</think> The actual answer.";
+
+		expect(stripReasoningArtifacts(input)).toBe("The actual answer.");
+	});
+
+	it("drops a dangling <think> opener with no closer", () => {
+		const input = "Visible prefix. <think>still reasoning, response truncated";
+
+		expect(stripReasoningArtifacts(input)).toBe("Visible prefix.");
+	});
+
+	it("returns trimmed text unchanged when no reasoning tags are present", () => {
+		expect(stripReasoningArtifacts("  hello world  ")).toBe("hello world");
 	});
 });

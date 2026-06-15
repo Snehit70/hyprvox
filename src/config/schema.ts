@@ -159,7 +159,7 @@ const defaultBehavior = {
 	clipboard: {
 		append: true,
 		minDuration: 0.6,
-		maxDuration: 300,
+		maxDuration: 600,
 	},
 };
 
@@ -172,6 +172,36 @@ const defaultTranscription = {
 	language: "en",
 	streaming: false,
 	deepgramBoosting: false,
+	lexiconEnabled: true,
+	groqChunking: {
+		enabled: false,
+		mode: "live",
+		minDurationSeconds: 45,
+		chunkSeconds: 20,
+		overlapSeconds: 1.5,
+		maxConcurrency: 3,
+		chunkMaxRetries: 1,
+		chunkRetryBackoffMs: 250,
+		liveFinalizeTimeoutMs: 2500,
+		fallbackToFullAudio: true,
+		logChunkTranscripts: true,
+	},
+	debugAudio: {
+		enabled: true,
+		keepLast: 5,
+		directory: "~/.config/hypr/vox/debug-audio",
+	},
+	statsThresholds: {
+		latencyP95WarnMs: 2500,
+		latencyP95BadMs: 4000,
+		errorWarnCount24h: 5,
+		errorBadCount24h: 20,
+		qualityWarnCount24h: 3,
+		qualityBadCount24h: 10,
+	},
+	statsCacheTtlMs: 10000,
+	statsRenderBudgetMs: 50,
+	statsMinSampleSize: 10,
 	mergeModel: "llama-3.3-70b-versatile",
 	formattingMode: "clean",
 } as const;
@@ -214,6 +244,16 @@ export const ApiKeysSchema = z.object({
 		),
 });
 
+export const ApiKeysFileSchema = ApiKeysSchema.partial().refine(
+	(keys) =>
+		keys.groq !== undefined ||
+		keys.deepgram !== undefined ||
+		keys.groqFallback !== undefined,
+	{
+		message: "At least one API key must be provided when apiKeys is present",
+	},
+);
+
 export const BehaviorSchema = z.object({
 	hotkey: z.string().default(defaultBehavior.hotkey).refine(hotkeyValidator, {
 		message:
@@ -230,8 +270,8 @@ export const BehaviorSchema = z.object({
 				.default(defaultBehavior.clipboard.minDuration),
 			maxDuration: z
 				.number()
-				.max(300)
-				.default(defaultBehavior.clipboard.maxDuration), // 5 minutes in seconds
+				.max(600)
+				.default(defaultBehavior.clipboard.maxDuration), // 10 minutes in seconds
 		})
 		.default(defaultBehavior.clipboard),
 	audioDevice: z.string().optional(),
@@ -242,6 +282,67 @@ export const PathsSchema = z.object({
 	history: z.string().default(defaultPaths.history),
 });
 
+export const GroqChunkingSchema = z
+	.object({
+		enabled: z.boolean().default(defaultTranscription.groqChunking.enabled),
+		mode: z.literal("live").default(defaultTranscription.groqChunking.mode),
+		minDurationSeconds: z
+			.number()
+			.min(1)
+			.default(defaultTranscription.groqChunking.minDurationSeconds),
+		chunkSeconds: z
+			.number()
+			.min(1)
+			.default(defaultTranscription.groqChunking.chunkSeconds),
+		overlapSeconds: z
+			.number()
+			.min(0)
+			.default(defaultTranscription.groqChunking.overlapSeconds),
+		maxConcurrency: z
+			.number()
+			.int()
+			.min(1)
+			.max(8)
+			.default(defaultTranscription.groqChunking.maxConcurrency),
+		chunkMaxRetries: z
+			.number()
+			.int()
+			.min(0)
+			.max(3)
+			.default(defaultTranscription.groqChunking.chunkMaxRetries),
+		chunkRetryBackoffMs: z
+			.number()
+			.min(0)
+			.max(5000)
+			.default(defaultTranscription.groqChunking.chunkRetryBackoffMs),
+		liveFinalizeTimeoutMs: z
+			.number()
+			.min(1)
+			.max(30000)
+			.default(defaultTranscription.groqChunking.liveFinalizeTimeoutMs),
+		fallbackToFullAudio: z
+			.boolean()
+			.default(defaultTranscription.groqChunking.fallbackToFullAudio),
+		logChunkTranscripts: z
+			.boolean()
+			.default(defaultTranscription.groqChunking.logChunkTranscripts),
+	})
+	.refine((value) => value.overlapSeconds < value.chunkSeconds, {
+		path: ["overlapSeconds"],
+		message: "Groq chunk overlap must be smaller than chunk duration",
+	});
+
+export const DebugAudioSchema = z.object({
+	enabled: z.boolean().default(defaultTranscription.debugAudio.enabled),
+	keepLast: z
+		.number()
+		.int()
+		.min(1)
+		.max(100)
+		.default(defaultTranscription.debugAudio.keepLast),
+	directory: z.string().default(defaultTranscription.debugAudio.directory),
+});
+
 export const TranscriptionSchema = z.object({
 	boostWords: z.array(z.string()).optional().refine(boostWordsValidator, {
 		message: "Boost words limit exceeded: Maximum 450 words allowed.",
@@ -249,6 +350,49 @@ export const TranscriptionSchema = z.object({
 	language: z.enum(["en"]).default(defaultTranscription.language as "en"),
 	streaming: z.boolean().default(defaultTranscription.streaming),
 	deepgramBoosting: z.boolean().default(defaultTranscription.deepgramBoosting),
+	lexiconEnabled: z.boolean().default(defaultTranscription.lexiconEnabled),
+	groqChunking: GroqChunkingSchema.default(defaultTranscription.groqChunking),
+	debugAudio: DebugAudioSchema.default(defaultTranscription.debugAudio),
+	statsThresholds: z
+		.object({
+			latencyP95WarnMs: z
+				.number()
+				.min(1)
+				.default(defaultTranscription.statsThresholds.latencyP95WarnMs),
+			latencyP95BadMs: z
+				.number()
+				.min(1)
+				.default(defaultTranscription.statsThresholds.latencyP95BadMs),
+			errorWarnCount24h: z
+				.number()
+				.min(0)
+				.default(defaultTranscription.statsThresholds.errorWarnCount24h),
+			errorBadCount24h: z
+				.number()
+				.min(0)
+				.default(defaultTranscription.statsThresholds.errorBadCount24h),
+			qualityWarnCount24h: z
+				.number()
+				.min(0)
+				.default(defaultTranscription.statsThresholds.qualityWarnCount24h),
+			qualityBadCount24h: z
+				.number()
+				.min(0)
+				.default(defaultTranscription.statsThresholds.qualityBadCount24h),
+		})
+		.default(defaultTranscription.statsThresholds),
+	statsCacheTtlMs: z
+		.number()
+		.min(1000)
+		.default(defaultTranscription.statsCacheTtlMs),
+	statsRenderBudgetMs: z
+		.number()
+		.min(10)
+		.default(defaultTranscription.statsRenderBudgetMs),
+	statsMinSampleSize: z
+		.number()
+		.min(1)
+		.default(defaultTranscription.statsMinSampleSize),
 	mergeModel: z.string().default(defaultTranscription.mergeModel),
 	formattingMode: z
 		.enum(["verbatim", "clean", "structured"])
@@ -285,7 +429,7 @@ export const ConfigSchema = z.object({
 });
 
 export const ConfigFileSchema = z.object({
-	apiKeys: ApiKeysSchema.optional(),
+	apiKeys: ApiKeysFileSchema.optional(),
 	behavior: BehaviorSchema.default(defaultBehavior),
 	paths: PathsSchema.default(defaultPaths),
 	transcription: TranscriptionSchema.default(defaultTranscription),

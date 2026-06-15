@@ -61,7 +61,7 @@ export const ErrorTemplates = {
 			action: "Hold the hotkey a bit longer to record your speech.",
 		},
 		MAX_DURATION_REACHED: {
-			message: "Maximum recording duration reached (5 minutes).",
+			message: "Maximum recording duration reached (10 minutes).",
 			action:
 				"Recording stopped automatically. For longer transcriptions, please split your speech into multiple recordings.",
 		},

@@ -1,7 +1,8 @@
-import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { AppError } from "../utils/errors";
+import { atomicWriteFileSync } from "../utils/file-ops";
 import { DEFAULT_CONFIG_FILE, resolvePath } from "./loader";
 import { type ConfigFile, ConfigFileSchema } from "./schema";
 
@@ -50,9 +51,9 @@ export const saveConfig = (
 	}
 
 	try {
-		writeFileSync(resolvedPath, JSON.stringify(dataToWrite, null, 2));
-
-		chmodSync(resolvedPath, 0o600);
+		atomicWriteFileSync(resolvedPath, JSON.stringify(dataToWrite, null, 2), {
+			mode: 0o600,
+		});
 	} catch (error: any) {
 		throw new AppError(
 			"WRITE_FAILED",

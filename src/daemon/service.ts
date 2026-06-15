@@ -1,22 +1,19 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import {
-	closeSync,
-	existsSync,
-	mkdirSync,
-	openSync,
-	readFileSync,
-	unlinkSync,
-} from "node:fs";
+import { unlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { convertAudio } from "../audio/converter";
-import { type AudioLevelPayload, AudioRecorder } from "../audio/recorder";
+import {
+	type AudioLevelPayload,
+	AudioRecorder,
+	type PcmAudioPayload,
+} from "../audio/recorder";
 import type { Config } from "../config/schema";
 import { configService } from "../config/service";
 import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
 import { notify } from "../output/notification";
 import type { DaemonStatus } from "../shared/ipc-types";
+import { appendStatsAggregateEntry } from "../stats/aggregate";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
 import {
 	DeepgramStreamingTranscriber,
@@ -24,15 +21,18 @@ import {
 	type StreamingStopReason,
 } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
+import {
+	createGroqChunkingMetrics,
+	GroqChunkingError,
+	type GroqChunkingMetrics,
+} from "../transcribe/groq-chunking";
+import {
+	GroqLiveChunkSession,
+} from "../transcribe/groq-live-chunking";
+import { assessGroqLiveQualityFallback } from "../transcribe/groq-live-quality";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { assessLongRecordingQuality } from "../transcribe/long-recording";
-import {
-	type MergeReason,
-	type MergeResult,
-	type MergeStrategy,
-	TranscriptMerger,
-} from "../transcribe/merger";
-import type { TranscriptQualityReason } from "../transcribe/quality";
+import { type MergeResult, TranscriptMerger } from "../transcribe/merger";
 import { validateTranscript } from "../transcribe/quality";
 import { recoverTranscriptQuality } from "../transcribe/recovery";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
@@ -41,8 +41,24 @@ import { appendHistory } from "../utils/history";
 import { logError, logger } from "../utils/logger";
 import { incrementTranscriptionCount, loadStats } from "../utils/stats";
 import { checkHotkeyConflict } from "./conflict";
+import { shouldCompressAudio } from "./audio-strategy";
+import { saveDebugAudioCapture } from "./debug-audio";
+import { runGroqTranscriptionWithLiveSession } from "./groq-transcription";
 import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
+import { OverlayProcessManager } from "./overlay-process";
+import {
+	attachStreamingPcmHandler,
+	createLiveGroqSession,
+	startDeepgramStreaming,
+	stopDeepgramStreaming,
+} from "./recording-session";
+import { handleProviderTranscriptionError } from "./transcription-error";
+import {
+	createInitialTranscriptionMetrics,
+	type TranscriptionMetrics,
+	toGroqChunkingMetricFields,
+} from "./transcription-metrics";
 
 const HALLUCINATION_MAX_CHARS = 50;
 const projectRoot = join(import.meta.dir, "..", "..");
@@ -59,60 +75,6 @@ const HALLUCINATION_PATTERNS = [
 
 function containsHallucination(text: string): boolean {
 	return HALLUCINATION_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-// --- Instrumentation types ---
-
-type AudioFormatStrategy = "opus" | "raw";
-
-interface TranscriptionMetrics {
-	// Timings (ms, -1 = skipped)
-	totalMs: number;
-	processingMs: number; // user-perceived latency (up to clipboard write)
-	conversionMs: number;
-	groqMs: number;
-	deepgramMs: number;
-	mergeMs: number;
-	clipboardMs: number;
-	statsWriteMs: number;
-	historyAppendMs: number;
-	notificationEnqueueMs: number;
-
-	// Input characteristics
-	rawAudioBytes: number;
-	recordingDurationMs: number;
-	convertedAudioBytes: number;
-
-	// Decisions
-	streamingEnabled: boolean;
-	audioFormatStrategy: AudioFormatStrategy;
-	mergeStrategy: MergeStrategy | "skip_no_speech" | "skip_hallucination";
-	mergeReason: MergeReason | null;
-	validationReasons: TranscriptQualityReason[];
-	validationRetryCount: number;
-	validationFallbackSource: "none" | "groq" | "deepgram";
-	trimmedHallucinationSuffix: boolean;
-	longRecordingMode: boolean;
-	longRecordingFallbackSource: "none" | "groq" | "deepgram";
-	suspiciousMergeExpansion: boolean;
-	deepgramStopReason: StreamingStopReason | null;
-
-	// Deepgram early-stop observability
-	deepgramStopWallMs: number;
-	deepgramCriticalPathMs: number;
-	deepgramOverlapMs: number;
-	deepgramStartedEarly: boolean;
-	deepgramFinalizeWaitMs: number;
-	deepgramCloseWaitMs: number;
-	deepgramEndpointingMs: number;
-	deepgramReceivedFinalChunk: boolean;
-	deepgramHadSpeechFinal: boolean;
-
-	// Outcome
-	engine: string;
-	textLength: number;
-	groqTextLength: number;
-	deepgramTextLength: number;
 }
 
 async function timeAsync<T>(
@@ -143,7 +105,8 @@ export class DaemonService {
 	private groq: GroqClient;
 	private deepgram: DeepgramTranscriber;
 	private deepgramStreaming?: DeepgramStreamingTranscriber;
-	private streamingDataHandler?: (chunk: Buffer) => void;
+	private streamingPcmHandler?: (payload: PcmAudioPayload) => void;
+	private liveGroqSession?: GroqLiveChunkSession;
 	private merger: TranscriptMerger;
 	private clipboard: ClipboardManager;
 	private pidFile: string;
@@ -161,20 +124,11 @@ export class DaemonService {
 	private ipcServer: IPCServer;
 	private stateWriteDebounceTimer?: NodeJS.Timeout;
 	private pendingStateWrite = false;
-	private overlayProcess?: ChildProcess;
-	private overlayPidFile: string;
-	private overlayLogFile: string;
-	private overlayRestartTimer?: NodeJS.Timeout;
-	private overlayStopRequested = false;
-	private overlayRestartAttempts: number[] = [];
+	private overlay: OverlayProcessManager;
 	private lastOverlayAudioLevelAt = 0;
 	private smoothedOverlayLevel = 0;
 	private contextLexicon: string[] = [];
 	private providerBoostWords: string[] = [];
-
-	private static readonly OVERLAY_RESTART_DELAY_MS = 2000;
-	private static readonly OVERLAY_RESTART_WINDOW_MS = 60000;
-	private static readonly OVERLAY_RESTART_MAX_ATTEMPTS = 5;
 
 	constructor() {
 		this.config = configService.get();
@@ -189,8 +143,11 @@ export class DaemonService {
 		const configDir = join(homedir(), ".config", "hypr", "vox");
 		this.pidFile = join(configDir, "daemon.pid");
 		this.stateFile = join(configDir, "daemon.state");
-		this.overlayPidFile = join(configDir, "overlay.pid");
-		this.overlayLogFile = join(this.config.paths.logs, "overlay.log");
+		this.overlay = new OverlayProcessManager(
+			this.config,
+			join(configDir, "overlay.pid"),
+			join(this.config.paths.logs, "overlay.log"),
+		);
 
 		const stats = loadStats();
 		this.transcriptionCountToday = stats.today;
@@ -209,6 +166,7 @@ export class DaemonService {
 				this.groq.reset();
 				this.deepgram.reset();
 				this.merger.reset();
+				this.overlay.updateConfig(this.config);
 				this.refreshContextLexicon();
 				logger.info("Config reloaded successfully");
 				notify("Config Reloaded", "Configuration updated", "info");
@@ -233,10 +191,14 @@ export class DaemonService {
 
 	private refreshContextLexicon(): void {
 		const configuredBoostWords = this.config.transcription.boostWords || [];
-		this.contextLexicon = buildContextLexicon({
-			rootDir: projectRoot,
-			boostWords: configuredBoostWords,
-		});
+		if (this.config.transcription.lexiconEnabled) {
+			this.contextLexicon = buildContextLexicon({
+				rootDir: projectRoot,
+				boostWords: configuredBoostWords,
+			});
+		} else {
+			this.contextLexicon = [];
+		}
 		this.providerBoostWords = this.mergeProviderBoostWords(
 			configuredBoostWords,
 			this.contextLexicon,
@@ -335,258 +297,6 @@ export class DaemonService {
 		);
 	}
 
-	private getOverlayPath(): string {
-		if (this.config.overlay?.binaryPath) {
-			return this.config.overlay.binaryPath;
-		}
-		return join(process.cwd(), "overlay");
-	}
-
-	private async waitForProcessExit(
-		pid: number,
-		timeoutMs = 3000,
-	): Promise<void> {
-		const start = Date.now();
-		while (Date.now() - start < timeoutMs) {
-			try {
-				process.kill(pid, 0);
-				await new Promise((r) => setTimeout(r, 50));
-			} catch {
-				return;
-			}
-		}
-		logger.debug({ pid, timeoutMs }, "Timeout waiting for process exit");
-	}
-
-	private pruneOverlayRestartAttempts(now = Date.now()): void {
-		this.overlayRestartAttempts = this.overlayRestartAttempts.filter(
-			(at) => now - at <= DaemonService.OVERLAY_RESTART_WINDOW_MS,
-		);
-	}
-
-	private removeOverlayPidFile(expectedPid?: number): void {
-		try {
-			if (expectedPid !== undefined) {
-				const raw = readFileSync(this.overlayPidFile, "utf8").trim();
-				const currentPid = parseInt(raw, 10);
-				if (currentPid !== expectedPid) {
-					return;
-				}
-			}
-			unlinkSync(this.overlayPidFile);
-		} catch (e) {
-			logger.debug({ err: e }, "Failed to remove overlay PID file");
-		}
-	}
-
-	private scheduleOverlayRestart(reason: string): void {
-		if (
-			this.overlayStopRequested ||
-			this.overlayRestartTimer ||
-			!this.config.overlay?.enabled ||
-			!this.config.overlay?.autoStart
-		) {
-			return;
-		}
-
-		const now = Date.now();
-		this.pruneOverlayRestartAttempts(now);
-		if (
-			this.overlayRestartAttempts.length >=
-			DaemonService.OVERLAY_RESTART_MAX_ATTEMPTS
-		) {
-			logger.error(
-				{
-					reason,
-					attempts: this.overlayRestartAttempts.length,
-					windowMs: DaemonService.OVERLAY_RESTART_WINDOW_MS,
-					logFile: this.overlayLogFile,
-				},
-				"Overlay crashed too often; automatic restart disabled",
-			);
-			return;
-		}
-
-		this.overlayRestartAttempts.push(now);
-		logger.warn(
-			{
-				reason,
-				delayMs: DaemonService.OVERLAY_RESTART_DELAY_MS,
-				attempt: this.overlayRestartAttempts.length,
-				logFile: this.overlayLogFile,
-			},
-			"Scheduling overlay restart",
-		);
-
-		this.overlayRestartTimer = setTimeout(() => {
-			this.overlayRestartTimer = undefined;
-			this.startOverlay("restart");
-		}, DaemonService.OVERLAY_RESTART_DELAY_MS);
-	}
-
-	private startOverlay(trigger: "startup" | "restart" = "startup"): void {
-		if (!this.config.overlay?.enabled || !this.config.overlay?.autoStart) {
-			return;
-		}
-
-		if (
-			this.overlayProcess &&
-			this.overlayProcess.exitCode === null &&
-			this.overlayProcess.signalCode === null
-		) {
-			return;
-		}
-
-		this.overlayStopRequested = false;
-
-		(async () => {
-			try {
-				const raw = readFileSync(this.overlayPidFile, "utf8").trim();
-				const oldPid = parseInt(raw, 10);
-				if (!Number.isNaN(oldPid)) {
-					process.kill(oldPid, "SIGTERM");
-					logger.debug({ oldPid }, "Terminated stale overlay process");
-					await this.waitForProcessExit(oldPid);
-				}
-			} catch {
-				// PID file absent or process already dead
-			}
-
-			const overlayPath = this.getOverlayPath();
-
-			if (!existsSync(overlayPath)) {
-				logger.warn(
-					{ path: overlayPath },
-					"Overlay not found, skipping auto-start",
-				);
-				return;
-			}
-
-			try {
-				// Explicitly pass display environment for Wayland/X11 compatibility
-				const uid = process.getuid?.() ?? 1000;
-				const overlayEnv: NodeJS.ProcessEnv = { ...process.env };
-				let overlayLogFd: number | undefined;
-
-				// Only set display vars if already present in parent env — injecting
-				// WAYLAND_DISPLAY on a pure X11 system (or DISPLAY on Wayland-only)
-				// causes GTK/Electron to attempt a non-existent compositor socket.
-				if (!overlayEnv.WAYLAND_DISPLAY && !overlayEnv.DISPLAY) {
-					// No display detected at all — fall back to Wayland-first defaults
-					overlayEnv.WAYLAND_DISPLAY = "wayland-1";
-					overlayEnv.DISPLAY = ":0";
-				}
-
-				if (!overlayEnv.XDG_RUNTIME_DIR) {
-					overlayEnv.XDG_RUNTIME_DIR = `/run/user/${uid}`;
-				}
-
-				logger.debug(
-					{
-						WAYLAND_DISPLAY: overlayEnv.WAYLAND_DISPLAY,
-						DISPLAY: overlayEnv.DISPLAY,
-						XDG_RUNTIME_DIR: overlayEnv.XDG_RUNTIME_DIR,
-					},
-					"Starting overlay with display environment",
-				);
-
-				mkdirSync(this.config.paths.logs, { recursive: true, mode: 0o700 });
-				overlayLogFd = openSync(this.overlayLogFile, "a");
-
-				this.overlayProcess = spawn("bun", ["run", "start"], {
-					cwd: overlayPath,
-					detached: true,
-					stdio: ["ignore", overlayLogFd, overlayLogFd],
-					env: overlayEnv,
-				});
-
-				this.overlayProcess.on("error", (err) => {
-					logger.warn({ err }, "Overlay process error");
-					this.scheduleOverlayRestart("spawn_error");
-				});
-
-				const overlayPid = this.overlayProcess.pid;
-				this.overlayProcess.on("exit", (code, signal) => {
-					if (this.overlayProcess?.pid === overlayPid) {
-						this.overlayProcess = undefined;
-					}
-					this.removeOverlayPidFile(overlayPid);
-					logger.warn(
-						{
-							pid: overlayPid,
-							code,
-							signal,
-							stopRequested: this.overlayStopRequested,
-							logFile: this.overlayLogFile,
-						},
-						"Overlay process exited",
-					);
-					if (!this.overlayStopRequested) {
-						this.scheduleOverlayRestart("process_exit");
-					}
-				});
-
-				this.overlayProcess.unref();
-
-				const pid = this.overlayProcess.pid;
-				if (pid) {
-					writeFile(this.overlayPidFile, pid.toString()).catch((e) => {
-						logger.debug({ err: e }, "Failed to write overlay PID file");
-					});
-				}
-
-				if (overlayLogFd !== undefined) {
-					closeSync(overlayLogFd);
-				}
-
-				if (trigger === "startup") {
-					this.overlayRestartAttempts = [];
-				}
-
-				logger.info(
-					{ pid, logFile: this.overlayLogFile, trigger },
-					"Overlay started",
-				);
-			} catch (error) {
-				logError("Failed to start overlay", error);
-				this.scheduleOverlayRestart("start_failure");
-			}
-		})();
-	}
-
-	private stopOverlay(): void {
-		this.overlayStopRequested = true;
-		if (this.overlayRestartTimer) {
-			clearTimeout(this.overlayRestartTimer);
-			this.overlayRestartTimer = undefined;
-		}
-
-		if (this.overlayProcess) {
-			try {
-				this.overlayProcess.kill("SIGTERM");
-			} catch (e) {
-				logger.debug({ err: e }, "Failed to kill overlay process");
-			}
-			this.overlayProcess = undefined;
-		}
-
-		try {
-			const raw = readFileSync(this.overlayPidFile, "utf8").trim();
-			const oldPid = parseInt(raw, 10);
-			if (!Number.isNaN(oldPid)) {
-				process.kill(oldPid, "SIGTERM");
-				logger.debug(
-					{ oldPid },
-					"Terminated stale overlay from previous session",
-				);
-			}
-		} catch {
-			// PID file absent or process already dead
-		}
-
-		this.removeOverlayPidFile();
-	}
-
 	private setStatus(status: DaemonStatus, error?: string) {
 		const oldStatus = this.status;
 		this.status = status;
@@ -653,18 +363,7 @@ export class DaemonService {
 			this.errorCount++;
 			this.setStatus("error", err.message);
 
-			if (this.streamingDataHandler) {
-				this.recorder.off("data", this.streamingDataHandler);
-				this.streamingDataHandler = undefined;
-			}
-			if (this.deepgramStreaming) {
-				this.deepgramStreaming
-					.stop()
-					.catch((e) =>
-						logError("Failed to stop streaming on recorder error", e),
-					);
-				this.deepgramStreaming = undefined;
-			}
+			void this.teardownStreaming("Failed to stop streaming on recorder error");
 
 			let title = "Error";
 			let message = err.message;
@@ -705,7 +404,7 @@ export class DaemonService {
 			await writeFile(this.pidFile, process.pid.toString());
 			await this.ipcServer.start();
 			this.updateState();
-			this.startOverlay();
+			this.overlay.start();
 
 			const hotkeyDisabled =
 				this.config.behavior.hotkey.toLowerCase() === "disabled";
@@ -741,7 +440,7 @@ export class DaemonService {
 	public async stop() {
 		this.hotkeyListener.stop();
 		await this.recorder.stop(true);
-		this.stopOverlay();
+		this.overlay.stop();
 		process.off("SIGUSR1", this.signalHandler);
 		process.off("SIGUSR2", this.reloadSignalHandler);
 		if (this.keepAliveInterval) {
@@ -750,6 +449,7 @@ export class DaemonService {
 		if (this.stateWriteDebounceTimer) {
 			clearTimeout(this.stateWriteDebounceTimer);
 		}
+		await this.teardownStreaming("Failed to stop streaming during shutdown");
 		await this.ipcServer.stop();
 		for (const file of [this.pidFile, this.stateFile]) {
 			try {
@@ -761,174 +461,112 @@ export class DaemonService {
 		logger.info("Daemon stopped");
 	}
 
+	/**
+	 * Detach the streaming PCM handler and tear down both live transcription
+	 * sessions (Deepgram streaming + live Groq chunking). Safe to call when no
+	 * session is active — each branch no-ops on an undefined field. Used by
+	 * stop(), the start-failure path, cancellation, and recorder errors so a
+	 * half-started recording never leaks an open socket or in-flight chunk.
+	 */
+	private async teardownStreaming(reason: string): Promise<void> {
+		if (this.streamingPcmHandler) {
+			this.recorder.off("pcm-data", this.streamingPcmHandler);
+			this.streamingPcmHandler = undefined;
+		}
+		await stopDeepgramStreaming(this.deepgramStreaming, reason);
+		this.deepgramStreaming = undefined;
+		if (this.liveGroqSession) {
+			this.liveGroqSession.cancel();
+			this.liveGroqSession = undefined;
+		}
+	}
+
 	private async handleTrigger() {
 		if (this.status === "idle" || this.status === "error") {
 			this.cancelPending = false;
 			try {
 				this.setStatus("starting");
 
-				if (this.config.transcription.streaming) {
-					if (this.streamingDataHandler) {
-						this.recorder.off("data", this.streamingDataHandler);
-						logger.debug("Removed old streaming data handler");
+					if (this.streamingPcmHandler) {
+						this.recorder.off("pcm-data", this.streamingPcmHandler);
+						logger.debug("Removed old streaming PCM handler");
+					}
+					this.streamingPcmHandler = undefined;
+
+					this.liveGroqSession = createLiveGroqSession({
+						config: this.config,
+						boostWords: this.providerBoostWords,
+						transcribe: (
+							buffer,
+							language,
+							boostWords,
+							format,
+							recordingMs,
+							contextHint,
+							signal,
+						) =>
+							this.groq.transcribe(
+								buffer,
+								language,
+								boostWords,
+								format,
+								recordingMs,
+								contextHint,
+								signal,
+							),
+					});
+
+					if (this.config.transcription.streaming) {
+						this.deepgramStreaming = startDeepgramStreaming({
+							config: this.config,
+							boostWords: this.providerBoostWords,
+							onStreamingInterrupted: () => {
+								this.notifyStateChange(
+									"Streaming Interrupted",
+									"Using batch transcription",
+									"warning",
+								);
+							},
+						});
 					}
 
-					logger.info("Starting Deepgram streaming connection...");
-					this.deepgramStreaming = new DeepgramStreamingTranscriber();
-
-					this.deepgramStreaming.on("transcript", (text) => {
-						logger.info({ text }, "Received streaming transcript chunk");
-					});
-
-					this.deepgramStreaming.on("error", (err) => {
-						logger.error({ err }, "Deepgram streaming error");
-					});
-
-					this.deepgramStreaming.on(
-						"streaming_failed",
-						(reason: StreamingFailureReason) => {
-							logger.warn(
-								{
-									reason,
-									fallback: "batch mode",
-								},
-								"Streaming connection lost, will use batch transcription",
-							);
-							this.notifyStateChange(
-								"Streaming Interrupted",
-								"Using batch transcription",
-								"warning",
-							);
-						},
-					);
-
-					const startPromise = this.deepgramStreaming.start(
-						this.config.transcription.language,
-						this.config.transcription.deepgramBoosting
-							? this.providerBoostWords
-							: [],
-					);
-
-					// We catch synchronous errors from start(), but async connection errors go to 'error' event
-					startPromise.catch((err) => {
-						logError("Failed to initiate Deepgram streaming", err);
-					});
-
-					logger.info("Deepgram streaming initiated (background)");
-
-					// Check cancellation immediately (though less likely to be pending this fast)
 					if (this.cancelPending) {
 						logger.info("Recording cancelled during setup, cleaning up");
 						this.cancelPending = false;
-						if (this.streamingDataHandler) {
-							this.recorder.off("data", this.streamingDataHandler);
-							this.streamingDataHandler = undefined;
-						}
-						if (this.deepgramStreaming) {
-							try {
-								await this.deepgramStreaming.stop();
-							} catch (e) {
-								logError("Failed to stop streaming after cancellation", e);
-							}
-							this.deepgramStreaming = undefined;
-						}
+						await this.teardownStreaming(
+							"Failed to stop streaming after cancellation",
+						);
 						this.setStatus("idle");
 						return;
 					}
 
-					let chunkCount = 0;
-					let isFirstChunk = true;
-					this.streamingDataHandler = (chunk: Buffer) => {
-						chunkCount++;
-						let audioData = chunk;
+					if (this.deepgramStreaming || this.liveGroqSession) {
+						this.streamingPcmHandler = attachStreamingPcmHandler({
+							recorder: this.recorder,
+							deepgramStreaming: this.deepgramStreaming,
+							liveGroqSession: this.liveGroqSession,
+						});
+					}
 
-						// Strip WAV header from first chunk (44 bytes)
-						// Recorder outputs WAV format but Deepgram expects raw PCM (linear16)
-						if (isFirstChunk) {
-							isFirstChunk = false;
-							if (
-								chunk.length >= 44 &&
-								chunk.subarray(0, 4).toString("ascii") === "RIFF" &&
-								chunk.subarray(8, 12).toString("ascii") === "WAVE"
-							) {
-								audioData = chunk.subarray(44);
-								logger.debug(
-									{
-										originalSize: chunk.length,
-										strippedSize: audioData.length,
-									},
-									"Stripped WAV header from first chunk",
-								);
-							}
-						}
-
-						if (audioData.length === 0) {
-							logger.debug(
-								{ chunkNumber: chunkCount },
-								"Skipping empty chunk (header-only)",
-							);
-							return;
-						}
-
-						logger.debug(
-							{ chunkNumber: chunkCount, chunkSize: audioData.length },
-							"Handler called with audio chunk",
+					if (this.cancelPending) {
+						logger.info("Recording cancelled before recorder start, cleaning up");
+						this.cancelPending = false;
+						await this.teardownStreaming(
+							"Failed to stop streaming after cancellation",
 						);
-						if (this.deepgramStreaming) {
-							this.deepgramStreaming.send(audioData);
-							logger.debug(
-								{ chunkNumber: chunkCount },
-								"Sent chunk to Deepgram",
-							);
-						} else {
-							logger.error(
-								{ chunkNumber: chunkCount },
-								"No streaming connection when chunk received!",
-							);
-						}
-					};
-
-					this.recorder.on("data", this.streamingDataHandler);
-					logger.info("Streaming data handler attached to recorder");
-				}
-
-				if (this.cancelPending) {
-					logger.info("Recording cancelled before recorder start, cleaning up");
-					this.cancelPending = false;
-					if (this.streamingDataHandler) {
-						this.recorder.off("data", this.streamingDataHandler);
-						this.streamingDataHandler = undefined;
+						this.setStatus("idle");
+						return;
 					}
-					if (this.deepgramStreaming) {
-						try {
-							await this.deepgramStreaming.stop();
-						} catch (e) {
-							logError("Failed to stop streaming after cancellation", e);
-						}
-						this.deepgramStreaming = undefined;
-					}
-					this.setStatus("idle");
-					return;
-				}
 
 				await this.recorder.start();
 			} catch (error) {
-				this.cancelPending = false;
-				logError("Failed to start recording", error);
-				if (this.streamingDataHandler) {
-					this.recorder.off("data", this.streamingDataHandler);
-					this.streamingDataHandler = undefined;
+					this.cancelPending = false;
+					logError("Failed to start recording", error);
+					await this.teardownStreaming(
+						"Failed to stop streaming after start failure",
+					);
+					this.setStatus("idle");
 				}
-				if (this.deepgramStreaming) {
-					try {
-						await this.deepgramStreaming.stop();
-					} catch (e) {
-						logError("Failed to stop streaming after start failure", e);
-					}
-					this.deepgramStreaming = undefined;
-				}
-				this.setStatus("idle");
-			}
 		} else if (this.status === "recording") {
 			this.setStatus("stopping");
 			await this.recorder.stop();
@@ -943,48 +581,15 @@ export class DaemonService {
 
 	private async processAudio(audioBuffer: Buffer, duration: number) {
 		const totalStart = Date.now();
-
-		// Initialize metrics with defaults
-		const metrics: TranscriptionMetrics = {
-			totalMs: 0,
-			processingMs: 0,
-			conversionMs: -1,
-			groqMs: -1,
-			deepgramMs: -1,
-			mergeMs: -1,
-			clipboardMs: -1,
-			statsWriteMs: -1,
-			historyAppendMs: -1,
-			notificationEnqueueMs: -1,
-			rawAudioBytes: audioBuffer.length,
-			recordingDurationMs: duration,
-			convertedAudioBytes: -1,
-			streamingEnabled: !!this.config.transcription.streaming,
-			audioFormatStrategy: "raw", // Will be set based on compression decision
-			mergeStrategy: "skip_no_speech",
-			mergeReason: null,
-			validationReasons: [],
-			validationRetryCount: 0,
-			validationFallbackSource: "none",
-			trimmedHallucinationSuffix: false,
-			longRecordingMode: false,
-			longRecordingFallbackSource: "none",
-			suspiciousMergeExpansion: false,
-			deepgramStopReason: null,
-			deepgramStopWallMs: -1,
-			deepgramCriticalPathMs: -1,
-			deepgramOverlapMs: 0,
-			deepgramStartedEarly: false,
-			deepgramFinalizeWaitMs: -1,
-			deepgramCloseWaitMs: -1,
-			deepgramEndpointingMs: -1,
-			deepgramReceivedFinalChunk: false,
-			deepgramHadSpeechFinal: false,
-			engine: "",
-			textLength: 0,
-			groqTextLength: 0,
-			deepgramTextLength: 0,
-		};
+		const groqChunkingConfig = this.config.transcription.groqChunking;
+		const metrics: TranscriptionMetrics = createInitialTranscriptionMetrics(
+			this.config,
+			audioBuffer.length,
+			duration,
+		);
+		void saveDebugAudioCapture(this.config, audioBuffer, duration).catch((error) => {
+			logError("Failed to save debug transcription audio", error);
+		});
 
 		try {
 			const language = this.config.transcription.language;
@@ -1049,15 +654,11 @@ export class DaemonService {
 			const compressionThreshold = this.config.audio.compressionThreshold;
 			const bufferSize = audioBuffer.length;
 
-			let shouldCompress: boolean;
-			if (compressionMode === "always") {
-				shouldCompress = true;
-			} else if (compressionMode === "never") {
-				shouldCompress = false;
-			} else {
-				// "auto" mode: compress only if buffer exceeds threshold
-				shouldCompress = bufferSize >= compressionThreshold;
-			}
+			const shouldCompress = shouldCompressAudio(
+				compressionMode,
+				bufferSize,
+				compressionThreshold,
+			);
 
 			let audioBufferToTranscribe: Buffer;
 			if (shouldCompress) {
@@ -1096,6 +697,52 @@ export class DaemonService {
 			const audioFormat =
 				metrics.audioFormatStrategy === "opus" ? "opus" : "wav";
 
+			const runGroqTranscription = async () => {
+				try {
+					return await runGroqTranscriptionWithLiveSession({
+						liveSession: this.liveGroqSession,
+						audioBufferToTranscribe,
+						audioFormat,
+						language,
+						boostWords,
+						recordingDurationMs: duration,
+						chunking: groqChunkingConfig,
+						transcribe: (
+							buffer,
+							transcribeLanguage,
+							transcribeBoostWords,
+							format,
+							recordingDurationMs,
+							contextHint,
+							signal,
+						) =>
+							this.groq.transcribe(
+								buffer,
+								transcribeLanguage,
+								transcribeBoostWords,
+								format,
+								recordingDurationMs,
+								contextHint,
+								signal,
+							),
+					});
+				} catch (error: unknown) {
+					if (error instanceof GroqChunkingError) {
+						groqErr = error.cause ?? error;
+						return {
+							text: "",
+							chunking: error.chunking,
+						};
+					}
+
+					groqErr = error;
+					return {
+						text: "",
+						chunking: createGroqChunkingMetrics(groqChunkingConfig),
+					};
+				}
+			};
+
 			if (useStreaming) {
 				if (!deepgramStopPromise) {
 					throw new Error(
@@ -1105,22 +752,14 @@ export class DaemonService {
 				// Deepgram stop is already in flight; wait for it in parallel
 				// with Groq transcription.
 				const [groqTimed, deepgramTimed] = await Promise.all([
-					timeAsync(() =>
-						this.groq
-							.transcribe(
-								audioBufferToTranscribe,
-								language,
-								boostWords,
-								audioFormat,
-							)
-							.catch((err) => {
-								groqErr = err;
-								return "";
-							}),
-					),
+					timeAsync(runGroqTranscription),
 					deepgramStopPromise,
 				]);
 				metrics.groqMs = groqTimed.durationMs;
+				Object.assign(
+					metrics,
+					toGroqChunkingMetricFields(groqTimed.result.chunking),
+				);
 				metrics.deepgramStopWallMs = deepgramTimed.durationMs;
 				const streamingResult = deepgramTimed.result;
 				metrics.deepgramFinalizeWaitMs = streamingResult.finalizeWaitMs;
@@ -1144,7 +783,7 @@ export class DaemonService {
 					deepgramTimed.durationMs - metrics.deepgramCriticalPathMs,
 				);
 				metrics.deepgramMs = metrics.deepgramCriticalPathMs;
-				groqText = groqTimed.result;
+				groqText = groqTimed.result.text;
 				deepgramText = streamingResult.text;
 				streamingChunkCount = streamingResult.chunkCount;
 				metrics.deepgramStopReason = streamingResult.stopReason;
@@ -1161,19 +800,7 @@ export class DaemonService {
 				);
 			} else {
 				const [groqTimed, deepgramTimed] = await Promise.all([
-					timeAsync(() =>
-						this.groq
-							.transcribe(
-								audioBufferToTranscribe,
-								language,
-								boostWords,
-								audioFormat,
-							)
-							.catch((err) => {
-								groqErr = err;
-								return "";
-							}),
-					),
+					timeAsync(runGroqTranscription),
 					timeAsync(() =>
 						this.deepgram
 							.transcribe(
@@ -1189,10 +816,63 @@ export class DaemonService {
 					),
 				]);
 				metrics.groqMs = groqTimed.durationMs;
+				Object.assign(
+					metrics,
+					toGroqChunkingMetricFields(groqTimed.result.chunking),
+				);
 				metrics.deepgramMs = deepgramTimed.durationMs;
 				metrics.deepgramCriticalPathMs = deepgramTimed.durationMs;
-				groqText = groqTimed.result;
+				groqText = groqTimed.result.text;
 				deepgramText = deepgramTimed.result;
+			}
+
+			const liveQualityFallback = assessGroqLiveQualityFallback({
+				chunkingUsed: metrics.groqChunkingUsed,
+				fallbackToFullAudio: groqChunkingConfig.fallbackToFullAudio,
+				liveGroqText: groqText,
+				deepgramText,
+				boostWords,
+			});
+			if (liveQualityFallback.shouldFallback) {
+				metrics.groqLiveQualityFallback = true;
+				metrics.groqLiveQualityFallbackReason = liveQualityFallback.reason;
+				logger.warn(
+					{
+						reason: liveQualityFallback.reason,
+						liveGroqLength: groqText.length,
+						deepgramLength: deepgramText.length,
+						recordingDurationMs: duration,
+					},
+					"Live Groq transcript looks incomplete; running full-audio Groq quality fallback",
+				);
+				try {
+					const fullGroqTimed = await timeAsync(() =>
+						this.groq.transcribe(
+							audioBufferToTranscribe,
+							language,
+							boostWords,
+							audioFormat,
+							duration,
+						),
+					);
+					metrics.groqMs += fullGroqTimed.durationMs;
+					groqText = fullGroqTimed.result;
+					logger.info(
+						{
+							reason: liveQualityFallback.reason,
+							requestMs: fullGroqTimed.durationMs,
+							textLength: groqText.length,
+							recordingDurationMs: duration,
+						},
+						"Full-audio Groq quality fallback completed",
+					);
+				} catch (error: unknown) {
+					groqErr = error;
+					logError("Full-audio Groq quality fallback failed", error, {
+						reason: liveQualityFallback.reason,
+						recordingDurationMs: duration,
+					});
+				}
 			}
 
 			metrics.groqTextLength = groqText.length;
@@ -1211,36 +891,6 @@ export class DaemonService {
 				);
 			}
 
-			const handleTranscriptionError = (
-				err: unknown,
-				failedService: string,
-			) => {
-				const code = getErrorCode(err);
-
-				if (
-					code === "GROQ_INVALID_KEY" ||
-					code === "DEEPGRAM_INVALID_KEY" ||
-					errorIncludes(err, "Invalid API Key")
-				) {
-					const template =
-						failedService === "Groq"
-							? ErrorTemplates.API.GROQ_INVALID_KEY
-							: ErrorTemplates.API.DEEPGRAM_INVALID_KEY;
-					notify("Configuration Error", formatUserError(template), "error");
-				} else if (
-					code === "RATE_LIMIT_EXCEEDED" ||
-					errorIncludes(err, "Rate limit exceeded")
-				) {
-					const template =
-						ErrorTemplates.API.RATE_LIMIT_EXCEEDED(failedService);
-					notify("Rate Limit", formatUserError(template), "error");
-				} else if (code === "TIMEOUT" || errorIncludes(err, "timed out")) {
-					logger.warn(`${failedService} API timed out`);
-				} else {
-					logError(`${failedService} failed`, err);
-				}
-			};
-
 			// --- Early exits (no speech / hallucination) ---
 			if (!groqText && !deepgramText) {
 				if (!groqErr && !deepgramErr) {
@@ -1254,8 +904,8 @@ export class DaemonService {
 					return;
 				}
 
-				if (groqErr) handleTranscriptionError(groqErr, "Groq");
-				if (deepgramErr) handleTranscriptionError(deepgramErr, "Deepgram");
+				if (groqErr) handleProviderTranscriptionError(groqErr, "Groq");
+				if (deepgramErr) handleProviderTranscriptionError(deepgramErr, "Deepgram");
 
 				const template = ErrorTemplates.API.BOTH_SERVICES_FAILED;
 				notify("Transcription Failed", formatUserError(template), "error");
@@ -1319,7 +969,10 @@ export class DaemonService {
 				const error = !groqText ? groqErr : deepgramErr;
 
 				if (error) {
-					handleTranscriptionError(error, failedService);
+					handleProviderTranscriptionError(
+						error,
+						failedService as "Groq" | "Deepgram",
+					);
 					notify(
 						"Warning",
 						`${failedService} failed, using fallback`,
@@ -1481,9 +1134,21 @@ export class DaemonService {
 					duration,
 					engine: engineUsed,
 					processingTime,
+					groqSttModel: metrics.groqSttModel,
+					deepgramModel: metrics.deepgramModel,
+					mergeModel: metrics.mergeModel,
+					mergeStrategy: metrics.mergeStrategy,
+					validationReasons: metrics.validationReasons,
 				}),
 			);
 			metrics.historyAppendMs = historyTimed.durationMs;
+
+			void appendStatsAggregateEntry({
+				timestamp: new Date().toISOString(),
+				...metrics,
+				engine: engineUsed,
+				processingMs: processingTime,
+			});
 
 			// --- Stage: Notification ---
 			const notifyTimed = await timeAsync(async () =>
@@ -1545,11 +1210,12 @@ export class DaemonService {
 				this.setStatus("idle");
 			}
 
-			if (this.streamingDataHandler) {
-				this.recorder.off("data", this.streamingDataHandler);
-				this.streamingDataHandler = undefined;
+			if (this.streamingPcmHandler) {
+				this.recorder.off("pcm-data", this.streamingPcmHandler);
+				this.streamingPcmHandler = undefined;
 			}
 			this.deepgramStreaming = undefined;
+			this.liveGroqSession = undefined;
 		}
 	}
 }

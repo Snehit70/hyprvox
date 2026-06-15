@@ -164,6 +164,9 @@ export const loadConfig = (
 	const config = result.data;
 	config.paths.logs = resolvePath(config.paths.logs);
 	config.paths.history = resolvePath(config.paths.history);
+	config.transcription.debugAudio.directory = resolvePath(
+		config.transcription.debugAudio.directory,
+	);
 
 	if (configPath === DEFAULT_CONFIG_FILE) {
 		cachedConfig = config;

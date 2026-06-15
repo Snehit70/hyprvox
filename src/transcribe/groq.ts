@@ -7,15 +7,16 @@ import { withRetry } from "../utils/retry";
 
 const BASE_TRANSCRIPTION_PROMPT = [
 	"Technical English dictation about software development, Linux, and AI.",
-	"Preserve commands, filenames, acronyms, project names, and code terms exactly.",
-	"When the speaker clearly dictates structure, prefer literal symbols for braces, brackets, parentheses, colons, commas, quotes, and slashes.",
-	"Preserve numbered list cues like first, second, and third when spoken.",
+	"Likely vocabulary includes commands, file paths, acronyms, project names, and code terms.",
 ].join(" ");
 const MAX_TRANSCRIPTION_PROMPT_CHARS = 896;
+const BOOST_WORDS_PREFIX = " Vocabulary: ";
+const CONTEXT_PREFIX = " Recent text: ";
+const PROMPT_SUFFIX = ".";
 
 function fitBoostWordsInPrompt(boostWords: string[]): string[] {
-	const prefix = `${BASE_TRANSCRIPTION_PROMPT} Prefer these terms: `;
-	const suffix = ".";
+	const prefix = `${BASE_TRANSCRIPTION_PROMPT}${BOOST_WORDS_PREFIX}`;
+	const suffix = PROMPT_SUFFIX;
 	const availableChars =
 		MAX_TRANSCRIPTION_PROMPT_CHARS - prefix.length - suffix.length;
 	if (availableChars <= 0) return [];
@@ -38,13 +39,44 @@ function fitBoostWordsInPrompt(boostWords: string[]): string[] {
 	return terms;
 }
 
-function buildTranscriptionPrompt(boostWords: string[]): string {
-	const fittedBoostWords = fitBoostWordsInPrompt(boostWords);
-	if (fittedBoostWords.length === 0) {
-		return BASE_TRANSCRIPTION_PROMPT;
+function fitContextHintInPrompt(basePrompt: string, contextHint?: string): string {
+	const normalized = contextHint?.trim().replace(/\s+/g, " ");
+	if (!normalized) return "";
+
+	const availableChars =
+		MAX_TRANSCRIPTION_PROMPT_CHARS -
+		basePrompt.length -
+		CONTEXT_PREFIX.length -
+		PROMPT_SUFFIX.length;
+	if (availableChars <= 0) return "";
+
+	if (normalized.length <= availableChars) {
+		return normalized;
 	}
 
-	return `${BASE_TRANSCRIPTION_PROMPT} Prefer these terms: ${fittedBoostWords.join(", ")}.`;
+	const truncated = normalized.slice(0, Math.max(0, availableChars - 3)).trimEnd();
+	return truncated.length > 0 ? `${truncated}...` : "";
+}
+
+function buildTranscriptionPrompt(
+	boostWords: string[],
+	contextHint?: string,
+): string {
+	const fittedBoostWords = fitBoostWordsInPrompt(boostWords);
+	let prompt = BASE_TRANSCRIPTION_PROMPT;
+
+	if (fittedBoostWords.length === 0) {
+		const fittedContextHint = fitContextHintInPrompt(prompt, contextHint);
+		return fittedContextHint.length > 0
+			? `${prompt}${CONTEXT_PREFIX}${fittedContextHint}${PROMPT_SUFFIX}`
+			: prompt;
+	}
+
+	prompt = `${BASE_TRANSCRIPTION_PROMPT}${BOOST_WORDS_PREFIX}${fittedBoostWords.join(", ")}${PROMPT_SUFFIX}`;
+	const fittedContextHint = fitContextHintInPrompt(prompt, contextHint);
+	return fittedContextHint.length > 0
+		? `${prompt}${CONTEXT_PREFIX}${fittedContextHint}${PROMPT_SUFFIX}`
+		: prompt;
 }
 
 function getErrorStatus(error: unknown): number | undefined {
@@ -69,6 +101,9 @@ function getErrorMessage(error: unknown): string | undefined {
 
 export class GroqClient {
 	private _client: Groq | null = null;
+	private static readonly REQUEST_TIMEOUT_MS = 30000;
+	private static readonly REQUEST_TIMEOUT_LONG_MS = 45000;
+	private static readonly LONG_RECORDING_THRESHOLD_MS = 120000;
 
 	private get client(): Groq {
 		if (!this._client) {
@@ -122,16 +157,29 @@ export class GroqClient {
 		language: string = "en",
 		boostWords: string[] = [],
 		format: "opus" | "wav" = "opus",
+		recordingDurationMs?: number,
+		contextHint?: string,
+		externalSignal?: AbortSignal,
 	): Promise<string> {
 		try {
+			const requestTimeoutMs =
+				recordingDurationMs &&
+				recordingDurationMs >= GroqClient.LONG_RECORDING_THRESHOLD_MS
+					? GroqClient.REQUEST_TIMEOUT_LONG_MS
+					: GroqClient.REQUEST_TIMEOUT_MS;
+
 			return await withRetry(
 				async (signal) => {
+					const requestSignal =
+						signal && externalSignal
+							? AbortSignal.any([signal, externalSignal])
+							: (externalSignal ?? signal);
 					const filename = format === "opus" ? "audio.opus" : "audio.wav";
 					const mimeType = format === "opus" ? "audio/opus" : "audio/wav";
 					const file = await toFile(audioBuffer, filename, {
 						type: mimeType,
 					});
-					const prompt = buildTranscriptionPrompt(boostWords);
+					const prompt = buildTranscriptionPrompt(boostWords, contextHint);
 
 					const completion = await this.client.audio.transcriptions.create(
 						{
@@ -143,8 +191,8 @@ export class GroqClient {
 							response_format: "json",
 						},
 						{
-							signal,
-							timeout: 30000,
+							signal: requestSignal ?? new AbortController().signal,
+							timeout: requestTimeoutMs,
 							maxRetries: 0,
 						},
 					);
@@ -155,6 +203,7 @@ export class GroqClient {
 							model: "whisper-large-v3",
 							language,
 							boostWordsCount: boostWords.length,
+							contextHintLength: contextHint?.length ?? 0,
 							promptLength: prompt.length,
 							textLength: text.length,
 						},
@@ -166,8 +215,11 @@ export class GroqClient {
 					operationName: "Groq Transcription",
 					maxRetries: 2,
 					backoffs: [100, 200],
-					timeout: 30000,
+					timeout: requestTimeoutMs,
 					shouldRetry: (error: unknown) => {
+						if (getErrorMessage(error)?.includes("timed out")) {
+							return false;
+						}
 						const status = getErrorStatus(error);
 						return status === undefined || status >= 500 || status === 429;
 					},

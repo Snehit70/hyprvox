@@ -21,6 +21,14 @@
 	"transcription": {
 		"language": "en",
 		"deepgramBoosting": false,
+		"groqChunking": {
+			"enabled": false,
+			"minDurationSeconds": 45,
+			"chunkSeconds": 20,
+			"overlapSeconds": 1.5,
+			"maxConcurrency": 3,
+			"fallbackToFullAudio": true
+		},
 		"boostWords": [
 			"hyprvox",
 			"Sisyphus",

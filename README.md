@@ -39,65 +39,136 @@ Both engines run **in parallel**. Results merge with an LLM. If one fails, the o
 
 ## Quick Start
 
-### 1 — Prerequisites
+### 1 — Install system dependencies
 
 ```bash
 # Fedora / RHEL
-sudo dnf install -y unzip ffmpeg alsa-utils
+sudo dnf install -y unzip ffmpeg alsa-utils wl-clipboard libnotify
 
 # Arch
-sudo pacman -S ffmpeg alsa-utils
+sudo pacman -S ffmpeg alsa-utils wl-clipboard libnotify
 
 # Ubuntu / Debian
-sudo apt install ffmpeg alsa-utils unzip
-
-# Clipboard
-# Wayland:
-sudo pacman -S wl-clipboard   # or dnf / apt equivalent
-# X11:
-sudo pacman -S xclip
+sudo apt install ffmpeg alsa-utils unzip wl-clipboard libnotify-bin
 ```
 
-Then install Bun:
+On X11, install `xclip` instead of `wl-clipboard`.
+
+### 2 — Install Bun
 
 ```bash
 curl -fsSL https://bun.sh/install | bash
-source ~/.bash_profile   # or ~/.zshrc
+export BUN_INSTALL="$HOME/.bun"
+export PATH="$BUN_INSTALL/bin:$PATH"
 ```
 
-### 2 — Install
+Confirm Bun is available:
+
+```bash
+bun --version
+```
+
+### 3 — Install hyprvox
+
+Use the published CLI for normal installs:
+
+```bash
+bun add -g hyprvox
+hyprvox --help
+```
+
+Or run from a source checkout:
 
 ```bash
 git clone https://github.com/Snehit70/hyprvox.git
 cd hyprvox
 bun install
+bun run index.ts --help
 ```
 
-Or from npm (Bun still required on the machine):
+### 4 — Configure
+
+Run the setup wizard:
 
 ```bash
-npm install -g hyprvox
-# or
-bun add -g hyprvox
+hyprvox setup
 ```
 
-### 3 — Configure
+The wizard detects your distro, desktop session, missing commands, config state, microphone, Wayland hotkey strategy, and systemd service state. It keeps reporting the remaining next step until setup is complete.
+
+For source checkouts, use:
+
+```bash
+bun run index.ts setup
+```
+
+For Docker, CI, or non-interactive diagnosis:
+
+```bash
+hyprvox setup --check --json
+```
+
+Manual config-only setup is still available:
 
 ```bash
 hyprvox config init   # Enter your Groq + Deepgram API keys
 ```
+
+Source checkout equivalent: `bun run index.ts config init`.
 
 | Key | Get one at |
 |-----|-----------|
 | Groq | [console.groq.com](https://console.groq.com/keys) |
 | Deepgram | [console.deepgram.com](https://console.deepgram.com) |
 
-### 4 — Start the daemon
+### 5 — Verify the setup before installing the service
+
+```bash
+hyprvox setup --check
+hyprvox list-mics
+hyprvox health
+```
+
+Source checkout equivalents:
+
+```bash
+bun run index.ts setup --check
+bun run index.ts list-mics
+bun run index.ts health
+```
+
+`health` should confirm the config, API keys, microphone, clipboard command, and notification support. On headless servers, clipboard, notification, and microphone checks can fail by design.
+
+To change config later, run the interactive editor:
+
+```bash
+hyprvox config
+```
+
+For direct commands and scripting, run `hyprvox config --help`.
+
+### 6 — Install and start the user service
+
+Check whether the daemon is already running before installing the service:
+
+```bash
+hyprvox status
+```
+
+If it is already running manually, stop it first:
+
+```bash
+hyprvox stop
+```
+
+Then install the systemd user service:
 
 ```bash
 hyprvox install   # Installs as a systemd user service
-hyprvox health    # Verify everything is wired up
+hyprvox status
 ```
+
+Source checkout equivalents: `bun run index.ts install` and `bun run index.ts status`.
 
 ---
 
@@ -143,6 +214,8 @@ windowrule = match:class hyprvox-overlay, move ((monitor_w-window_w)*0.5) (monit
 hyprvox toggle       # Start / stop recording
 hyprvox status       # Daemon status
 hyprvox health       # Full system check
+hyprvox stats        # Interactive stats dashboard
+hyprvox stats --summary  # Plain stats summary
 hyprvox history      # Past transcriptions
 hyprvox logs         # Tail daemon logs
 hyprvox errors       # Last error
@@ -203,16 +276,18 @@ Full guide → [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 ```
 Install and configure hyprvox on this Linux system:
 
-1. Install deps: sudo dnf install -y unzip ffmpeg alsa-utils wl-clipboard
-2. Install Bun: curl -fsSL https://bun.sh/install | bash && source ~/.bash_profile
+1. Install deps: sudo dnf install -y unzip ffmpeg alsa-utils wl-clipboard libnotify
+2. Install Bun: curl -fsSL https://bun.sh/install | bash && export BUN_INSTALL="$HOME/.bun" && export PATH="$BUN_INSTALL/bin:$PATH"
 3. Clone: git clone https://github.com/Snehit70/hyprvox.git && cd hyprvox && bun install
 4. Configure: bun run index.ts config init  (I'll provide Groq + Deepgram keys when prompted)
-5. Install service: bun run index.ts install
-6. For Hyprland, add to ~/.config/hypr/hyprland.conf:
+5. Run the setup wizard: bun run index.ts setup
+6. Verify non-interactively: bun run index.ts setup --check
+7. If needed, install service manually: bun run index.ts install
+8. For Hyprland, add to ~/.config/hypr/hyprland.conf:
      bind = , code:105, exec, bun run /path/to/hyprvox/index.ts toggle
-7. Add overlay window rules to ~/.config/hypr/UserConfigs/WindowRules.conf (see README)
-8. Reload: hyprctl reload
-9. Verify: bun run index.ts health
+9. Add overlay window rules to ~/.config/hypr/UserConfigs/WindowRules.conf (see README)
+10. Reload: hyprctl reload
+11. Verify: bun run index.ts status && bun run index.ts health
 ```
 
 </details>

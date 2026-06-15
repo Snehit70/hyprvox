@@ -34,4 +34,24 @@ describe("buildTranscriptionPrompt", () => {
 		expect(prompt).toContain("Convex");
 		expect(prompt.length).toBeLessThanOrEqual(MAX_TRANSCRIPTION_PROMPT_CHARS);
 	});
+
+	it("fits contextual continuity hints within the same prompt budget", () => {
+		const prompt = buildTranscriptionPrompt(
+			["Hyprvox", "Deepgram", "Groq"],
+			"The previous accepted chunk ended with an explanation about live chunk overlap and the next accepted chunk begins with a note about reducing latency for longer recordings while preserving dictated technical terms.",
+		);
+
+		expect(prompt).toContain("Recent text");
+		expect(prompt).toContain("Hyprvox");
+		expect(prompt.length).toBeLessThanOrEqual(MAX_TRANSCRIPTION_PROMPT_CHARS);
+	});
+
+	it("avoids instruction-heavy preserve phrasing in the base prompt", () => {
+		const prompt = buildTranscriptionPrompt(["Hyprvox", "Groq"]);
+
+		expect(prompt).toContain("Vocabulary");
+		expect(prompt).not.toContain("Preserve commands");
+		expect(prompt).not.toContain("Surrounding transcript context for continuity only");
+		expect(prompt).not.toContain("If punctuation is spoken explicitly");
+	});
 });

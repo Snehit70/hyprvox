@@ -53,7 +53,7 @@ The configuration is a JSON file structured into several sections.
     "clipboard": {
       "append": true,
       "minDuration": 0.6,
-      "maxDuration": 300
+      "maxDuration": 600
     },
     "audioDevice": "default"
   },
@@ -64,6 +64,24 @@ The configuration is a JSON file structured into several sections.
   "transcription": {
     "language": "en",
     "formattingMode": "clean",
+    "groqChunking": {
+      "enabled": false,
+      "mode": "live",
+      "minDurationSeconds": 45,
+      "chunkSeconds": 20,
+      "overlapSeconds": 1.5,
+      "maxConcurrency": 3,
+      "chunkMaxRetries": 1,
+      "chunkRetryBackoffMs": 250,
+      "liveFinalizeTimeoutMs": 2500,
+      "fallbackToFullAudio": true,
+      "logChunkTranscripts": true
+    },
+    "debugAudio": {
+      "enabled": true,
+      "keepLast": 5,
+      "directory": "~/.config/hypr/vox/debug-audio"
+    },
     "boostWords": [
       "hyprvox",
       "Groq",
@@ -118,7 +136,7 @@ Controls the core functionality and user interaction of the daemon.
 | :--- | :--- | :--- | :--- | :--- |
 | `append` | Boolean | `true` | If `true`, appends the transcript to the current clipboard. If `false`, overwrites it. | N/A |
 | `minDuration` | Number | `0.6` | Minimum recording duration in seconds. | Min: `0.6` |
-| `maxDuration` | Number | `300` | Maximum recording duration in seconds (5 minutes). | Max: `300` |
+| `maxDuration` | Number | `600` | Maximum recording duration in seconds (10 minutes). | Max: `600` |
 
 #### Hotkey Format
 The `hotkey` option supports both single keys and combinations using the `+` separator, or the special value `"disabled"`.
@@ -163,6 +181,20 @@ Settings related to the speech-to-text engine.
 | :--- | :--- | :--- | :--- | :--- |
 | `language` | String | `"en"` | ISO 639-1 language code for transcription. **Only English (`en`) is supported in v1.0.** | N/A |
 | `streaming` | Boolean | `false` | Enable real-time streaming transcription during recording. | N/A |
+| `groqChunking.enabled` | Boolean | `false` | Split longer recordings for Groq Whisper only. Deepgram still uses the full audio. | N/A |
+| `groqChunking.mode` | String | `"live"` | Dispatch Groq chunks while recording, then finalize quickly on stop. | Must be `"live"` |
+| `groqChunking.minDurationSeconds` | Number | `45` | Minimum recording duration before Groq chunking is considered. | `>= 1` |
+| `groqChunking.chunkSeconds` | Number | `20` | Target duration for each Groq WAV chunk. | `>= 1` |
+| `groqChunking.overlapSeconds` | Number | `1.5` | Audio overlap between adjacent Groq chunks. | `>= 0` and less than `chunkSeconds` |
+| `groqChunking.maxConcurrency` | Number | `3` | Maximum parallel Groq chunk requests. | Integer `1`-`8` |
+| `groqChunking.chunkMaxRetries` | Number | `1` | Retries per failed live chunk before marking chunking failed. | Integer `0`-`3` |
+| `groqChunking.chunkRetryBackoffMs` | Number | `250` | Backoff between live chunk retries. | Integer `50`-`5000` |
+| `groqChunking.liveFinalizeTimeoutMs` | Number | `2500` | Max wait after stop for in-flight live chunk requests before fallback. | Integer `500`-`10000` |
+| `groqChunking.fallbackToFullAudio` | Boolean | `true` | Fall back to the existing full-audio Groq request if chunking fails. | N/A |
+| `groqChunking.logChunkTranscripts` | Boolean | `true` | Log per-chunk Groq source text for quality debugging. | N/A |
+| `debugAudio.enabled` | Boolean | `true` | Asynchronously save raw recorder WAV files for replay/debugging. | N/A |
+| `debugAudio.keepLast` | Number | `5` | Keep only the newest N saved recordings in the debug audio directory. | Integer `1`-`100` |
+| `debugAudio.directory` | String | `"~/.config/hypr/vox/debug-audio"` | Directory where saved raw WAV captures are written. | Must be a valid writable path |
 | `boostWords` | Array | `[]` | List of words to prioritize for better accuracy (e.g., names, jargon). | Max 450 words total. |
 | `mergeModel` | String | `"llama-3.3-70b-versatile"` | Groq model used to merge transcripts from Groq Whisper and Deepgram. | Must be a valid Groq model ID. |
 | `formattingMode` | String | `"clean"` | Controls how aggressively the merger formats dictated text. | `"verbatim"`, `"clean"`, or `"structured"`. |
@@ -185,7 +217,8 @@ The `streaming` option controls whether transcription happens in real-time durin
 
 **How It Works:**
 - In streaming mode, audio chunks are sent to Deepgram via WebSocket as you speak
-- Groq still processes the full audio file after recording stops
+- If `groqChunking.enabled` is false, Groq processes the full audio file after recording stops
+- If `groqChunking.enabled` is true, Groq dispatches overlapping live chunks during recording and only falls back to full audio on live chunk failure/timeout
 - The LLM merger combines both transcripts, compensating for streaming accuracy loss
 - Final result typically matches batch mode quality with significantly reduced latency
 
@@ -198,6 +231,27 @@ The `streaming` option controls whether transcription happens in real-time durin
 - You need maximum accuracy
 - You're transcribing technical content with specialized vocabulary
 - A few extra seconds of latency is acceptable
+
+#### Groq Chunking
+
+`groqChunking` is an opt-in Groq-only path for longer recordings. In `mode: "live"`, Hyprvox starts dispatching Groq chunk requests while recording is still in progress (once `minDurationSeconds` is crossed), then does a short finalize wait on stop and joins ordered chunk text before the normal Groq + Deepgram merge pipeline. Deepgram, history, clipboard, and validation behavior are unchanged.
+
+Live chunk transcripts are validated before stitching. Prompt-artifact chunks, mixed-script garbage, obvious word-salad, and very short low-value tails are dropped. Dropped chunks can be repaired once with neighboring accepted chunk context; perf logs expose this as `groqLiveDroppedChunks` and `groqLiveRecoveredChunks`. If the stitched live Groq transcript is clean but materially shorter than a valid Deepgram transcript, Hyprvox can run one full-audio Groq quality fallback before merge; perf logs expose this as `groqLiveQualityFallback` and `groqLiveQualityFallbackReason`.
+
+`debugAudio` stores the original raw recorder WAV asynchronously after each processed recording. This is intended for replaying the exact same audio through later builds or settings changes without having to re-dictate the sample.
+
+Keep this disabled unless you are collecting timing and quality logs. If WAV preparation or a chunk request fails and `fallbackToFullAudio` is true, Hyprvox logs the reason and runs the existing full-audio Groq request.
+
+For replay-driven tuning, run:
+
+```bash
+bun run scripts/replay-debug-audio.ts ~/.config/hypr/vox/debug-audio/<capture>.wav 2
+```
+
+The replay script reuses the saved WAV and prints:
+- `results`: raw `liveGroq`, `fullGroq`, `deepgram`, and merged `finalText` for each run
+- `report.runs[*]`: compact per-run compare data including `liveStatus`, fallback reason, merge-source selection, live-quality fallback reason, text lengths, candidate issues per source, completeness flags, verdict flags, and normalized edit distances
+- `report.summary`: average chunk count, replay fallback count, live-quality fallback count, merge strategies, average normalized distances, aggregated issue counts by source, and verdict totals
 
 #### Boost Words (Custom Vocabulary)
 

@@ -40,6 +40,15 @@ function formatLogLine(line: string): string {
 		delete context.msg;
 		delete context.pid;
 		delete context.hostname;
+		if (context.err && typeof context.err === "object") {
+			const err = context.err as Record<string, unknown>;
+			context.err = {
+				type: err.type,
+				message: err.message,
+				code: err.code,
+				cmd: err.cmd,
+			};
+		}
 
 		let output = `${colors.dim(time)} ${levelColor(levelStr)} ${msg}`;
 
@@ -70,7 +79,9 @@ async function tailFile(filePath: string, lines: number) {
 		if (buffer.length > lines) buffer.shift();
 	}
 
-	buffer.forEach((line) => console.log(formatLogLine(line)));
+	for (const line of buffer) {
+		console.log(formatLogLine(line));
+	}
 
 	let currentSize = statSync(filePath).size;
 
@@ -140,6 +151,8 @@ export const logsCommand = new Command("logs")
 				buffer.push(line);
 				if (buffer.length > lineCount) buffer.shift();
 			}
-			buffer.forEach((line) => console.log(formatLogLine(line)));
+			for (const line of buffer) {
+				console.log(formatLogLine(line));
+			}
 		}
 	});

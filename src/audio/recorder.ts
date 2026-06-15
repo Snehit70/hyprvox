@@ -5,11 +5,20 @@ import { loadConfig } from "../config/loader";
 import { AppError, type ErrorCode, hasErrorCode } from "../utils/errors";
 import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
+import { PcmStreamExtractor } from "./pcm-stream";
 
 export interface AudioLevelPayload {
 	level: number;
 	peak: number;
 	timestamp: number;
+}
+
+export interface PcmAudioPayload {
+	pcm: Buffer;
+	timestamp: number;
+	sampleRate: 16000;
+	channels: 1;
+	bitsPerSample: 16;
 }
 
 export class AudioRecorder extends EventEmitter {
@@ -20,12 +29,9 @@ export class AudioRecorder extends EventEmitter {
 	private warningTimer4m: ReturnType<typeof setTimeout> | null = null;
 	private warningTimer430m: ReturnType<typeof setTimeout> | null = null;
 	private minDuration: number = 600;
-	private maxDuration: number = 300000;
-	private readonly WARNING_4M = 240000;
-	private readonly WARNING_430M = 270000;
+	private maxDuration: number = 600000;
 	private isStopping: boolean = false;
-	private seenWaveHeader: boolean = false;
-	private pendingWaveHeader: Buffer = Buffer.alloc(0);
+	private pcmExtractor = new PcmStreamExtractor();
 
 	constructor() {
 		super();
@@ -36,7 +42,7 @@ export class AudioRecorder extends EventEmitter {
 		try {
 			const config = loadConfig();
 			this.minDuration = (config.behavior.clipboard.minDuration || 0.6) * 1000;
-			this.maxDuration = (config.behavior.clipboard.maxDuration || 300) * 1000;
+			this.maxDuration = (config.behavior.clipboard.maxDuration || 600) * 1000;
 		} catch (e) {
 			// Use defaults if config load fails
 			logger.debug(
@@ -57,8 +63,7 @@ export class AudioRecorder extends EventEmitter {
 
 		this.loadSettings();
 		this.chunks = [];
-		this.seenWaveHeader = false;
-		this.pendingWaveHeader = Buffer.alloc(0);
+		this.pcmExtractor.reset();
 		this.startTime = Date.now();
 
 		const config = loadConfig();
@@ -103,13 +108,20 @@ export class AudioRecorder extends EventEmitter {
 								? chunk
 								: Buffer.from(chunk, "binary");
 							this.chunks.push(bufferChunk);
-							const pcmChunk = this.getPcmChunk(bufferChunk);
-							const level = this.getAudioLevel(pcmChunk);
-							if (level) {
-								this.emit("level", {
-									...level,
-									timestamp: Date.now(),
-								} satisfies AudioLevelPayload);
+							const pcmChunk = this.pcmExtractor.accept(bufferChunk);
+							if (pcmChunk) {
+								const timestamp = Date.now();
+								const level = this.getAudioLevel(pcmChunk.pcm);
+								if (level) {
+									this.emit("level", {
+										...level,
+										timestamp,
+									} satisfies AudioLevelPayload);
+								}
+								this.emit("pcm-data", {
+									...pcmChunk,
+									timestamp,
+								} satisfies PcmAudioPayload);
 							}
 							this.emit("data", bufferChunk);
 						});
@@ -189,22 +201,44 @@ export class AudioRecorder extends EventEmitter {
 
 	private setupTimers() {
 		this.cleanupTimers();
+		const warningAt80Pct = Math.floor(this.maxDuration * 0.8);
+		const warningAt90Pct = Math.floor(this.maxDuration * 0.9);
+		const warning80Label = this.formatDurationMs(warningAt80Pct);
+		const warning90Label = this.formatDurationMs(warningAt90Pct);
+		const maxDurationLabel = this.formatDurationMs(this.maxDuration);
 
 		this.warningTimer4m = setTimeout(() => {
-			logger.warn("Recording limit approaching (4m)");
-			this.emit("warning", "Recording limit approaching (4m)");
-		}, this.WARNING_4M);
+			logger.warn(`Recording limit approaching (${warning80Label})`);
+			this.emit("warning", `Recording limit approaching (${warning80Label})`);
+		}, warningAt80Pct);
 
 		this.warningTimer430m = setTimeout(() => {
-			logger.warn("Recording limit approaching (4m 30s)");
-			this.emit("warning", "Recording limit approaching (4m 30s)");
-		}, this.WARNING_430M);
+			logger.warn(`Recording limit approaching (${warning90Label})`);
+			this.emit("warning", `Recording limit approaching (${warning90Label})`);
+		}, warningAt90Pct);
 
 		this.timer = setTimeout(() => {
-			logger.warn("Recording limit reached (5m). Auto-stopping.");
-			this.emit("warning", "Recording limit reached (5m). Stopping...");
+			logger.warn(
+				`Recording limit reached (${maxDurationLabel}). Auto-stopping.`,
+			);
+			this.emit(
+				"warning",
+				`Recording limit reached (${maxDurationLabel}). Stopping...`,
+			);
 			this.stop();
 		}, this.maxDuration);
+	}
+
+	private formatDurationMs(durationMs: number): string {
+		const totalSeconds = Math.floor(durationMs / 1000);
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+
+		if (seconds === 0) {
+			return `${minutes}m`;
+		}
+
+		return `${minutes}m ${seconds}s`;
 	}
 
 	public async stop(force = false): Promise<Buffer | null> {
@@ -310,42 +344,6 @@ export class AudioRecorder extends EventEmitter {
 		const threshold = 100; // Low threshold for silence
 
 		return rms < threshold;
-	}
-
-	private getPcmChunk(chunk: Buffer): Buffer {
-		if (!this.seenWaveHeader) {
-			this.pendingWaveHeader = Buffer.concat([this.pendingWaveHeader, chunk]);
-			const header = this.pendingWaveHeader;
-
-			if (
-				header.length >= 12 &&
-				header.subarray(0, 4).toString("ascii") === "RIFF" &&
-				header.subarray(8, 12).toString("ascii") === "WAVE"
-			) {
-				let offset = 12;
-				while (offset + 8 <= header.length) {
-					const id = header.subarray(offset, offset + 4).toString("ascii");
-					const size = header.readUInt32LE(offset + 4);
-					offset += 8;
-					if (id === "data") {
-						this.seenWaveHeader = true;
-						const pcm = header.subarray(offset);
-						this.pendingWaveHeader = Buffer.alloc(0);
-						return pcm;
-					}
-					if (offset + size > header.length) return Buffer.alloc(0);
-					offset += size + (size % 2);
-				}
-				return Buffer.alloc(0);
-			}
-
-			// Not a RIFF/WAVE header — treat everything as PCM
-			this.seenWaveHeader = true;
-			this.pendingWaveHeader = Buffer.alloc(0);
-			return header;
-		}
-
-		return chunk;
 	}
 
 	private getAudioLevel(
