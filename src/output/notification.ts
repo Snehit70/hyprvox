@@ -4,10 +4,15 @@ import { logger } from "../utils/logger";
 
 export type NotificationType = "info" | "success" | "warning" | "error";
 
-export const notify = (
+type LoadNotificationConfig = typeof loadConfig;
+type SendNotification = typeof notifier.notify;
+
+export const notifyWithConfig = (
 	title: string,
 	message: string,
 	type: NotificationType = "info",
+	loadConfigFn: LoadNotificationConfig = loadConfig,
+	sendNotification: SendNotification = notifier.notify.bind(notifier),
 ) => {
 	try {
 		// Suppress desktop side effects only in explicit test runtime.
@@ -19,7 +24,7 @@ export const notify = (
 			return;
 		}
 
-		const config = loadConfig();
+		const config = loadConfigFn();
 		if (!config.behavior.notifications) {
 			return;
 		}
@@ -31,7 +36,7 @@ export const notify = (
 			error: "dialog-error",
 		};
 
-		notifier.notify({
+		sendNotification({
 			title: `Voice CLI: ${title}`,
 			message,
 			icon: iconMap[type],
@@ -44,3 +49,9 @@ export const notify = (
 		logger.error({ err: error }, "Failed to send notification");
 	}
 };
+
+export const notify = (
+	title: string,
+	message: string,
+	type: NotificationType = "info",
+) => notifyWithConfig(title, message, type);

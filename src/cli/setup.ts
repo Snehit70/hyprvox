@@ -25,6 +25,7 @@ import {
 	rollbackProfileDerivedFields,
 } from "../setup/config-patch";
 import { getInstallCommand } from "../setup/environment";
+import { resolveSetupHotkey } from "../setup/hotkey";
 import {
 	collectDeviceSignals,
 	diffConfig,
@@ -302,6 +303,7 @@ async function collectInteractiveWizardUpdates(
 	options: SetupOptions,
 ): Promise<ConfigPatch> {
 	const updates: ConfigPatch = {};
+	const report = runSetupChecks();
 
 	const groqKey = askOptionalSecret(
 		"Enter Groq API Key (starts with gsk_) [enter to keep current]: ",
@@ -327,14 +329,20 @@ async function collectInteractiveWizardUpdates(
 		};
 	}
 
-	const useBuiltInHotkey = askYesNoQuit(
-		"Use built-in hotkey listener? (No = disable and use compositor bind)",
-	);
+	const useCompositorBinding =
+		report.environment.sessionType === "wayland"
+			? askYesNoQuit(
+					"Use compositor binding for the hotkey? (Recommended on Wayland; disables built-in listener)",
+				)
+			: !askYesNoQuit(
+					"Use built-in hotkey listener? (No = disable and use compositor bind)",
+				);
 	updates.behavior = {
 		...updates.behavior,
-		hotkey: useBuiltInHotkey
-			? (baseConfig.behavior?.hotkey ?? "Right Control")
-			: "disabled",
+		hotkey: resolveSetupHotkey(
+			baseConfig,
+			useCompositorBinding ? "compositor" : "built-in",
+		),
 	};
 
 	const notifications = askYesNoQuit("Enable notifications?");
@@ -524,28 +532,26 @@ function configureWaylandBehavior(options: SetupOptions): void {
 	const report = runSetupChecks();
 	if (report.environment.sessionType !== "wayland") return;
 
-	console.log(colors.bold("\nWayland hotkey setup"));
+	const config = loadPartialConfig();
+	const hotkey = config.behavior?.hotkey ?? "Right Control";
+	const hotkeyDisabled = hotkey.trim().toLowerCase() === "disabled";
+
+	console.log(colors.bold("\nWayland hotkey guidance"));
 	console.log(
 		"Built-in global hotkeys are limited on Wayland. Native compositor bindings are more reliable.",
 	);
-
-	if (!askYesNoQuit("Use compositor binding and disable built-in hotkey?")) {
-		return;
+	if (hotkeyDisabled) {
+		console.log(`${colors.green("✓")} Built-in hotkey disabled in config.`);
+		console.log(
+			`Add this to Hyprland: ${colors.cyan("bind = , code:105, exec, hyprvox toggle")}`,
+		);
+	} else {
+		console.log(
+			colors.yellow(
+				`Built-in hotkey remains enabled as ${colors.bold(hotkey)}; use compositor bindings for reliable system-wide Wayland hotkeys.`,
+			),
+		);
 	}
-
-	const config = loadPartialConfig();
-	const nextConfig = {
-		...config,
-		behavior: {
-			...config.behavior,
-			hotkey: "disabled",
-		},
-	};
-	if (!options.dryRun) saveConfig(nextConfig);
-	console.log(`${colors.green("✓")} Built-in hotkey disabled in config.`);
-	console.log(
-		`Add this to Hyprland: ${colors.cyan("bind = , code:105, exec, hyprvox toggle")}`,
-	);
 }
 
 function installServiceIfRequested(
