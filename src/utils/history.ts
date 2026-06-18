@@ -25,6 +25,41 @@ export interface SearchOptions {
 	to?: string;
 }
 
+const MAX_CONFIGURED_RECORDING_SECONDS = 600;
+
+function normalizeHistoryDurationSeconds(duration: number): number {
+	if (!Number.isFinite(duration) || duration < 0) return duration;
+	return duration > MAX_CONFIGURED_RECORDING_SECONDS ? duration / 1000 : duration;
+}
+
+function normalizeHistoryItem(item: HistoryItem): HistoryItem {
+	const duration = normalizeHistoryDurationSeconds(item.duration);
+	return duration === item.duration ? item : { ...item, duration };
+}
+
+function normalizeHistoryItems(history: HistoryItem[]): {
+	history: HistoryItem[];
+	changed: boolean;
+} {
+	if (
+		!history.some(
+			(item) =>
+				Number.isFinite(item.duration) &&
+				item.duration > MAX_CONFIGURED_RECORDING_SECONDS,
+		)
+	) {
+		return { history, changed: false };
+	}
+
+	let changed = false;
+	const normalized = history.map((item) => {
+		const next = normalizeHistoryItem(item);
+		if (next !== item) changed = true;
+		return next;
+	});
+	return { history: normalized, changed };
+}
+
 export async function searchHistory(
 	options: SearchOptions,
 ): Promise<HistoryItem[]> {
@@ -89,13 +124,13 @@ export async function appendHistory(item: HistoryItem): Promise<void> {
 		if (existsSync(historyFile)) {
 			const loaded = await readJsonFile<HistoryItem[]>(historyFile);
 			if (Array.isArray(loaded)) {
-				history = loaded;
+				history = normalizeHistoryItems(loaded).history;
 			} else if (loaded !== null) {
 				logger.warn("History file format invalid, resetting to empty array");
 			}
 		}
 
-		history.push(item);
+		history.push(normalizeHistoryItem(item));
 
 		if (history.length > 1000) {
 			history = history.slice(-1000);
@@ -124,7 +159,17 @@ export async function loadHistory(): Promise<HistoryItem[]> {
 
 	try {
 		const history = await readJsonFile<HistoryItem[]>(historyFile);
-		return Array.isArray(history) ? history : [];
+		if (!Array.isArray(history)) return [];
+
+		const normalized = normalizeHistoryItems(history);
+		if (normalized.changed) {
+			await atomicWriteFile(
+				historyFile,
+				JSON.stringify(normalized.history, null, 2),
+				{ mode: 0o600 },
+			);
+		}
+		return normalized.history;
 	} catch (error) {
 		logger.error({ error, historyFile }, "Failed to load history");
 		return [];

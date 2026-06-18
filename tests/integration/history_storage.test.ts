@@ -1,4 +1,11 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	rmSync,
+	statSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -96,6 +103,54 @@ describe("History Storage Integration", () => {
 
 		expect(existsSync(nestedFile)).toBe(true);
 		expect(await loadHistory()).toHaveLength(1);
+	});
+
+	it("should migrate legacy millisecond durations to seconds on load", async () => {
+		const legacyItems: HistoryItem[] = [
+			{
+				timestamp: new Date().toISOString(),
+				text: "Legacy short recording",
+				duration: 2500,
+				engine: "test",
+				processingTime: 100,
+			},
+			{
+				timestamp: new Date().toISOString(),
+				text: "Legacy long recording",
+				duration: 120000,
+				engine: "test",
+				processingTime: 100,
+			},
+		];
+		writeFileSync(HISTORY_FILE, JSON.stringify(legacyItems, null, 2));
+
+		const loaded = await loadHistory();
+		expect(loaded.map((item) => item.duration)).toEqual([2.5, 120]);
+
+		const onDisk = JSON.parse(readFileSync(HISTORY_FILE, "utf-8"));
+		expect(onDisk.map((item: HistoryItem) => item.duration)).toEqual([2.5, 120]);
+	});
+
+	it("should normalize existing legacy durations when appending history", async () => {
+		const legacyItem: HistoryItem = {
+			timestamp: new Date().toISOString(),
+			text: "Legacy append base",
+			duration: 30000,
+			engine: "test",
+			processingTime: 100,
+		};
+		writeFileSync(HISTORY_FILE, JSON.stringify([legacyItem], null, 2));
+
+		await appendHistory({
+			timestamp: new Date().toISOString(),
+			text: "New seconds item",
+			duration: 4.5,
+			engine: "test",
+			processingTime: 100,
+		});
+
+		const loaded = await loadHistory();
+		expect(loaded.map((item) => item.duration)).toEqual([30, 4.5]);
 	});
 
 	it("should enforce the 1000 item limit across multiple appends", async () => {
