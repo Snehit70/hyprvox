@@ -97,7 +97,7 @@ export function recentLatencySparkline(summary: StatsSummary, width: number): st
 	);
 }
 
-export function overallP0(summary: StatsSummary): HealthState {
+export function overallHealth(summary: StatsSummary): HealthState {
 	const latency = latencyState(
 		summary.latency.p95Ms,
 		summary.thresholds.latencyP95WarnMs,

@@ -25,6 +25,7 @@ export interface StatsSummary {
 		medianMs: number | null;
 		p95Ms: number | null;
 		averageMs: number | null;
+		lifetimeP95Ms: number | null;
 	};
 	duration: {
 		averageSeconds: number | null;
@@ -526,7 +527,7 @@ export function buildStatsSummaryFromInput(
 	const nowMs = now.getTime();
 	const thresholds = input.thresholds ?? DEFAULT_THRESHOLDS;
 
-	const processingTimes = input.history
+	const lifetimeProcessingTimes = input.history
 		.map((item) => item.processingTime)
 		.filter((value) => Number.isFinite(value) && value >= 0);
 	const durations = input.history
@@ -594,10 +595,10 @@ export function buildStatsSummaryFromInput(
 	}
 
 	const regressionFlags: string[] = [];
-	const p95 = percentile(
-		events24h.map((event) => event.processingMs),
-		95,
-	);
+	const processingTimes24h = events24h
+		.map((event) => event.processingMs)
+		.filter((value) => Number.isFinite(value) && value >= 0);
+	const p95 = percentile(processingTimes24h, 95);
 	const baselineP95 = percentile(
 		eventsInWindow(baseline7d, nowMs - 24 * 3600_000, 6 * 24 * 3600_000).map(
 			(event) => event.processingMs,
@@ -639,9 +640,10 @@ export function buildStatsSummaryFromInput(
 			history: input.history.length,
 		},
 		latency: {
-			medianMs: percentile(processingTimes, 50),
-			p95Ms: percentile(processingTimes, 95),
-			averageMs: average(processingTimes),
+			medianMs: percentile(processingTimes24h, 50),
+			p95Ms: p95,
+			averageMs: average(processingTimes24h),
+			lifetimeP95Ms: percentile(lifetimeProcessingTimes, 95),
 		},
 		duration: {
 			averageSeconds: average(durationSeconds),

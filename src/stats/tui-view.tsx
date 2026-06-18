@@ -12,7 +12,7 @@ import {
 	errorState,
 	latencyState,
 	ms,
-	overallP0,
+	overallHealth,
 	percentile,
 	qualityState,
 	recentLatencySparkline,
@@ -159,7 +159,7 @@ export function StatsDashboardView({
 	recentFilterPrompt,
 	statusMessage,
 }: StatsDashboardViewProps) {
-	const p0 = overallP0(summary);
+	const health = overallHealth(summary);
 	const anomalies = detectAnomalies(summary);
 	const latencyHealth = latencyState(
 		summary.latency.p95Ms,
@@ -236,7 +236,7 @@ export function StatsDashboardView({
 	const topAnomaly = anomalies[0]?.message ?? "none";
 	const kpiRows = [
 		{
-			label: "latency p95",
+			label: "latency 24h p95",
 			value: ms(latency24h),
 			delta: `${latencyTrend} ${latencyDelta}`,
 			confidence: confidenceFromSample(
@@ -288,7 +288,8 @@ export function StatsDashboardView({
 				justifyContent="space-between"
 			>
 				<text fg={colors.text} attributes={TextAttributes.BOLD}>
-					hyprvox stats | p0 {p0} | {tabLabel(activeTab)} | filter {filter}
+					hyprvox stats | Health {health} | {tabLabel(activeTab)} | filter{" "}
+					{filter}
 				</text>
 				<text fg={colors.muted}>
 					{autoRefresh ? "auto:on" : "auto:off"} | ttfp {ttfpMs ?? 0}ms | upd{" "}
@@ -301,7 +302,7 @@ export function StatsDashboardView({
 					daemon {summary.daemon.status}
 				</text>
 				<text fg={stateColor(latencyHealth)}>
-					p95 {ms(summary.latency.p95Ms)}
+					24h p95 {ms(summary.latency.p95Ms)}
 				</text>
 				<text fg={stateColor(errorHealth)}>errors {summary.errors.count}</text>
 				<text fg={stateColor(qualityHealth)}>
