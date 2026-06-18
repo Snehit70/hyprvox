@@ -2,6 +2,10 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { AudioDeviceService } from "../audio/device-service";
+import {
+	isConfiguredGroqApiKey,
+	isValidDeepgramApiKey,
+} from "../config/api-keys";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
 import type { DaemonState } from "../daemon/service";
 import { detectEnvironment } from "../setup/environment";
@@ -423,13 +427,8 @@ export async function buildStatsSummaryWithOptions(
 		configLoaded = true;
 		historyPath = config.paths.history;
 		logsPath = config.paths.logs;
-		groqConfigured =
-			typeof config.apiKeys.groq === "string" &&
-			config.apiKeys.groq.startsWith("gsk_") &&
-			config.apiKeys.groq.length > 6;
-		deepgramConfigured =
-			typeof config.apiKeys.deepgram === "string" &&
-			config.apiKeys.deepgram.length >= 24;
+		groqConfigured = isConfiguredGroqApiKey(config.apiKeys.groq);
+		deepgramConfigured = isValidDeepgramApiKey(config.apiKeys.deepgram);
 	} catch {
 		// Config may be incomplete during setup; stats can still be shown.
 	}

@@ -6,6 +6,10 @@ import { Command } from "commander";
 import readlineSync from "readline-sync";
 import * as colors from "yoctocolors";
 import { AudioDeviceService } from "../audio/device-service";
+import {
+	hasConfiguredTranscriptionApiKeys,
+	isValidDeepgramApiKey,
+} from "../config/api-keys";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
 import type { ConfigFile } from "../config/schema";
 import { saveConfig } from "../config/writer";
@@ -255,14 +259,6 @@ function askOptionalSecret(
 	return askOptionalSecret(prompt, validate);
 }
 
-function hasConfiguredApiKeys(config: ConfigFile): boolean {
-	return Boolean(
-		config.apiKeys?.groq?.startsWith("gsk_") &&
-			typeof config.apiKeys?.deepgram === "string" &&
-			config.apiKeys.deepgram.length >= 32,
-	);
-}
-
 const SETUP_REPORT_FILE = join(
 	homedir(),
 	".config",
@@ -318,8 +314,10 @@ async function collectInteractiveWizardUpdates(
 	const deepgramKey = askOptionalSecret(
 		"\nEnter Deepgram API Key [enter to keep current]: ",
 		(input) =>
-			(input.length >= 32 && input.length <= 40) ||
-			colors.red("Deepgram API key must be 32-40 characters"),
+			isValidDeepgramApiKey(input) ||
+			colors.red(
+				"Deepgram API key must be a 40-character hex string or valid UUID",
+			),
 	);
 
 	if (groqKey || deepgramKey) {
@@ -388,7 +386,7 @@ async function runSetupWizard(
 		);
 		return {
 			nextConfig: workingConfig,
-			apiKeysConfigured: hasConfiguredApiKeys(workingConfig),
+			apiKeysConfigured: hasConfiguredTranscriptionApiKeys(workingConfig),
 		};
 	}
 
@@ -396,7 +394,7 @@ async function runSetupWizard(
 	const nextConfig = mergeConfig(workingConfig, updates);
 	return {
 		nextConfig,
-		apiKeysConfigured: hasConfiguredApiKeys(nextConfig),
+		apiKeysConfigured: hasConfiguredTranscriptionApiKeys(nextConfig),
 	};
 }
 
@@ -443,7 +441,7 @@ async function configureInteractively(options: SetupOptions): Promise<boolean> {
 
 	if (!options.nonInteractive && !askYesNoQuit("Apply these setup changes?")) {
 		console.log(colors.yellow("Setup changes cancelled by user."));
-		return hasConfiguredApiKeys(config);
+		return hasConfiguredTranscriptionApiKeys(config);
 	}
 
 	if (!options.dryRun && changes.length > 0) saveConfig(nextConfig);
