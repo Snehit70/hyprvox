@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { Command } from "commander";
@@ -10,7 +10,11 @@ import {
 	hasConfiguredTranscriptionApiKeys,
 	isValidDeepgramApiKey,
 } from "../config/api-keys";
-import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
+import {
+	DEFAULT_CONFIG_DIR,
+	DEFAULT_CONFIG_FILE,
+	loadConfig,
+} from "../config/loader";
 import type { ConfigFile } from "../config/schema";
 import { saveConfig } from "../config/writer";
 import {
@@ -33,6 +37,15 @@ import {
 	recommendProfile,
 	type SetupProfileId,
 } from "../setup/profile";
+import {
+	type ProviderVerificationResult,
+	type SetupVerificationReport,
+	verifyProviderAuth,
+} from "../setup/verification";
+import type { DaemonState } from "../daemon/service";
+import { DeepgramTranscriber } from "../transcribe/deepgram";
+import { GroqClient } from "../transcribe/groq";
+import { loadHistory } from "../utils/history";
 
 export interface SetupOptions {
 	check?: boolean;
@@ -41,6 +54,7 @@ export interface SetupOptions {
 	skipService?: boolean;
 	nonInteractive?: boolean;
 	advanced?: boolean;
+	verify?: boolean;
 }
 
 class SetupAbortedError extends Error {
@@ -267,6 +281,8 @@ const SETUP_REPORT_FILE = join(
 	"vox",
 	"setup-report.json",
 );
+const DAEMON_PID_FILE = join(DEFAULT_CONFIG_DIR, "daemon.pid");
+const DAEMON_STATE_FILE = join(DEFAULT_CONFIG_DIR, "daemon.state");
 
 function writeSetupReport(payload: Record<string, unknown>): void {
 	mkdirSync(dirname(SETUP_REPORT_FILE), { recursive: true });
@@ -296,6 +312,236 @@ function runPostApplySmokeTest(apiKeysConfigured: boolean): {
 		reasons.push("config_check_failed");
 	}
 	return { passed: reasons.length === 0, reasons };
+}
+
+function verificationIcon(result: ProviderVerificationResult): string {
+	if (result.status === "pass") return colors.green("✓");
+	if (result.status === "fail") return colors.red("x");
+	if (result.status === "warn") return colors.yellow("!");
+	return colors.dim("-");
+}
+
+function printVerificationReport(report: SetupVerificationReport): void {
+	console.log(colors.bold("\nVerification"));
+	for (const result of report.results) {
+		console.log(
+			`  ${verificationIcon(result)} ${colors.bold(result.provider)} ${colors.dim(result.message)}`,
+		);
+	}
+	if (report.offline) {
+		console.log(
+			colors.yellow(
+				"Network verification could not complete. Setup can continue; retry when online.",
+			),
+		);
+	}
+}
+
+function createLiveAuthTransport() {
+	const groq = new GroqClient();
+	const deepgram = new DeepgramTranscriber();
+	return {
+		groq: async () => {
+			await groq.checkConnection();
+		},
+		deepgram: async () => {
+			await deepgram.checkConnection();
+		},
+	};
+}
+
+async function runAuthVerification(
+	options: SetupOptions,
+	apiKeysConfigured: boolean,
+): Promise<SetupVerificationReport | null> {
+	if (!apiKeysConfigured) {
+		console.log(
+			colors.yellow(
+				"Skipping provider verification until both API keys are set.",
+			),
+		);
+		return null;
+	}
+
+	if (options.dryRun) {
+		console.log(
+			colors.yellow("Skipping live provider verification during --dry-run."),
+		);
+		return null;
+	}
+
+	const config = loadConfig(DEFAULT_CONFIG_FILE, true);
+	const report = await verifyProviderAuth(config, createLiveAuthTransport());
+	printVerificationReport(report);
+
+	if (
+		report.hasBlockingFailure &&
+		!options.nonInteractive &&
+		!askYesNoQuit("Provider authentication failed. Continue setup anyway?")
+	) {
+		throw new SetupAbortedError();
+	}
+
+	return report;
+}
+
+function readDaemonState(): DaemonState | null {
+	if (!existsSync(DAEMON_STATE_FILE)) return null;
+	try {
+		return JSON.parse(readFileSync(DAEMON_STATE_FILE, "utf-8")) as DaemonState;
+	} catch {
+		return null;
+	}
+}
+
+function getRunningDaemonPid(): number | null {
+	if (!existsSync(DAEMON_PID_FILE)) return null;
+	try {
+		const pid = Number.parseInt(readFileSync(DAEMON_PID_FILE, "utf-8"), 10);
+		if (!Number.isFinite(pid)) return null;
+		process.kill(pid, 0);
+		return pid;
+	} catch {
+		return null;
+	}
+}
+
+function sendDaemonToggleSignal(pid: number): {
+	ok: boolean;
+	reason?: string;
+	message?: string;
+} {
+	try {
+		process.kill(pid, "SIGUSR1");
+		return { ok: true };
+	} catch (error) {
+		const err = error as NodeJS.ErrnoException;
+		if (err.code === "ESRCH") {
+			return {
+				ok: false,
+				reason: "daemon_terminated",
+				message: "Daemon exited before verification could signal it.",
+			};
+		}
+		return {
+			ok: false,
+			reason: "daemon_signal_failed",
+			message: `Failed to signal daemon: ${err.message}`,
+		};
+	}
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForDaemonStatus(
+	statuses: DaemonState["status"][],
+	timeoutMs: number,
+): Promise<DaemonState | null> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const state = readDaemonState();
+		if (state && statuses.includes(state.status)) return state;
+		await sleep(250);
+	}
+	return readDaemonState();
+}
+
+async function runRecordToTranscriptVerification(
+	options: SetupOptions,
+): Promise<{ passed: boolean; reason?: string; transcript?: string } | null> {
+	if (!options.verify) return null;
+	if (options.nonInteractive) {
+		console.log(
+			colors.yellow("Skipping --verify record test in non-interactive mode."),
+		);
+		return { passed: false, reason: "non_interactive" };
+	}
+
+	const pid = getRunningDaemonPid();
+	if (!pid) {
+		console.log(
+			colors.yellow(
+				"--verify requires an already-running daemon. Start it with hyprvox start, then rerun setup --verify.",
+			),
+		);
+		return { passed: false, reason: "daemon_not_running" };
+	}
+
+	const before = readDaemonState();
+	if (before && before.status !== "idle" && before.status !== "error") {
+		console.log(
+			colors.yellow(
+				`Cannot run --verify while daemon is ${before.status}. Wait for it to become idle.`,
+			),
+		);
+		return { passed: false, reason: `daemon_${before.status}` };
+	}
+
+	console.log(colors.bold("\nRecord-to-transcript verification"));
+	readlineSync.question(
+		"Press Enter to start recording, then speak a short phrase.",
+	);
+	const verificationStartedAt = Date.now();
+	const startSignal = sendDaemonToggleSignal(pid);
+	if (!startSignal.ok) {
+		console.log(colors.red(startSignal.message ?? "Failed to signal daemon."));
+		return { passed: false, reason: startSignal.reason };
+	}
+	const recording = await waitForDaemonStatus(["recording"], 5000);
+	if (recording?.status !== "recording") {
+		console.log(colors.red("Daemon did not enter recording state."));
+		return { passed: false, reason: "recording_not_started" };
+	}
+
+	readlineSync.question("Recording... press Enter to stop and transcribe.");
+	const stopSignal = sendDaemonToggleSignal(pid);
+	if (!stopSignal.ok) {
+		console.log(colors.red(stopSignal.message ?? "Failed to signal daemon."));
+		return { passed: false, reason: stopSignal.reason };
+	}
+	const completed = await waitForDaemonStatus(["idle", "error"], 90000);
+	if (!completed) {
+		console.log(colors.red("Timed out waiting for transcription result."));
+		return { passed: false, reason: "timeout" };
+	}
+	if (completed.status === "error") {
+		console.log(
+			colors.red(
+				`Verification failed: ${completed.lastError ?? "daemon error"}`,
+			),
+		);
+		return { passed: false, reason: "daemon_error" };
+	}
+	if (
+		before?.lastTranscription &&
+		completed.lastTranscription === before.lastTranscription
+	) {
+		console.log(
+			colors.red("Daemon returned idle without a new transcription."),
+		);
+		return { passed: false, reason: "no_new_transcription" };
+	}
+
+	const history = await loadHistory();
+	const transcript = history
+		.filter(
+			(item) => new Date(item.timestamp).getTime() >= verificationStartedAt,
+		)
+		.at(-1)
+		?.text.trim();
+	if (!transcript) {
+		console.log(
+			colors.red(
+				"Verification completed but no new transcript was found in history.",
+			),
+		);
+		return { passed: false, reason: "missing_transcript" };
+	}
+
+	console.log(`${colors.green("✓")} Transcript: ${colors.bold(transcript)}`);
+	return { passed: true, transcript };
 }
 
 async function collectInteractiveWizardUpdates(
@@ -429,7 +675,7 @@ async function configureInteractively(options: SetupOptions): Promise<boolean> {
 			!options.nonInteractive &&
 			!askYesNoQuit("Do you want to update configuration now?")
 		) {
-			return true;
+			return hasConfiguredTranscriptionApiKeys(existingConfig);
 		}
 	}
 
@@ -710,6 +956,7 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 	}
 
 	const apiKeysConfigured = await runConfigSetup(options);
+	const verification = await runAuthVerification(options, apiKeysConfigured);
 	const smoke = runPostApplySmokeTest(apiKeysConfigured);
 	if (!smoke.passed && selectedProfileId && profileDiff.length > 0) {
 		console.log(
@@ -720,6 +967,7 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 		if (!options.dryRun) saveConfig(rolledBack);
 	}
 	installServiceIfRequested(options, initialReport, apiKeysConfigured);
+	const recordVerification = await runRecordToTranscriptVerification(options);
 
 	const finalReport = runSetupChecks();
 	writeSetupReport({
@@ -732,6 +980,8 @@ async function runInteractiveSetup(options: SetupOptions): Promise<void> {
 			confidence: selectedProfileConfidence,
 			diff: profileDiff,
 		},
+		verification,
+		recordVerification,
 		smokeTest: smoke,
 		initialReady: initialReport.ready,
 		finalReady: finalReport.ready,
@@ -757,6 +1007,10 @@ export const setupCommand = new Command("setup")
 		"Run setup without prompts (automation-friendly)",
 	)
 	.option("--advanced", "Enable advanced setup questions")
+	.option(
+		"--verify",
+		"Run an opt-in record-to-transcript verification after provider auth checks",
+	)
 	.action(async (options: SetupOptions) => {
 		try {
 			if (options.check || options.json) {
