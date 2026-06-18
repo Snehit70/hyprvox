@@ -32,6 +32,11 @@ const electronAPI = {
 		ipcRenderer.on("connection-status", handler);
 		return () => ipcRenderer.removeListener("connection-status", handler);
 	},
+	onReconnectExhausted: (callback: () => void): (() => void) => {
+		const handler = (): void => callback();
+		ipcRenderer.on("reconnect-exhausted", handler);
+		return () => ipcRenderer.removeListener("reconnect-exhausted", handler);
+	},
 	onAudioLevel: (
 		callback: (audioLevel: AudioLevelMessage) => void,
 	): (() => void) => {

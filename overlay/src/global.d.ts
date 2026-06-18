@@ -11,6 +11,7 @@ export interface ElectronAPI {
 	onConnectionStatus: (
 		callback: (status: ConnectionStatus) => void,
 	) => () => void;
+	onReconnectExhausted: (callback: () => void) => () => void;
 	onAudioLevel: (
 		callback: (audioLevel: AudioLevelMessage) => void,
 	) => () => void;

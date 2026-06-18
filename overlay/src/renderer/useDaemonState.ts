@@ -23,6 +23,8 @@ interface UseDaemonStateResult {
 	audioLevel: AudioLevelMessage | null;
 }
 
+const ERROR_HIDE_DELAY_MS = 3000;
+
 function mapDaemonToOverlay(
 	daemonStatus: DaemonStatus,
 	connectionStatus: ConnectionStatus,
@@ -55,8 +57,11 @@ export function useDaemonState(): UseDaemonStateResult {
 	const [connectionStatus, setConnectionStatus] =
 		useState<ConnectionStatus>("disconnected");
 	const [showSuccess, setShowSuccess] = useState(false);
+	const [hideError, setHideError] = useState(false);
+	const [reconnectExhausted, setReconnectExhausted] = useState(false);
 	const [audioLevel, setAudioLevel] = useState<AudioLevelMessage | null>(null);
 	const prevStatusRef = useRef<DaemonStatus>("idle");
+	const errorTimeoutRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		const api = window.electronAPI;
@@ -64,11 +69,26 @@ export function useDaemonState(): UseDaemonStateResult {
 			return;
 		}
 
-		const unsubState = api.onDaemonState((state: DaemonState) => {
+		const handleDaemonState = (state: DaemonState): void => {
 			const wasProcessing = prevStatusRef.current === "processing";
 			prevStatusRef.current = state.status;
 
 			setDaemonState(state);
+
+			if (errorTimeoutRef.current !== null) {
+				window.clearTimeout(errorTimeoutRef.current);
+				errorTimeoutRef.current = null;
+			}
+
+			if (state.status === "error") {
+				setHideError(false);
+				errorTimeoutRef.current = window.setTimeout(() => {
+					setHideError(true);
+					errorTimeoutRef.current = null;
+				}, ERROR_HIDE_DELAY_MS);
+			} else {
+				setHideError(false);
+			}
 
 			if (state.status !== "recording") {
 				setAudioLevel(null);
@@ -78,13 +98,22 @@ export function useDaemonState(): UseDaemonStateResult {
 				setShowSuccess(true);
 				setTimeout(() => setShowSuccess(false), 1500);
 			}
-		});
+		};
+
+		const unsubState = api.onDaemonState(handleDaemonState);
 
 		const unsubConnection = api.onConnectionStatus(
 			(status: ConnectionStatus) => {
+				if (status !== "disconnected") {
+					setReconnectExhausted(false);
+				}
 				setConnectionStatus(status);
 			},
 		);
+
+		const unsubReconnectExhausted = api.onReconnectExhausted(() => {
+			setReconnectExhausted(true);
+		});
 
 		const unsubAudioLevel = api.onAudioLevel(
 			(nextAudioLevel: AudioLevelMessage) => {
@@ -92,12 +121,16 @@ export function useDaemonState(): UseDaemonStateResult {
 			},
 		);
 
-		void api.getDaemonState().then(setDaemonState);
+		void api.getDaemonState().then(handleDaemonState);
 		void api.getConnectionStatus().then(setConnectionStatus);
 
 		return () => {
+			if (errorTimeoutRef.current !== null) {
+				window.clearTimeout(errorTimeoutRef.current);
+			}
 			unsubState();
 			unsubConnection();
+			unsubReconnectExhausted();
 			unsubAudioLevel();
 		};
 	}, []);
@@ -106,8 +139,20 @@ export function useDaemonState(): UseDaemonStateResult {
 		if (showSuccess) {
 			return "success";
 		}
+		if (reconnectExhausted) {
+			return "hidden";
+		}
+		if (hideError && daemonState.status === "error") {
+			return "hidden";
+		}
 		return mapDaemonToOverlay(daemonState.status, connectionStatus);
-	}, [daemonState.status, connectionStatus, showSuccess]);
+	}, [
+		daemonState.status,
+		connectionStatus,
+		showSuccess,
+		reconnectExhausted,
+		hideError,
+	]);
 
 	return {
 		overlayState: getOverlayState(),
