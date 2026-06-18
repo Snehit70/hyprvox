@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { Command } from "commander";
 import readlineSync from "readline-sync";
 import * as colors from "yoctocolors";
+import { isValidDeepgramApiKey } from "../config/api-keys";
 import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
 import { saveConfig } from "../config/writer";
 
@@ -270,9 +271,7 @@ configCommand
 					hideEchoBack: true,
 					mask: "*",
 					validate: (input: string) =>
-						(/^[a-fA-F0-9-]+$/.test(input) &&
-							input.length >= 32 &&
-							input.length <= 40) ||
+						isValidDeepgramApiKey(input) ||
 						colors.red(
 							"Invalid format: Deepgram API key must be a valid UUID or 40-char hex string",
 						),

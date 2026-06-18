@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DeepgramApiKeySchema } from "./api-keys";
 
 /**
  * Custom validator for boost words count.
@@ -223,25 +224,7 @@ export const ApiKeysSchema = z.object({
 		})
 		.min(10, { message: "Fallback Groq API key is too short" })
 		.optional(),
-	deepgram: z
-		.string()
-		.min(32, { message: "Deepgram API key is too short" })
-		.max(40, { message: "Deepgram API key is too long" })
-		.refine(
-			(val) => {
-				// Allow 40-character hex string OR standard UUID format
-				const is40CharHex = /^[a-fA-F0-9]{40}$/.test(val);
-				const isUUID =
-					/^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$/.test(
-						val,
-					);
-				return is40CharHex || isUUID;
-			},
-			{
-				message:
-					"Deepgram API key must be a 40-character hex string or a valid UUID format",
-			},
-		),
+	deepgram: DeepgramApiKeySchema,
 });
 
 export const ApiKeysFileSchema = ApiKeysSchema.partial().refine(

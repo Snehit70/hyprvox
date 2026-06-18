@@ -2,7 +2,12 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+	hasConfiguredTranscriptionApiKeys,
+	isValidDeepgramApiKey,
+} from "../src/config/api-keys";
 import { loadConfig } from "../src/config/loader";
+import { ConfigFileSchema } from "../src/config/schema";
 
 const TEST_DIR = join(
 	tmpdir(),
@@ -141,6 +146,41 @@ describe("Config Loader", () => {
 		expect(() => loadConfig(CONFIG_FILE)).toThrow(
 			"Deepgram API key is too long",
 		);
+	});
+
+	test("shared Deepgram key helper matches config schema", () => {
+		const validKeys = [
+			"4b5c1234-5678-90ab-cdef-1234567890ab",
+			"abcdefabcdefabcdefabcdefabcdefabcdefabcd",
+		];
+		const invalidKeys = [
+			"12345678901234567890123456789012",
+			"not-a-valid-deepgram-key",
+		];
+
+		for (const deepgram of validKeys) {
+			const config = {
+				apiKeys: {
+					groq: "gsk_1234567890",
+					deepgram,
+				},
+			};
+			expect(isValidDeepgramApiKey(deepgram)).toBe(true);
+			expect(ConfigFileSchema.safeParse(config).success).toBe(true);
+			expect(hasConfiguredTranscriptionApiKeys(config)).toBe(true);
+		}
+
+		for (const deepgram of invalidKeys) {
+			const config = {
+				apiKeys: {
+					groq: "gsk_1234567890",
+					deepgram,
+				},
+			};
+			expect(isValidDeepgramApiKey(deepgram)).toBe(false);
+			expect(ConfigFileSchema.safeParse(config).success).toBe(false);
+			expect(hasConfiguredTranscriptionApiKeys(config)).toBe(false);
+		}
 	});
 
 	test("should validate valid boost words", () => {
