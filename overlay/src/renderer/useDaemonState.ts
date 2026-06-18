@@ -58,6 +58,7 @@ export function useDaemonState(): UseDaemonStateResult {
 		useState<ConnectionStatus>("disconnected");
 	const [showSuccess, setShowSuccess] = useState(false);
 	const [hideError, setHideError] = useState(false);
+	const [reconnectExhausted, setReconnectExhausted] = useState(false);
 	const [audioLevel, setAudioLevel] = useState<AudioLevelMessage | null>(null);
 	const prevStatusRef = useRef<DaemonStatus>("idle");
 	const errorTimeoutRef = useRef<number | null>(null);
@@ -68,7 +69,7 @@ export function useDaemonState(): UseDaemonStateResult {
 			return;
 		}
 
-		const unsubState = api.onDaemonState((state: DaemonState) => {
+		const handleDaemonState = (state: DaemonState): void => {
 			const wasProcessing = prevStatusRef.current === "processing";
 			prevStatusRef.current = state.status;
 
@@ -97,13 +98,22 @@ export function useDaemonState(): UseDaemonStateResult {
 				setShowSuccess(true);
 				setTimeout(() => setShowSuccess(false), 1500);
 			}
-		});
+		};
+
+		const unsubState = api.onDaemonState(handleDaemonState);
 
 		const unsubConnection = api.onConnectionStatus(
 			(status: ConnectionStatus) => {
+				if (status !== "disconnected") {
+					setReconnectExhausted(false);
+				}
 				setConnectionStatus(status);
 			},
 		);
+
+		const unsubReconnectExhausted = api.onReconnectExhausted(() => {
+			setReconnectExhausted(true);
+		});
 
 		const unsubAudioLevel = api.onAudioLevel(
 			(nextAudioLevel: AudioLevelMessage) => {
@@ -111,7 +121,7 @@ export function useDaemonState(): UseDaemonStateResult {
 			},
 		);
 
-		void api.getDaemonState().then(setDaemonState);
+		void api.getDaemonState().then(handleDaemonState);
 		void api.getConnectionStatus().then(setConnectionStatus);
 
 		return () => {
@@ -120,6 +130,7 @@ export function useDaemonState(): UseDaemonStateResult {
 			}
 			unsubState();
 			unsubConnection();
+			unsubReconnectExhausted();
 			unsubAudioLevel();
 		};
 	}, []);
@@ -128,11 +139,20 @@ export function useDaemonState(): UseDaemonStateResult {
 		if (showSuccess) {
 			return "success";
 		}
+		if (reconnectExhausted) {
+			return "hidden";
+		}
 		if (hideError && daemonState.status === "error") {
 			return "hidden";
 		}
 		return mapDaemonToOverlay(daemonState.status, connectionStatus);
-	}, [daemonState.status, connectionStatus, showSuccess, hideError]);
+	}, [
+		daemonState.status,
+		connectionStatus,
+		showSuccess,
+		reconnectExhausted,
+		hideError,
+	]);
 
 	return {
 		overlayState: getOverlayState(),

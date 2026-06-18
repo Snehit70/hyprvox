@@ -193,6 +193,9 @@ function setupIPCClient(): void {
 
 	ipcClient.on("maxReconnectAttemptsReached", () => {
 		console.log("Max reconnect attempts reached, daemon unavailable");
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			mainWindow.webContents.send("reconnect-exhausted");
+		}
 	});
 
 	ipcClient.on("connected", () => {
