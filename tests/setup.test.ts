@@ -9,6 +9,7 @@ import {
 	getInstallCommand,
 } from "../src/setup/environment";
 import { resolveSetupHotkey } from "../src/setup/hotkey";
+import { verifyProviderAuth } from "../src/setup/verification";
 
 function makeEnv(overrides: Partial<EnvironmentInfo> = {}): EnvironmentInfo {
 	return {
@@ -97,6 +98,88 @@ describe("setup config patches", () => {
 		expect(resolveSetupHotkey(config, "built-in")).toBe("Ctrl+Space");
 		expect(resolveSetupHotkey(config, "compositor")).toBe("disabled");
 		expect(resolveSetupHotkey({}, "built-in")).toBe("Right Control");
+	});
+});
+
+describe("setup provider verification", () => {
+	const config = {
+		apiKeys: {
+			groq: "gsk_configured",
+			deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+		},
+	};
+
+	test("passes when both injected provider checks succeed", async () => {
+		const report = await verifyProviderAuth(config, {
+			groq: async () => {},
+			deepgram: async () => {},
+		});
+
+		expect(report.hasBlockingFailure).toBe(false);
+		expect(report.offline).toBe(false);
+		expect(report.results).toEqual([
+			expect.objectContaining({ provider: "groq", status: "pass" }),
+			expect.objectContaining({ provider: "deepgram", status: "pass" }),
+		]);
+	});
+
+	test("marks invalid authentication as a blocking failure", async () => {
+		const report = await verifyProviderAuth(config, {
+			groq: async () => {
+				throw Object.assign(new Error("401 unauthorized"), { status: 401 });
+			},
+			deepgram: async () => {},
+		});
+
+		expect(report.hasBlockingFailure).toBe(true);
+		expect(report.results).toContainEqual(
+			expect.objectContaining({
+				provider: "groq",
+				status: "fail",
+				blocking: true,
+			}),
+		);
+	});
+
+	test("warns and continues on offline/network failures", async () => {
+		const report = await verifyProviderAuth(config, {
+			groq: async () => {},
+			deepgram: async () => {
+				throw Object.assign(new Error("fetch failed"), { code: "ENOTFOUND" });
+			},
+		});
+
+		expect(report.hasBlockingFailure).toBe(false);
+		expect(report.offline).toBe(true);
+		expect(report.results).toContainEqual(
+			expect.objectContaining({
+				provider: "deepgram",
+				status: "warn",
+				blocking: false,
+			}),
+		);
+	});
+
+	test("skips missing keys without calling provider transport", async () => {
+		let called = false;
+		const report = await verifyProviderAuth(
+			{},
+			{
+				groq: async () => {
+					called = true;
+				},
+				deepgram: async () => {
+					called = true;
+				},
+			},
+		);
+
+		expect(called).toBe(false);
+		expect(report.hasBlockingFailure).toBe(false);
+		expect(report.results).toEqual([
+			expect.objectContaining({ provider: "groq", status: "skip" }),
+			expect.objectContaining({ provider: "deepgram", status: "skip" }),
+		]);
 	});
 });
 
