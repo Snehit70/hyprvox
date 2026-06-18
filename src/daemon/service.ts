@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { convertAudio } from "../audio/converter";
 import {
+	assertAudioBackendAvailable,
 	type AudioLevelPayload,
 	AudioRecorder,
 	type PcmAudioPayload,
@@ -401,6 +402,7 @@ export class DaemonService {
 
 	public async start() {
 		try {
+			assertAudioBackendAvailable();
 			await writeFile(this.pidFile, process.pid.toString());
 			await this.ipcServer.start();
 			this.updateState();
