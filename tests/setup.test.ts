@@ -8,6 +8,7 @@ import {
 	type EnvironmentInfo,
 	getInstallCommand,
 } from "../src/setup/environment";
+import { resolveSetupHotkey } from "../src/setup/hotkey";
 
 function makeEnv(overrides: Partial<EnvironmentInfo> = {}): EnvironmentInfo {
 	return {
@@ -88,6 +89,14 @@ describe("setup config patches", () => {
 
 		expect(nextConfig.apiKeys).toEqual({ groq: "gsk_existing" });
 		expect(ConfigFileSchema.safeParse(nextConfig).success).toBe(true);
+	});
+
+	test("resolves hotkey from one setup decision without silent override", () => {
+		const config = { behavior: { hotkey: "Ctrl+Space" } };
+
+		expect(resolveSetupHotkey(config, "built-in")).toBe("Ctrl+Space");
+		expect(resolveSetupHotkey(config, "compositor")).toBe("disabled");
+		expect(resolveSetupHotkey({}, "built-in")).toBe("Right Control");
 	});
 });
 
