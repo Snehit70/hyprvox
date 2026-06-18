@@ -76,6 +76,7 @@ export interface StatsSummary {
 	quality: {
 		window24h: Record<QualityReason, number>;
 		total24h: number;
+		baseline24hAverage: number | null;
 		spike: boolean;
 	};
 	pipeline: {
@@ -565,6 +566,17 @@ export function buildStatsSummaryFromInput(
 		(sum, count) => sum + count,
 		0,
 	);
+	const prior6dEvents = eventsInWindow(
+		baseline7d,
+		nowMs - 24 * 3600_000,
+		6 * 24 * 3600_000,
+	);
+	const prior6dQualityTotal = prior6dEvents.reduce(
+		(sum, event) => sum + event.validationReasons.length,
+		0,
+	);
+	const qualityBaseline24hAverage =
+		prior6dEvents.length > 0 ? prior6dQualityTotal / 6 : null;
 
 	const mergeStrategies24h: Record<string, number> = {};
 	const fallbacks24h: Record<"none" | "groq" | "deepgram", number> = {
@@ -676,6 +688,7 @@ export function buildStatsSummaryFromInput(
 		quality: {
 			window24h: qualityWindow24h,
 			total24h: qualityTotal24h,
+			baseline24hAverage: qualityBaseline24hAverage,
 			spike,
 		},
 		pipeline: {

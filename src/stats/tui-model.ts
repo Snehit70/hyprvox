@@ -9,6 +9,11 @@ export type Anomaly = {
 	severity: "warn" | "bad";
 	message: string;
 };
+export type TrendDelta = {
+	arrow: string;
+	delta: string;
+	text: string;
+};
 
 export function ms(value: number | null): string {
 	return value === null ? "n/a" : `${Math.round(value)}ms`;
@@ -231,6 +236,26 @@ export function deltaPercent(current: number | null, baseline: number | null): s
 
 export function confidenceFromSample(sampleSize: number, minSampleSize: number): "high" | "low" {
 	return sampleSize >= minSampleSize ? "high" : "low";
+}
+
+export function latencyTrendDelta(summary: StatsSummary): TrendDelta {
+	const current = percentile(summary.trends.processingMs.window24h, 95);
+	const baseline = percentile(summary.trends.processingMs.window7d, 95);
+	const arrow = trendArrow(current, baseline);
+	const delta = deltaPercent(current, baseline);
+	return { arrow, delta, text: `${arrow} ${delta}` };
+}
+
+export function qualityTrendDelta(summary: StatsSummary): TrendDelta {
+	const current = summary.quality.total24h;
+	const baseline = summary.quality.baseline24hAverage;
+	const arrow = trendArrow(current, baseline);
+	const delta = deltaPercent(current, baseline);
+	return { arrow, delta, text: `${arrow} ${delta}` };
+}
+
+export function errorThresholdDelta(summary: StatsSummary): string {
+	return `threshold ${summary.thresholds.errorWarnCount24h}/${summary.thresholds.errorBadCount24h}`;
 }
 
 export function runtimeActionHint(summary: StatsSummary, anomalies: Anomaly[]): string {
