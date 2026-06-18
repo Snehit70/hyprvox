@@ -459,9 +459,7 @@ export function StatsDashboardView({
 							{degradedMode ? null : (
 								<Section title="Cache Health" height={8}>
 									<text fg={colors.text}>source {summary.cache.source}</text>
-									<text fg={colors.text}>
-										hit-rate {(summary.cache.hitRate * 100).toFixed(0)}%
-									</text>
+									<text fg={freshnessColor}>freshness {freshness}</text>
 									<text fg={colors.text}>
 										event lag {ms(summary.cache.eventLagMs)}
 									</text>
