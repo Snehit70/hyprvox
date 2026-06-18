@@ -21,8 +21,30 @@ export interface PcmAudioPayload {
 	bitsPerSample: 16;
 }
 
+type RecordingFactory = typeof record;
+
+export interface AudioRecorderOptions {
+	createRecording?: RecordingFactory;
+	loadConfigFn?: typeof loadConfig;
+}
+
+export function assertAudioBackendAvailable(
+	check: () => void = () => execSync("arecord --version", { stdio: "ignore" }),
+): void {
+	try {
+		check();
+	} catch (_e) {
+		throw new AppError(
+			"AUDIO_BACKEND_MISSING",
+			"Audio recording backend 'arecord' is not installed or not in PATH.",
+		);
+	}
+}
+
 export class AudioRecorder extends EventEmitter {
 	private recording: Recording | null = null;
+	private readonly createRecording: RecordingFactory;
+	private readonly loadConfigFn: typeof loadConfig;
 	private chunks: Buffer[] = [];
 	private startTime: number = 0;
 	private timer: ReturnType<typeof setTimeout> | null = null;
@@ -33,14 +55,16 @@ export class AudioRecorder extends EventEmitter {
 	private isStopping: boolean = false;
 	private pcmExtractor = new PcmStreamExtractor();
 
-	constructor() {
+	constructor(options: AudioRecorderOptions = {}) {
 		super();
+		this.createRecording = options.createRecording ?? record;
+		this.loadConfigFn = options.loadConfigFn ?? loadConfig;
 		this.loadSettings();
 	}
 
 	private loadSettings() {
 		try {
-			const config = loadConfig();
+			const config = this.loadConfigFn();
 			this.minDuration = (config.behavior.clipboard.minDuration || 0.6) * 1000;
 			this.maxDuration = (config.behavior.clipboard.maxDuration || 600) * 1000;
 		} catch (e) {
@@ -66,22 +90,14 @@ export class AudioRecorder extends EventEmitter {
 		this.pcmExtractor.reset();
 		this.startTime = Date.now();
 
-		const config = loadConfig();
-
-		try {
-			execSync("arecord --version", { stdio: "ignore" });
-		} catch (_e) {
-			throw new AppError(
-				"AUDIO_BACKEND_MISSING",
-				"Audio recording backend 'arecord' is not installed or not in PATH.",
-			);
-		}
+		const config = this.loadConfigFn();
+		let startEmitted = false;
 
 		await withRetry(
 			async () => {
 				return new Promise<void>((resolve, reject) => {
 					try {
-						this.recording = record({
+						this.recording = this.createRecording({
 							sampleRate: 16000,
 							channels: 1,
 							audioType: "wav",
@@ -98,6 +114,16 @@ export class AudioRecorder extends EventEmitter {
 
 						const stream = this.recording.stream();
 						let streamStarted = false;
+
+						if (!startEmitted) {
+							this.setupTimers();
+							logger.info(
+								{ device: config.behavior.audioDevice },
+								"Recording started",
+							);
+							this.emit("start");
+							startEmitted = true;
+						}
 
 						stream.on("data", (chunk: Buffer | string) => {
 							if (!streamStarted) {
@@ -193,10 +219,6 @@ export class AudioRecorder extends EventEmitter {
 				shouldRetry: (err) => hasErrorCode(err, "DEVICE_BUSY"),
 			},
 		);
-
-		this.setupTimers();
-		logger.info({ device: config.behavior.audioDevice }, "Recording started");
-		this.emit("start");
 	}
 
 	private setupTimers() {
@@ -290,6 +312,7 @@ export class AudioRecorder extends EventEmitter {
 	}
 
 	private async cleanupRecording(): Promise<void> {
+		this.cleanupTimers();
 		if (this.recording) {
 			try {
 				// Wait for the process to actually exit before continuing
