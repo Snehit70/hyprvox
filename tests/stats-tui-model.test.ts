@@ -105,7 +105,6 @@ const baseSummary: StatsSummary = {
 	cache: {
 		source: "aggregate",
 		lastRebuildAt: "2026-05-25T10:00:00.000Z",
-		hitRate: 0.95,
 		eventLagMs: 1200,
 	},
 	trends: {

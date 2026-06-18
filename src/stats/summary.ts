@@ -101,7 +101,6 @@ export interface StatsSummary {
 	cache: {
 		source: "aggregate" | "logs";
 		lastRebuildAt: string;
-		hitRate: number;
 		eventLagMs: number;
 	};
 	trends: {
@@ -130,7 +129,6 @@ export interface StatsSummaryInput {
 	cacheMeta?: {
 		source: "aggregate" | "logs";
 		lastRebuildAt: string;
-		hitRate: number;
 	};
 	now?: Date;
 }
@@ -270,7 +268,6 @@ async function loadPerfEventsHybrid(
 	events: PerfEvent[];
 	source: "aggregate" | "logs";
 	lastRebuildAt: string;
-	hitRate: number;
 }> {
 	const now = Date.now();
 	if (!forceRefresh && perfEventCache && perfEventCache.expiresAt > now) {
@@ -278,7 +275,6 @@ async function loadPerfEventsHybrid(
 			events: perfEventCache.events,
 			source: perfEventCache.source,
 			lastRebuildAt: perfEventCache.lastRebuildAt,
-			hitRate: 1,
 		};
 	}
 
@@ -295,7 +291,6 @@ async function loadPerfEventsHybrid(
 			events,
 			source: "aggregate",
 			lastRebuildAt: perfEventCache.lastRebuildAt,
-			hitRate: 0.95,
 		};
 	}
 
@@ -310,7 +305,6 @@ async function loadPerfEventsHybrid(
 		events,
 		source: "logs",
 		lastRebuildAt: perfEventCache.lastRebuildAt,
-		hitRate: 0.3,
 	};
 }
 
@@ -515,7 +509,6 @@ export async function buildStatsSummaryWithOptions(
 		cacheMeta: {
 			source: perfBundle.source,
 			lastRebuildAt: perfBundle.lastRebuildAt,
-			hitRate: perfBundle.hitRate,
 		},
 	});
 }
@@ -701,7 +694,6 @@ export function buildStatsSummaryFromInput(
 			cache: {
 				source: input.cacheMeta?.source ?? "logs",
 				lastRebuildAt: input.cacheMeta?.lastRebuildAt ?? now.toISOString(),
-				hitRate: input.cacheMeta?.hitRate ?? 0,
 				eventLagMs: Math.max(
 					0,
 					nowMs -

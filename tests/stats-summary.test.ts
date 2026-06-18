@@ -86,6 +86,7 @@ describe("stats summary", () => {
 		expect(summary.pipeline.validationRetries24h).toBe(1);
 		expect(summary.regression.window24hCount).toBe(1);
 		expect(summary.cache.source).toBe("logs");
+		expect(summary.cache).not.toHaveProperty("hitRate");
 	});
 
 	test("uses 24h-scoped errors, baseline-aware latency regression, and newest-event lag", () => {
@@ -132,7 +133,6 @@ describe("stats summary", () => {
 			cacheMeta: {
 				source: "aggregate",
 				lastRebuildAt: "2026-05-23T11:59:00.000Z",
-				hitRate: 0.95,
 			},
 		});
 
