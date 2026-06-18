@@ -7,13 +7,15 @@ import {
 	confidenceFromSample,
 	confidenceLabel,
 	daemonState,
-	deltaPercent,
 	detectAnomalies,
+	errorThresholdDelta,
 	errorState,
+	latencyTrendDelta,
 	latencyState,
 	ms,
 	overallHealth,
 	percentile,
+	qualityTrendDelta,
 	qualityState,
 	recentLatencySparkline,
 	runtimeActionHint,
@@ -195,23 +197,10 @@ export function StatsDashboardView({
 	const windowSpark = sparkline(windowValues, 36);
 	const recentLatencySpark = recentLatencySparkline(summary, 24);
 	const latency24h = percentile(summary.trends.processingMs.window24h, 95);
-	const latency7d = percentile(summary.trends.processingMs.window7d, 95);
-	const latencyTrend = trendArrow(latency24h, latency7d);
-	const latencyDelta = deltaPercent(latency24h, latency7d);
+	const latencyTrend = latencyTrendDelta(summary);
 	const error24h = summary.errors.count;
-	const baselineErrors24h = Math.max(
-		1,
-		Math.round((summary.regression.baseline7dCount / 7) * 0.03),
-	);
-	const errorTrend = trendArrow(error24h, baselineErrors24h);
-	const errorDelta = deltaPercent(error24h, baselineErrors24h);
 	const quality24h = summary.quality.total24h;
-	const baselineQuality24h = Math.max(
-		1,
-		Math.round((summary.regression.baseline7dCount / 7) * 0.01),
-	);
-	const qualityTrend = trendArrow(quality24h, baselineQuality24h);
-	const qualityDelta = deltaPercent(quality24h, baselineQuality24h);
+	const qualityTrend = qualityTrendDelta(summary);
 	const throughputPerHour = summary.regression.window1hCount;
 	const throughputBaselinePerHour = Math.max(
 		1,
@@ -238,7 +227,7 @@ export function StatsDashboardView({
 		{
 			label: "latency 24h p95",
 			value: ms(latency24h),
-			delta: `${latencyTrend} ${latencyDelta}`,
+			delta: latencyTrend.text,
 			confidence: confidenceFromSample(
 				summary.trends.processingMs.window24h.length,
 				minSampleSize,
@@ -250,7 +239,7 @@ export function StatsDashboardView({
 		{
 			label: "errors 24h",
 			value: String(error24h),
-			delta: `${errorTrend} ${errorDelta}`,
+			delta: errorThresholdDelta(summary),
 			confidence: confidenceFromSample(
 				summary.regression.window24hCount,
 				minSampleSize,
@@ -261,7 +250,7 @@ export function StatsDashboardView({
 		{
 			label: "quality 24h",
 			value: String(quality24h),
-			delta: `${qualityTrend} ${qualityDelta}`,
+			delta: qualityTrend.text,
 			confidence: confidenceFromSample(
 				summary.regression.window24hCount,
 				minSampleSize,

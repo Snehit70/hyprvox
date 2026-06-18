@@ -6,13 +6,16 @@ import {
 	daemonState,
 	detectAnomalies,
 	deltaPercent,
+	errorThresholdDelta,
 	errorState,
+	latencyTrendDelta,
 	latencyState,
 	ms,
 	nextFilter,
 	nextTab,
 	overallHealth,
 	prevTab,
+	qualityTrendDelta,
 	qualityState,
 	recentLatencySparkline,
 	runtimeActionHint,
@@ -80,6 +83,7 @@ const baseSummary: StatsSummary = {
 			garbage: 0,
 		},
 		total24h: 1,
+		baseline24hAverage: 0.5,
 		spike: false,
 	},
 	pipeline: {
@@ -215,6 +219,66 @@ describe("stats tui model helpers", () => {
 		expect(trendArrow(104, 100)).toBe("~");
 		expect(deltaPercent(120, 100)).toBe("+20%");
 		expect(deltaPercent(80, 100)).toBe("-20%");
+	});
+
+	it("compares latency trend from 24h p95 against 7d p95", () => {
+		const summary: StatsSummary = {
+			...baseSummary,
+			trends: {
+				processingMs: {
+					...baseSummary.trends.processingMs,
+					window24h: [1000, 2000, 4500],
+					window7d: [1000, 2000, 3000],
+				},
+			},
+		};
+
+		expect(latencyTrendDelta(summary)).toEqual({
+			arrow: "↑",
+			delta: "+50%",
+			text: "↑ +50%",
+		});
+	});
+
+	it("compares quality trend against real recent quality baseline", () => {
+		const summary: StatsSummary = {
+			...baseSummary,
+			quality: {
+				...baseSummary.quality,
+				total24h: 4,
+				baseline24hAverage: 2,
+			},
+		};
+
+		expect(qualityTrendDelta(summary)).toEqual({
+			arrow: "↑",
+			delta: "+100%",
+			text: "↑ +100%",
+		});
+	});
+
+	it("shows unknown quality trend when no real baseline exists", () => {
+		const summary: StatsSummary = {
+			...baseSummary,
+			quality: {
+				...baseSummary.quality,
+				total24h: 4,
+				baseline24hAverage: null,
+			},
+		};
+
+		expect(qualityTrendDelta(summary)).toEqual({
+			arrow: "~",
+			delta: "n/a",
+			text: "~ n/a",
+		});
+	});
+
+	it("formats errors as absolute count against threshold without a trend", () => {
+		const delta = errorThresholdDelta(baseSummary);
+
+		expect(delta).toBe("threshold 5/20");
+		expect(delta).not.toMatch(/[↑↓+%]/u);
 	});
 
 	it("provides runtime action hint from anomaly priority", () => {

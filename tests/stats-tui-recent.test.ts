@@ -47,6 +47,7 @@ const summary: StatsSummary = {
 			garbage: 0,
 		},
 		total24h: 1,
+		baseline24hAverage: 0.5,
 		spike: false,
 	},
 	pipeline: {

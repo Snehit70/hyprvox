@@ -80,6 +80,7 @@ describe("stats summary", () => {
 		expect(summary.errors.recent).toEqual([]);
 		expect(summary.health.overall).toBe("PASS");
 		expect(summary.quality.total24h).toBe(1);
+		expect(summary.quality.baseline24hAverage).toBeNull();
 		expect(summary.quality.window24h.token_injection).toBe(1);
 		expect(summary.pipeline.mergeStrategies24h.llm).toBe(1);
 		expect(summary.pipeline.modelRank24h["llama-3.3-70b-versatile"]).toBe(1);
@@ -137,7 +138,55 @@ describe("stats summary", () => {
 		});
 
 		expect(summary.regression.flags).not.toContain("latency_p95_regressed");
+		expect(summary.quality.baseline24hAverage).toBe(0);
 		expect(summary.cache.eventLagMs).toBe(28 * 60 * 60 * 1000);
+	});
+
+	test("computes quality trend baseline from prior six days of perf events", () => {
+		const summary = buildStatsSummaryFromInput({
+			stats: { today: 2, total: 10 },
+			history,
+			daemon: { running: true, status: "idle", pid: 123 },
+			errors: { count: 0, latest: null, recent: [] },
+			paths: {
+				config: "/config.json",
+				history: "/history.json",
+				logs: "/logs",
+			},
+			now: new Date("2026-05-23T12:00:00.000Z"),
+			perfEvents: [
+				{
+					timestamp: "2026-05-23T11:30:00.000Z",
+					processingMs: 1400,
+					mergeStrategy: "exact_match",
+					mergeReason: "sources_match",
+					validationReasons: ["token_injection", "mixed_script"],
+					validationRetryCount: 0,
+					validationFallbackSource: "none",
+				},
+				{
+					timestamp: "2026-05-22T11:30:00.000Z",
+					processingMs: 1500,
+					mergeStrategy: "llm",
+					mergeReason: "llm_succeeded",
+					validationReasons: ["prompt_artifact"],
+					validationRetryCount: 0,
+					validationFallbackSource: "none",
+				},
+				{
+					timestamp: "2026-05-21T11:30:00.000Z",
+					processingMs: 1600,
+					mergeStrategy: "llm",
+					mergeReason: "llm_succeeded",
+					validationReasons: ["cot_meta", "garbage"],
+					validationRetryCount: 0,
+					validationFallbackSource: "none",
+				},
+			],
+		});
+
+		expect(summary.quality.total24h).toBe(2);
+		expect(summary.quality.baseline24hAverage).toBe(0.5);
 	});
 
 	test("uses 24h perf latency for health inputs while retaining lifetime p95", () => {
