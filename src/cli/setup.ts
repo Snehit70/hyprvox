@@ -10,7 +10,11 @@ import {
 	hasConfiguredTranscriptionApiKeys,
 	isValidDeepgramApiKey,
 } from "../config/api-keys";
-import { DEFAULT_CONFIG_FILE, loadConfig } from "../config/loader";
+import {
+	DEFAULT_CONFIG_DIR,
+	DEFAULT_CONFIG_FILE,
+	loadConfig,
+} from "../config/loader";
 import type { ConfigFile } from "../config/schema";
 import { saveConfig } from "../config/writer";
 import {
@@ -277,14 +281,8 @@ const SETUP_REPORT_FILE = join(
 	"vox",
 	"setup-report.json",
 );
-const DAEMON_PID_FILE = join(homedir(), ".config", "hypr", "vox", "daemon.pid");
-const DAEMON_STATE_FILE = join(
-	homedir(),
-	".config",
-	"hypr",
-	"vox",
-	"daemon.state",
-);
+const DAEMON_PID_FILE = join(DEFAULT_CONFIG_DIR, "daemon.pid");
+const DAEMON_STATE_FILE = join(DEFAULT_CONFIG_DIR, "daemon.state");
 
 function writeSetupReport(payload: Record<string, unknown>): void {
 	mkdirSync(dirname(SETUP_REPORT_FILE), { recursive: true });
@@ -408,6 +406,31 @@ function getRunningDaemonPid(): number | null {
 	}
 }
 
+function sendDaemonToggleSignal(pid: number): {
+	ok: boolean;
+	reason?: string;
+	message?: string;
+} {
+	try {
+		process.kill(pid, "SIGUSR1");
+		return { ok: true };
+	} catch (error) {
+		const err = error as NodeJS.ErrnoException;
+		if (err.code === "ESRCH") {
+			return {
+				ok: false,
+				reason: "daemon_terminated",
+				message: "Daemon exited before verification could signal it.",
+			};
+		}
+		return {
+			ok: false,
+			reason: "daemon_signal_failed",
+			message: `Failed to signal daemon: ${err.message}`,
+		};
+	}
+}
+
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -461,7 +484,11 @@ async function runRecordToTranscriptVerification(
 		"Press Enter to start recording, then speak a short phrase.",
 	);
 	const verificationStartedAt = Date.now();
-	process.kill(pid, "SIGUSR1");
+	const startSignal = sendDaemonToggleSignal(pid);
+	if (!startSignal.ok) {
+		console.log(colors.red(startSignal.message ?? "Failed to signal daemon."));
+		return { passed: false, reason: startSignal.reason };
+	}
 	const recording = await waitForDaemonStatus(["recording"], 5000);
 	if (recording?.status !== "recording") {
 		console.log(colors.red("Daemon did not enter recording state."));
@@ -469,7 +496,11 @@ async function runRecordToTranscriptVerification(
 	}
 
 	readlineSync.question("Recording... press Enter to stop and transcribe.");
-	process.kill(pid, "SIGUSR1");
+	const stopSignal = sendDaemonToggleSignal(pid);
+	if (!stopSignal.ok) {
+		console.log(colors.red(stopSignal.message ?? "Failed to signal daemon."));
+		return { passed: false, reason: stopSignal.reason };
+	}
 	const completed = await waitForDaemonStatus(["idle", "error"], 90000);
 	if (!completed) {
 		console.log(colors.red("Timed out waiting for transcription result."));
