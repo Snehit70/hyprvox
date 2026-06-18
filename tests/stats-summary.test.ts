@@ -67,8 +67,10 @@ describe("stats summary", () => {
 		});
 
 		expect(summary.counts).toEqual({ today: 2, total: 10, history: 3 });
-		expect(summary.latency.medianMs).toBe(2000);
-		expect(summary.latency.p95Ms).toBe(5000);
+		expect(summary.latency.medianMs).toBe(1800);
+		expect(summary.latency.p95Ms).toBe(1800);
+		expect(summary.latency.averageMs).toBe(1800);
+		expect(summary.latency.lifetimeP95Ms).toBe(5000);
 		expect(summary.duration.averageSeconds).toBeCloseTo(52.67, 2);
 		expect(summary.duration.shortCount).toBe(1);
 		expect(summary.duration.mediumCount).toBe(1);
@@ -136,5 +138,53 @@ describe("stats summary", () => {
 
 		expect(summary.regression.flags).not.toContain("latency_p95_regressed");
 		expect(summary.cache.eventLagMs).toBe(28 * 60 * 60 * 1000);
+	});
+
+	test("uses 24h perf latency for health inputs while retaining lifetime p95", () => {
+		const summary = buildStatsSummaryFromInput({
+			stats: { today: 2, total: 10 },
+			history: [
+				...history,
+				{
+					timestamp: "2026-05-20T10:00:00.000Z",
+					text: "historical slow item",
+					duration: 8,
+					engine: "groq",
+					processingTime: 9000,
+				},
+			],
+			daemon: { running: true, status: "idle", pid: 123 },
+			errors: { count: 0, latest: null, recent: [] },
+			paths: {
+				config: "/config.json",
+				history: "/history.json",
+				logs: "/logs",
+			},
+			now: new Date("2026-05-23T12:00:00.000Z"),
+			perfEvents: [
+				{
+					timestamp: "2026-05-23T11:30:00.000Z",
+					processingMs: 1400,
+					mergeStrategy: "exact_match",
+					mergeReason: "sources_match",
+					validationReasons: [],
+					validationRetryCount: 0,
+					validationFallbackSource: "none",
+				},
+				{
+					timestamp: "2026-05-22T06:00:00.000Z",
+					processingMs: 8000,
+					mergeStrategy: "llm",
+					mergeReason: "llm_succeeded",
+					validationReasons: [],
+					validationRetryCount: 0,
+					validationFallbackSource: "none",
+				},
+			],
+		});
+
+		expect(summary.latency.p95Ms).toBe(1400);
+		expect(summary.latency.lifetimeP95Ms).toBe(9000);
+		expect(summary.trends.processingMs.window24h).toEqual([1400]);
 	});
 });

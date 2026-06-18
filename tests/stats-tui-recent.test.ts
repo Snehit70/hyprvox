@@ -5,7 +5,7 @@ import type { StatsSummary } from "../src/stats/summary";
 const summary: StatsSummary = {
 	generatedAt: "2026-05-25T10:00:00.000Z",
 	counts: { today: 1, total: 10, history: 2 },
-	latency: { medianMs: 1100, p95Ms: 4200, averageMs: 1800 },
+	latency: { medianMs: 1100, p95Ms: 4200, averageMs: 1800, lifetimeP95Ms: 4200 },
 	duration: { averageSeconds: 12.4, shortCount: 2, mediumCount: 0, longCount: 0 },
 	engines: { "groq+deepgram": 2 },
 	recent: [

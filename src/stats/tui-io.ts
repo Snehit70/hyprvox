@@ -6,7 +6,7 @@ import { loadConfig } from "../config/loader";
 import type { StatsSummary } from "./summary";
 import {
 	ms,
-	overallP0,
+	overallHealth,
 	type StatsTab,
 	type StatsWindowPreset,
 } from "./tui-model";
@@ -33,8 +33,9 @@ export async function exportSnapshot(
 			"# Hyprvox Stats Snapshot",
 			`Generated: ${summary.generatedAt}`,
 			`Scope: ${scope} (${tab})`,
-			`P0: ${overallP0(summary)}`,
-			`Latency p95: ${ms(summary.latency.p95Ms)}`,
+			`Health: ${overallHealth(summary)}`,
+			`Latency 24h p95: ${ms(summary.latency.p95Ms)}`,
+			`Latency lifetime p95: ${ms(summary.latency.lifetimeP95Ms)}`,
 			`Errors: ${summary.errors.count}`,
 			`Quality failures 24h: ${summary.quality.total24h}`,
 			`Regression flags: ${summary.regression.flags.join(", ") || "none"}`,

@@ -36,7 +36,7 @@ export function formatStatsSummary(summary: StatsSummary): string {
 		colors.cyan("============="),
 		"",
 		`${colors.bold("Today")} ${summary.counts.today}  ${colors.bold("Total")} ${summary.counts.total}  ${colors.bold("History")} ${summary.counts.history}`,
-		`${colors.bold("Latency")} median ${formatMs(summary.latency.medianMs)}  p95 ${formatMs(summary.latency.p95Ms)}  avg ${formatMs(summary.latency.averageMs)}`,
+		`${colors.bold("Latency")} 24h median ${formatMs(summary.latency.medianMs)}  24h p95 ${formatMs(summary.latency.p95Ms)}  24h avg ${formatMs(summary.latency.averageMs)}  lifetime p95 ${formatMs(summary.latency.lifetimeP95Ms)}`,
 		`${colors.bold("Duration")} avg ${formatSeconds(summary.duration.averageSeconds)}  short ${summary.duration.shortCount}  medium ${summary.duration.mediumCount}  long ${summary.duration.longCount}`,
 		`${colors.bold("Daemon")} ${summary.daemon.status}${summary.daemon.pid ? ` (${summary.daemon.pid})` : ""}`,
 		`${colors.bold("Errors")} ${summary.errors.count}${summary.errors.latest ? `  latest: ${summary.errors.latest}` : ""}`,

@@ -11,7 +11,7 @@ import {
 	ms,
 	nextFilter,
 	nextTab,
-	overallP0,
+	overallHealth,
 	prevTab,
 	qualityState,
 	recentLatencySparkline,
@@ -25,7 +25,7 @@ import {
 const baseSummary: StatsSummary = {
 	generatedAt: "2026-05-25T10:00:00.000Z",
 	counts: { today: 1, total: 10, history: 4 },
-	latency: { medianMs: 1100, p95Ms: 4200, averageMs: 1800 },
+	latency: { medianMs: 1100, p95Ms: 4200, averageMs: 1800, lifetimeP95Ms: 4200 },
 	duration: { averageSeconds: 12.4, shortCount: 3, mediumCount: 1, longCount: 0 },
 	engines: { "groq+deepgram": 3, groq: 1 },
 	recent: [
@@ -156,8 +156,8 @@ describe("stats tui model helpers", () => {
 		expect(daemonState("stopped")).toBe("BAD");
 	});
 
-	it("computes P0 state from summary", () => {
-		expect(overallP0(baseSummary)).toBe("BAD");
+	it("computes Health state from summary", () => {
+		expect(overallHealth(baseSummary)).toBe("BAD");
 	});
 
 	it("cycles filter order", () => {
