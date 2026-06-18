@@ -36,15 +36,11 @@ const DEFAULT_CONFIG: OverlayConfig = {
 	marginBottom: 80,
 };
 
-const SUCCESS_HIDE_DELAY_MS = 1500;
-const ERROR_HIDE_DELAY_MS = 3000;
 const IPC_CONNECTION_TIMEOUT_MS = 5000;
 
 let mainWindow: BrowserWindow | null = null;
 let ipcClient: IPCClient | null = null;
 let previousStatus: string = "idle";
-let hideTimeout: NodeJS.Timeout | null = null;
-let isWindowVisible = false;
 let ipcConnectionTimeout: NodeJS.Timeout | null = null;
 
 process.on("uncaughtException", (err) => {
@@ -72,6 +68,7 @@ function createOverlayWindow(
 		y,
 		frame: false,
 		transparent: true,
+		show: true,
 		alwaysOnTop: true,
 		resizable: false,
 		skipTaskbar: true,
@@ -89,7 +86,7 @@ function createOverlayWindow(
 
 	window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 	window.setAlwaysOnTop(true, "floating");
-	window.hide();
+	window.setIgnoreMouseEvents(true, { forward: true });
 
 	window.loadFile(path.join(__dirname, "renderer", "index.html"));
 
@@ -154,53 +151,27 @@ function setupIPCClient(): void {
 
 		const currentStatus = state.status;
 
-		if (hideTimeout) {
-			clearTimeout(hideTimeout);
-			hideTimeout = null;
-		}
-
 		switch (currentStatus) {
 			case "idle":
 				if (previousStatus === "processing") {
-					mainWindow.show();
-					isWindowVisible = true;
 					console.log(
-						`[TIMING] Window shown (success), total=${state.timestamp ? Date.now() - state.timestamp : "N/A"}ms`,
+						`[TIMING] Window already mapped (success), total=${state.timestamp ? Date.now() - state.timestamp : "N/A"}ms`,
 					);
-					hideTimeout = setTimeout(() => {
-						if (mainWindow && !mainWindow.isDestroyed()) {
-							mainWindow.hide();
-							isWindowVisible = false;
-						}
-					}, SUCCESS_HIDE_DELAY_MS);
-				} else if (isWindowVisible) {
-					mainWindow.hide();
-					isWindowVisible = false;
 				}
 				break;
 
 			case "error":
-				mainWindow.show();
-				isWindowVisible = true;
 				console.log(
-					`[TIMING] Window shown (error), total=${state.timestamp ? Date.now() - state.timestamp : "N/A"}ms`,
+					`[TIMING] Window already mapped (error), total=${state.timestamp ? Date.now() - state.timestamp : "N/A"}ms`,
 				);
-				hideTimeout = setTimeout(() => {
-					if (mainWindow && !mainWindow.isDestroyed()) {
-						mainWindow.hide();
-						isWindowVisible = false;
-					}
-				}, ERROR_HIDE_DELAY_MS);
 				break;
 
 			case "starting":
 			case "recording":
 			case "processing":
 			case "stopping":
-				mainWindow.show();
-				isWindowVisible = true;
 				console.log(
-					`[TIMING] Window shown (${currentStatus}), total=${state.timestamp ? Date.now() - state.timestamp : "N/A"}ms`,
+					`[TIMING] Window already mapped (${currentStatus}), total=${state.timestamp ? Date.now() - state.timestamp : "N/A"}ms`,
 				);
 				break;
 		}
@@ -222,10 +193,6 @@ function setupIPCClient(): void {
 
 	ipcClient.on("maxReconnectAttemptsReached", () => {
 		console.log("Max reconnect attempts reached, daemon unavailable");
-		if (mainWindow && !mainWindow.isDestroyed() && isWindowVisible) {
-			mainWindow.hide();
-			isWindowVisible = false;
-		}
 	});
 
 	ipcClient.on("connected", () => {
