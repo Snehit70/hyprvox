@@ -1128,12 +1128,13 @@ export class DaemonService {
 						? "groq"
 						: "deepgram";
 			metrics.engine = engineUsed;
+			const recordingDurationSeconds = duration / 1000;
 
 			const historyTimed = await timeAsync(() =>
 				appendHistory({
 					timestamp: new Date().toISOString(),
 					text: finalText,
-					duration,
+					duration: recordingDurationSeconds,
 					engine: engineUsed,
 					processingTime,
 					groqSttModel: metrics.groqSttModel,

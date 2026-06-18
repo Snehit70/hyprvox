@@ -13,14 +13,14 @@ const history: HistoryItem[] = [
 	{
 		timestamp: "2026-05-23T10:01:00.000Z",
 		text: "medium",
-		duration: 30_000,
+		duration: 30,
 		engine: "groq+deepgram",
 		processingTime: 2000,
 	},
 	{
 		timestamp: "2026-05-23T10:02:00.000Z",
 		text: "long",
-		duration: 120_000,
+		duration: 120,
 		engine: "groq+deepgram",
 		processingTime: 5000,
 	},
@@ -235,5 +235,48 @@ describe("stats summary", () => {
 		expect(summary.latency.p95Ms).toBe(1400);
 		expect(summary.latency.lifetimeP95Ms).toBe(9000);
 		expect(summary.trends.processingMs.window24h).toEqual([1400]);
+	});
+
+	test("uses canonical seconds directly for genuine long recording durations", () => {
+		const summary = buildStatsSummaryFromInput({
+			stats: { today: 2, total: 10 },
+			history: [
+				{
+					timestamp: "2026-05-23T10:00:00.000Z",
+					text: "short",
+					duration: 8,
+					engine: "groq",
+					processingTime: 1000,
+				},
+				{
+					timestamp: "2026-05-23T10:01:00.000Z",
+					text: "medium",
+					duration: 45,
+					engine: "groq+deepgram",
+					processingTime: 2000,
+				},
+				{
+					timestamp: "2026-05-23T10:02:00.000Z",
+					text: "over one hour",
+					duration: 7200,
+					engine: "groq+deepgram",
+					processingTime: 5000,
+				},
+			],
+			daemon: { running: true, status: "idle", pid: 123 },
+			errors: { count: 0, latest: null, recent: [] },
+			paths: {
+				config: "/config.json",
+				history: "/history.json",
+				logs: "/logs",
+			},
+			now: new Date("2026-05-23T12:00:00.000Z"),
+			perfEvents: [],
+		});
+
+		expect(summary.duration.averageSeconds).toBeCloseTo(2417.67, 2);
+		expect(summary.duration.shortCount).toBe(1);
+		expect(summary.duration.mediumCount).toBe(1);
+		expect(summary.duration.longCount).toBe(1);
 	});
 });

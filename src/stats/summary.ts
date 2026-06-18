@@ -159,10 +159,6 @@ function average(values: number[]): number | null {
 	return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function normalizeDurationSeconds(value: number): number {
-	return value > 3600 ? value / 1000 : value;
-}
-
 function readDaemonState(): StatsSummary["daemon"] {
 	const configDir = join(homedir(), ".config", "hypr", "vox");
 	const pidFile = join(configDir, "daemon.pid");
@@ -527,7 +523,6 @@ export function buildStatsSummaryFromInput(
 	const durations = input.history
 		.map((item) => item.duration)
 		.filter((value) => Number.isFinite(value) && value >= 0);
-	const durationSeconds = durations.map(normalizeDurationSeconds);
 	const engines = input.history.reduce<Record<string, number>>((acc, item) => {
 		acc[item.engine || "unknown"] = (acc[item.engine || "unknown"] ?? 0) + 1;
 		return acc;
@@ -651,12 +646,12 @@ export function buildStatsSummaryFromInput(
 			lifetimeP95Ms: percentile(lifetimeProcessingTimes, 95),
 		},
 		duration: {
-			averageSeconds: average(durationSeconds),
-			shortCount: durationSeconds.filter((duration) => duration < 15).length,
-			mediumCount: durationSeconds.filter(
+			averageSeconds: average(durations),
+			shortCount: durations.filter((duration) => duration < 15).length,
+			mediumCount: durations.filter(
 				(duration) => duration >= 15 && duration < 60,
 			).length,
-			longCount: durationSeconds.filter((duration) => duration >= 60).length,
+			longCount: durations.filter((duration) => duration >= 60).length,
 		},
 		engines,
 		recent: input.history.slice(-12).reverse(),
