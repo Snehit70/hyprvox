@@ -33,6 +33,20 @@ We use strict Conventional Commits. Commits should be one-line, lowercase, and i
 - **Human Approval is Required**: Only humans are authorized to merge PRs into the `main` branch.
 - Before opening a PR, ensure all tests pass and the code is formatted.
 
+### Releasing
+Releases are tag-driven and mostly automated, with one deliberate manual step.
+
+1. Merge to `main`. The `Auto Version Bump` workflow reads the conventional commits and pushes a `chore: bump version to X` commit (`feat` → minor, `fix` → patch, `feat!`/`BREAKING CHANGE` → major). It does **not** tag.
+2. Cut the release by pushing a tag that matches the new `package.json` version:
+   ```bash
+   git checkout main && git pull --ff-only
+   git tag "v$(node -p "require('./package.json').version")"
+   git push origin "v$(node -p "require('./package.json').version")"
+   ```
+3. The `Release` workflow (triggered by the `v*` tag) typechecks, tests, publishes to npm via OIDC trusted publishing with `--provenance`, and creates the GitHub Release.
+
+Tagging is kept manual on purpose: the bump runs as `github-actions[bot]`, and a tag it pushes would not trigger the `Release` workflow (GitHub blocks workflow-triggered workflows). Confirm the version is correct before tagging — npm publishes are immutable.
+
 ## Sisyphus Protocol
 
 The "Sisyphus Protocol" defines our core engineering discipline.
