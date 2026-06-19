@@ -7,7 +7,7 @@ Lean repo guide for automated agents.
 - `docs/STT_FLOW.md`
 - `docs/CONFIGURATION.md`
 - `docs/CLI_COMMANDS.md`
-- `PRD.md`
+- Product requirements live in GitHub issues (epics + child tickets), not a local `PRD.md`.
 
 ## Stack
 - Bun runtime and package manager
