@@ -53,6 +53,9 @@ const electronAPI = {
 	getConnectionStatus: (): Promise<ConnectionStatus> => {
 		return ipcRenderer.invoke("get-connection-status");
 	},
+	setOverlayVisible: (visible: boolean): void => {
+		ipcRenderer.send("overlay-visible", visible);
+	},
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

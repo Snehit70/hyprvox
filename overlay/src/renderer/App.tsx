@@ -161,7 +161,11 @@ function getAriaStatusText(state: OverlayState, errorMessage?: string): string {
 
 export function App() {
 	const { overlayState, errorMessage } = useDaemonState();
-	const styles = getStateStyles(overlayState);
+	const visible = overlayState !== "hidden";
+	// Retain the last visible state so the bar keeps its appearance while it
+	// slides back out of frame, instead of blanking before the animation runs.
+	const [renderState, setRenderState] = useState<OverlayState>(overlayState);
+	const styles = getStateStyles(visible ? overlayState : renderState);
 
 	const isRecording = overlayState === "recording";
 	const isProcessing = overlayState === "processing";
@@ -193,6 +197,19 @@ export function App() {
 	useEffect(() => {
 		previousOverlayStateRef.current = overlayState;
 	}, [overlayState]);
+
+	useEffect(() => {
+		if (overlayState !== "hidden") {
+			setRenderState(overlayState);
+		}
+	}, [overlayState]);
+
+	// Drive the window's on-screen/off-screen position from the renderer's own
+	// visibility. The main process moves the (always-mapped) window in or out of
+	// frame; the compositor animates the slide.
+	useEffect(() => {
+		window.electronAPI?.setOverlayVisible(visible);
+	}, [visible]);
 
 	useEffect(() => {
 		if (nextIndicatorState === currentIndicator?.state) {
@@ -271,24 +288,24 @@ export function App() {
 		};
 	}, []);
 
-	if (overlayState === "hidden") {
-		return null;
-	}
-
+	// The window stays mapped and is moved off-screen when idle (see main.ts), so
+	// the content is never torn down — it stays mounted here. The compositor
+	// animates the window slide; we just cross-fade the bar's own visuals.
 	return (
 		<div
-			className={`overlay-container state-${overlayState}`}
+			className={`overlay-container state-${visible ? overlayState : renderState}`}
+			data-visible={visible}
 			style={{
 				width: "100%",
 				height: "100%",
 				background: styles.background,
 				borderRadius: "8px",
-				display: styles.display,
+				display: "flex",
 				alignItems: "center",
 				justifyContent: "center",
 				position: "relative",
-				opacity: styles.opacity,
-				transition: "background 0.3s ease, opacity 0.3s ease",
+				opacity: visible ? styles.opacity : 0,
+				transition: "background 0.3s ease, opacity 0.26s ease",
 			}}
 		>
 			{showWaveform && (

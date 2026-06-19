@@ -35,6 +35,11 @@ describe.skipIf(isCI)("Daemon Crash Recovery Integration", () => {
 				audioDevice: "default",
 				clipboard: { append: true, minDuration: 0.6, maxDuration: 300 },
 			},
+			// Disable the overlay: this suite exercises the daemon, not the GUI.
+			// Leaving it enabled spawns a real Electron window on the dev's live
+			// Wayland session, and because the overlay is detached it survives the
+			// SIGKILLs below and leaks as an orphan.
+			overlay: { enabled: false, autoStart: false },
 			paths: {
 				logs: join(configDir, "logs"),
 				history: join(configDir, "history.json"),
@@ -69,7 +74,14 @@ describe.skipIf(isCI)("Daemon Crash Recovery Integration", () => {
 					readFileSync(overlayPidFile, "utf-8").trim(),
 					10,
 				);
-				process.kill(overlayPid, "SIGKILL");
+				// The overlay is spawned detached (its own process group), so a
+				// SIGKILL to the lone PID can orphan the child Electron processes.
+				// Kill the whole group; fall back to the single PID.
+				try {
+					process.kill(-overlayPid, "SIGKILL");
+				} catch (_e) {
+					process.kill(overlayPid, "SIGKILL");
+				}
 			} catch (_e) {}
 		}
 

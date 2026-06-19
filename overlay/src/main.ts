@@ -42,6 +42,9 @@ let mainWindow: BrowserWindow | null = null;
 let ipcClient: IPCClient | null = null;
 let previousStatus: string = "idle";
 let ipcConnectionTimeout: NodeJS.Timeout | null = null;
+let restingPosition = { x: 0, y: 0 };
+let parkedPosition = { x: 0, y: 0 };
+let overlayVisible = false;
 
 process.on("uncaughtException", (err) => {
 	console.error("[Overlay] Uncaught exception:", err);
@@ -61,11 +64,23 @@ function createOverlayWindow(
 	const x = Math.floor((screenWidth - config.width) / 2);
 	const y = screenHeight - config.height - config.marginBottom;
 
+	// Resting spot (visible) and a parked spot fully below the monitor. The
+	// window stays mapped, but when idle we move it off-screen instead of
+	// leaving it on the desktop, so the compositor has no transparent rect to
+	// blur/round into a "ghost pill" at idle. Moving an already-mapped window is
+	// cheap (no re-map) and the compositor animates it into view.
+	restingPosition = { x, y };
+	parkedPosition = {
+		x,
+		y: display.bounds.y + display.bounds.height + config.height,
+	};
+	overlayVisible = false;
+
 	const windowOptions: BrowserWindowConstructorOptions = {
 		width: config.width,
 		height: config.height,
-		x,
-		y,
+		x: parkedPosition.x,
+		y: parkedPosition.y,
 		frame: false,
 		transparent: true,
 		show: true,
@@ -124,6 +139,21 @@ function createOverlayWindow(
 	});
 
 	return window;
+}
+
+// Move the always-mapped window between its resting (visible) and parked
+// (off-screen) positions. Driven by the renderer's own visibility, which
+// already folds in success/error hold timers, so animations are never cut off.
+function setOverlayWindowVisible(visible: boolean): void {
+	if (!mainWindow || mainWindow.isDestroyed()) {
+		return;
+	}
+	if (overlayVisible === visible) {
+		return;
+	}
+	overlayVisible = visible;
+	const target = visible ? restingPosition : parkedPosition;
+	mainWindow.setPosition(target.x, target.y);
 }
 
 function setupIPCClient(): void {
@@ -228,6 +258,10 @@ app.whenReady().then(() => {
 
 	ipcMain.on("window-ready", () => {
 		console.log("Overlay window ready");
+	});
+
+	ipcMain.on("overlay-visible", (_event, visible: boolean) => {
+		setOverlayWindowVisible(Boolean(visible));
 	});
 
 	ipcMain.handle("get-daemon-state", () => {

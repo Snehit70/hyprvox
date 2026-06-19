@@ -17,6 +17,7 @@ export interface ElectronAPI {
 	) => () => void;
 	getDaemonState: () => Promise<DaemonState>;
 	getConnectionStatus: () => Promise<ConnectionStatus>;
+	setOverlayVisible: (visible: boolean) => void;
 }
 
 declare global {
