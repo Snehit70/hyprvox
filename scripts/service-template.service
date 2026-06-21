@@ -1,6 +1,6 @@
 [Unit]
 Description=Voice CLI Daemon
-After=network.target sound.target
+After=network.target sound.target graphical-session.target
 
 [Service]
 Type=simple
@@ -8,6 +8,7 @@ WorkingDirectory={{WORKING_DIR}}
 ExecStart={{BUN_PATH}} run {{ENTRY_POINT}} start --no-supervisor
 Restart=always
 RestartSec=5
+TimeoutStopSec=10
 StartLimitIntervalSec=300
 StartLimitBurst=3
 Environment=PATH={{PATH}}

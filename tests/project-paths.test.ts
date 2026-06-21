@@ -8,5 +8,8 @@ describe("project paths", () => {
 		expect(existsSync(join(projectRoot, "package.json"))).toBe(true);
 		expect(getBundledOverlayPath()).toBe(join(projectRoot, "overlay"));
 		expect(existsSync(getBundledOverlayPath())).toBe(true);
+		expect(
+			existsSync(join(getBundledOverlayPath(), "hyprvox-overlay.py")),
+		).toBe(true);
 	});
 });

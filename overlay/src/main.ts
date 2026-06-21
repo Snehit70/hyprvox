@@ -23,6 +23,7 @@ app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-software-rasterizer");
 app.commandLine.appendSwitch("disable-dev-shm-usage");
+app.commandLine.appendSwitch("disable-breakpad");
 
 interface OverlayConfig {
 	width: number;

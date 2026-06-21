@@ -10,6 +10,7 @@ import { PcmStreamExtractor } from "./pcm-stream";
 export interface AudioLevelPayload {
 	level: number;
 	peak: number;
+	waveform: number[];
 	timestamp: number;
 }
 
@@ -22,6 +23,108 @@ export interface PcmAudioPayload {
 }
 
 type RecordingFactory = typeof record;
+
+const WAVEFORM_FFT_SIZE = 256;
+const WAVEFORM_BIN_COUNT = 24;
+
+/**
+ * Build the same kind of speech-frequency spectrum the former Web Audio
+ * analyser exposed to the Electron overlay. Values are normalized to 0..1.
+ */
+export function buildWaveformBins(
+	samples: Int16Array,
+	binCount = WAVEFORM_BIN_COUNT,
+): number[] {
+	if (samples.length === 0 || binCount <= 0) return [];
+
+	const real = new Float64Array(WAVEFORM_FFT_SIZE);
+	const imaginary = new Float64Array(WAVEFORM_FFT_SIZE);
+	const sourceStart = Math.max(0, samples.length - WAVEFORM_FFT_SIZE);
+	const targetStart = Math.max(0, WAVEFORM_FFT_SIZE - samples.length);
+	const copyLength = Math.min(samples.length, WAVEFORM_FFT_SIZE);
+
+	for (let index = 0; index < copyLength; index++) {
+		const windowIndex = targetStart + index;
+		const window =
+			0.5 -
+			0.5 * Math.cos((2 * Math.PI * windowIndex) / (WAVEFORM_FFT_SIZE - 1));
+		real[windowIndex] = ((samples[sourceStart + index] ?? 0) / 32768) * window;
+	}
+
+	// In-place radix-2 FFT.
+	for (let index = 1, reversed = 0; index < WAVEFORM_FFT_SIZE; index++) {
+		let bit = WAVEFORM_FFT_SIZE >> 1;
+		for (; reversed & bit; bit >>= 1) reversed ^= bit;
+		reversed ^= bit;
+		if (index < reversed) {
+			[real[index], real[reversed]] = [real[reversed] ?? 0, real[index] ?? 0];
+		}
+	}
+
+	for (let size = 2; size <= WAVEFORM_FFT_SIZE; size <<= 1) {
+		const angle = (-2 * Math.PI) / size;
+		const stepReal = Math.cos(angle);
+		const stepImaginary = Math.sin(angle);
+		for (let start = 0; start < WAVEFORM_FFT_SIZE; start += size) {
+			let twiddleReal = 1;
+			let twiddleImaginary = 0;
+			for (let offset = 0; offset < size / 2; offset++) {
+				const even = start + offset;
+				const odd = even + size / 2;
+				const oddReal = real[odd] ?? 0;
+				const oddImaginary = imaginary[odd] ?? 0;
+				const productReal =
+					oddReal * twiddleReal - oddImaginary * twiddleImaginary;
+				const productImaginary =
+					oddReal * twiddleImaginary + oddImaginary * twiddleReal;
+				const evenReal = real[even] ?? 0;
+				const evenImaginary = imaginary[even] ?? 0;
+
+				real[odd] = evenReal - productReal;
+				imaginary[odd] = evenImaginary - productImaginary;
+				real[even] = evenReal + productReal;
+				imaginary[even] = evenImaginary + productImaginary;
+
+				const nextTwiddleReal =
+					twiddleReal * stepReal - twiddleImaginary * stepImaginary;
+				twiddleImaginary =
+					twiddleReal * stepImaginary + twiddleImaginary * stepReal;
+				twiddleReal = nextTwiddleReal;
+			}
+		}
+	}
+
+	const frequencyBinCount = WAVEFORM_FFT_SIZE / 2;
+	const startBin = Math.floor(frequencyBinCount * 0.05);
+	const endBin = Math.floor(frequencyBinCount * 0.4);
+	const result: number[] = [];
+
+	for (let outputIndex = 0; outputIndex < binCount; outputIndex++) {
+		const rangeStart = Math.floor(
+			startBin + ((endBin - startBin) * outputIndex) / binCount,
+		);
+		const rangeEnd = Math.max(
+			rangeStart + 1,
+			Math.floor(
+				startBin + ((endBin - startBin) * (outputIndex + 1)) / binCount,
+			),
+		);
+		let strongest = 0;
+		for (let fftIndex = rangeStart; fftIndex < rangeEnd; fftIndex++) {
+			const magnitude = Math.hypot(
+				real[fftIndex] ?? 0,
+				imaginary[fftIndex] ?? 0,
+			);
+			strongest = Math.max(strongest, magnitude / (WAVEFORM_FFT_SIZE * 0.25));
+		}
+
+		// Match the former analyser's -85 dB to -25 dB display range.
+		const decibels = 20 * Math.log10(Math.max(strongest, 1e-6));
+		result.push(Math.max(0, Math.min(1, (decibels + 85) / 60)));
+	}
+
+	return result;
+}
 
 export interface AudioRecorderOptions {
 	createRecording?: RecordingFactory;
@@ -54,6 +157,9 @@ export class AudioRecorder extends EventEmitter {
 	private maxDuration: number = 600000;
 	private isStopping: boolean = false;
 	private pcmExtractor = new PcmStreamExtractor();
+	// Samples carried between arecord chunks so the overlay receives a steady
+	// stream of ~16 ms frames instead of one coarse frame per 125 ms chunk.
+	private levelPending: Int16Array = new Int16Array(0);
 
 	constructor(options: AudioRecorderOptions = {}) {
 		super();
@@ -88,6 +194,7 @@ export class AudioRecorder extends EventEmitter {
 		this.loadSettings();
 		this.chunks = [];
 		this.pcmExtractor.reset();
+		this.levelPending = new Int16Array(0);
 		this.startTime = Date.now();
 
 		const config = this.loadConfigFn();
@@ -137,13 +244,7 @@ export class AudioRecorder extends EventEmitter {
 							const pcmChunk = this.pcmExtractor.accept(bufferChunk);
 							if (pcmChunk) {
 								const timestamp = Date.now();
-								const level = this.getAudioLevel(pcmChunk.pcm);
-								if (level) {
-									this.emit("level", {
-										...level,
-										timestamp,
-									} satisfies AudioLevelPayload);
-								}
+								this.emitAudioFrames(pcmChunk.pcm, timestamp);
 								this.emit("pcm-data", {
 									...pcmChunk,
 									timestamp,
@@ -369,25 +470,54 @@ export class AudioRecorder extends EventEmitter {
 		return rms < threshold;
 	}
 
-	private getAudioLevel(
-		chunk: Buffer,
-	): Omit<AudioLevelPayload, "timestamp"> | null {
-		if (chunk.length < 2) {
-			return null;
-		}
-
+	/**
+	 * arecord delivers one ~125 ms chunk roughly every 128 ms, so a single
+	 * level reading per chunk only gives the overlay ~8 fps of heavily averaged
+	 * data. Slicing each chunk into {@link WAVEFORM_FFT_SIZE}-sample hops (16 ms
+	 * at 16 kHz) emits ~60 fps of frame-accurate level/spectrum instead, with
+	 * each frame's RMS, peak, and FFT computed over the same window. Leftover
+	 * samples are carried into the next chunk so no audio is dropped.
+	 */
+	private emitAudioFrames(chunk: Buffer, chunkTimestamp: number): void {
 		const evenLength = Math.floor(chunk.length / 2) * 2;
-		if (evenLength === 0) {
-			return null;
+		const aligned =
+			evenLength > 0 ? Buffer.from(chunk.subarray(0, evenLength)) : null;
+		const incoming = aligned
+			? new Int16Array(aligned.buffer, aligned.byteOffset, evenLength / 2)
+			: new Int16Array(0);
+
+		const combined = new Int16Array(this.levelPending.length + incoming.length);
+		combined.set(this.levelPending, 0);
+		combined.set(incoming, this.levelPending.length);
+
+		const hop = WAVEFORM_FFT_SIZE;
+		const hopCount = Math.floor(combined.length / hop);
+		if (hopCount === 0) {
+			this.levelPending = combined;
+			return;
 		}
 
-		const aligned = Buffer.from(chunk.subarray(0, evenLength));
-		const samples = new Int16Array(
-			aligned.buffer,
-			aligned.byteOffset,
-			evenLength / 2,
-		);
+		const hopDurationMs = (hop / 16000) * 1000;
+		for (let frame = 0; frame < hopCount; frame++) {
+			const window = combined.subarray(frame * hop, (frame + 1) * hop);
+			// Space timestamps by the audio time each hop represents so the
+			// daemon's per-frame throttle forwards every hop instead of
+			// collapsing the burst into a single wall-clock millisecond.
+			const timestamp = Math.round(
+				chunkTimestamp - (hopCount - 1 - frame) * hopDurationMs,
+			);
+			this.emit("level", {
+				...this.frameFromSamples(window),
+				timestamp,
+			} satisfies AudioLevelPayload);
+		}
 
+		this.levelPending = combined.slice(hopCount * hop);
+	}
+
+	private frameFromSamples(
+		samples: Int16Array,
+	): Omit<AudioLevelPayload, "timestamp"> {
 		let sumSquares = 0;
 		let peak = 0;
 
@@ -400,11 +530,12 @@ export class AudioRecorder extends EventEmitter {
 			}
 		}
 
-		const rms = Math.sqrt(sumSquares / samples.length);
+		const rms = Math.sqrt(sumSquares / (samples.length || 1));
 
 		return {
 			level: Math.min(1, rms),
 			peak: Math.min(1, peak),
+			waveform: buildWaveformBins(samples),
 		};
 	}
 }

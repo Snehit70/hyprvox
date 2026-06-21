@@ -98,7 +98,7 @@ export interface DaemonState {
 }
 
 export class DaemonService {
-	private static readonly OVERLAY_AUDIO_LEVEL_INTERVAL_MS = 33;
+	private static readonly OVERLAY_AUDIO_LEVEL_INTERVAL_MS = 15;
 	private status: DaemonStatus = "idle";
 	private config: Config;
 	private recorder: AudioRecorder;
@@ -127,7 +127,6 @@ export class DaemonService {
 	private pendingStateWrite = false;
 	private overlay: OverlayProcessManager;
 	private lastOverlayAudioLevelAt = 0;
-	private smoothedOverlayLevel = 0;
 	private contextLexicon: string[] = [];
 	private providerBoostWords: string[] = [];
 
@@ -288,12 +287,14 @@ export class DaemonService {
 		}
 
 		this.lastOverlayAudioLevelAt = payload.timestamp;
-		this.smoothedOverlayLevel =
-			this.smoothedOverlayLevel * 0.7 + payload.level * 0.3;
 
+		// Forward the raw per-hop level. Temporal smoothing is owned entirely by
+		// the overlay's per-bar attack/release so we don't stack two low-pass
+		// filters and turn syllables into a lagging blob.
 		this.ipcServer.broadcastAudioLevel(
-			Math.min(1, this.smoothedOverlayLevel),
+			Math.min(1, payload.level),
 			payload.peak,
+			payload.waveform,
 			payload.timestamp,
 		);
 	}
@@ -334,14 +335,12 @@ export class DaemonService {
 
 		this.recorder.on("start", () => {
 			this.lastOverlayAudioLevelAt = 0;
-			this.smoothedOverlayLevel = 0;
 			this.setStatus("recording");
 			this.notifyStateChange("Recording Started", "Listening...");
 		});
 
 		this.recorder.on("stop", (audioBuffer: Buffer, duration: number) => {
 			this.lastOverlayAudioLevelAt = 0;
-			this.smoothedOverlayLevel = 0;
 			this.setStatus("processing");
 			this.notifyStateChange(
 				"Recording Stopped",
@@ -360,7 +359,6 @@ export class DaemonService {
 
 		this.recorder.on("error", (err: Error) => {
 			this.lastOverlayAudioLevelAt = 0;
-			this.smoothedOverlayLevel = 0;
 			this.errorCount++;
 			this.setStatus("error", err.message);
 

@@ -155,7 +155,7 @@ This guide covers common issues and their solutions for `hyprvox`.
 
 ### Daemon Running But Overlay Missing
 - **Symptom**: Transcription still works, but pressing the hotkey shows no waveform / overlay feedback.
-- **Why**: The daemon and overlay are separate processes. The daemon can stay healthy while the Electron overlay crashes or exits.
+- **Why**: The daemon and native GTK overlay are separate processes. The daemon can stay healthy while the overlay exits.
 - **Check**:
   - `bun run index.ts status`
   - `bun run index.ts overlay`
@@ -164,7 +164,8 @@ This guide covers common issues and their solutions for `hyprvox`.
 - **Fix**:
   - Restart the overlay: `bun run index.ts overlay restart`
   - If `health` reports `Overlay PID file exists but process is dead`, remove the stale state by restarting the daemon: `systemctl --user restart hyprvox`
-  - If the overlay keeps dying, inspect coredumps: `coredumpctl info electron`
+  - If the overlay keeps dying, verify `python3-gobject`, GTK 3, and `gtk-layer-shell` are installed and inspect `overlay.log`
+  - When GTK exits, the supervisor automatically tries the bundled Electron fallback on Wayland. Look for `launchMode: electron_fallback` in the service journal.
   - Check the configured log directory from `paths.logs` in `~/.config/hypr/vox/config.json`; in the current local setup that is `~/.config/voice-cli/logs/`, including `overlay.log`
 
 ---

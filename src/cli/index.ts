@@ -331,7 +331,7 @@ program
 
 			const serviceContent = `[Unit]
 Description=Hyprvox Daemon
-After=network.target sound.target
+After=network.target sound.target graphical-session.target
 StartLimitIntervalSec=300
 StartLimitBurst=3
 
@@ -341,6 +341,7 @@ WorkingDirectory=${workingDir}
 ExecStart=${bunPath} run ${entryPoint} start --no-supervisor
 Restart=always
 RestartSec=5
+TimeoutStopSec=10
 Environment=PATH=${process.env.PATH}
 Environment=DISPLAY=${process.env.DISPLAY || ""}
 Environment=XAUTHORITY=${process.env.XAUTHORITY || ""}

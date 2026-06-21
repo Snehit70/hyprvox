@@ -241,6 +241,7 @@ export class IPCServer extends EventEmitter {
 	broadcastAudioLevel(
 		level: number,
 		peak?: number,
+		waveform?: number[],
 		timestamp = Date.now(),
 	): void {
 		if (this.clients.size === 0) {
@@ -251,6 +252,7 @@ export class IPCServer extends EventEmitter {
 			type: "audio_level",
 			level,
 			peak,
+			waveform,
 			timestamp,
 		};
 

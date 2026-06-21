@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Command } from "commander";
 import * as colors from "yoctocolors";
 import { loadConfig } from "../config/loader";
@@ -63,10 +63,16 @@ function startOverlay(): void {
 		process.exit(1);
 	}
 
-	console.log(`${colors.cyan("Starting overlay...")}`);
+	const gtkOverlay = join(overlayPath, "hyprvox-overlay.py");
+	const isBundledOverlay = existsSync(gtkOverlay);
+	const command = isBundledOverlay ? "python3" : overlayPath;
+	const args = isBundledOverlay ? [gtkOverlay] : [];
+	const cwd = isBundledOverlay ? overlayPath : dirname(overlayPath);
 
-	const child = spawn("bun", ["run", "start"], {
-		cwd: overlayPath,
+	console.log(`${colors.cyan("Starting GTK overlay...")}`);
+
+	const child = spawn(command, args, {
+		cwd,
 		detached: true,
 		stdio: "ignore",
 	});
@@ -93,9 +99,13 @@ function stopOverlay(): void {
 		console.log(`${colors.yellow("Overlay is not running")}`);
 		return;
 	}
+	if (pid === undefined) {
+		console.error(`${colors.red("Error:")} Overlay PID is unavailable`);
+		return;
+	}
 
 	try {
-		process.kill(pid!, "SIGTERM");
+		process.kill(pid, "SIGTERM");
 	} catch (error) {
 		console.error(`${colors.red("Error:")} Failed to stop overlay:`, error);
 		return;

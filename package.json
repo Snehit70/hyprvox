@@ -35,8 +35,8 @@
 		"lint": "biome lint .",
 		"format": "biome format --write .",
 		"check": "biome check --write .",
-		"build:overlay": "cd overlay && bun install && bun run build",
-		"start:overlay": "cd overlay && bun run start"
+		"start:overlay": "python3 overlay/hyprvox-overlay.py",
+		"build:overlay-fallback": "cd overlay && bun install && bun run build"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.3.11",

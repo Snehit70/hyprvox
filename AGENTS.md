@@ -13,7 +13,7 @@ Lean repo guide for automated agents.
 - Bun runtime and package manager
 - Strict TypeScript
 - pino logs with daily rotation
-- Electron overlay sidecar over local IPC
+- Native GTK overlay sidecar over local IPC, with guarded Electron fallback
 
 ## Current Product State
 - Hyprvox uses parallel Groq + Deepgram transcription with merge/validation/recovery.

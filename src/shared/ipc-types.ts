@@ -19,6 +19,7 @@ export interface AudioLevelMessage {
 	type: "audio_level";
 	level: number;
 	peak?: number;
+	waveform?: number[];
 	timestamp: number;
 }
 

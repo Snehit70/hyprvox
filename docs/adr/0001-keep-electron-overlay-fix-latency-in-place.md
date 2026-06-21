@@ -1,5 +1,10 @@
 # Keep the Electron overlay; fix show latency in place rather than rewriting in GTK
 
+> Superseded on 2026-06-20. Repeated Electron display-initialization crashes
+> caused multi-gigabyte coredump attempts, sustained filesystem I/O pressure,
+> and a KWin crash. The overlay was replaced entirely by GTK 3 plus
+> gtk-layer-shell; no dual backend is maintained.
+
 The overlay felt like it took up to 4s to appear. Timing logs showed this is two
 stacked, fixable delays — a ~1.1s Electron `window.show()` compositor-map cost (the
 window was unmapped via `hide()` when idle) and a ~1s daemon-side `recorder.start()`

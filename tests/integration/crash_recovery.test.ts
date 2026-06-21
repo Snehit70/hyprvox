@@ -36,7 +36,7 @@ describe.skipIf(isCI)("Daemon Crash Recovery Integration", () => {
 				clipboard: { append: true, minDuration: 0.6, maxDuration: 300 },
 			},
 			// Disable the overlay: this suite exercises the daemon, not the GUI.
-			// Leaving it enabled spawns a real Electron window on the dev's live
+			// Leaving it enabled spawns a real GTK window on the dev's live
 			// Wayland session, and because the overlay is detached it survives the
 			// SIGKILLs below and leaks as an orphan.
 			overlay: { enabled: false, autoStart: false },
@@ -74,8 +74,8 @@ describe.skipIf(isCI)("Daemon Crash Recovery Integration", () => {
 					readFileSync(overlayPidFile, "utf-8").trim(),
 					10,
 				);
-				// The overlay is spawned detached (its own process group), so a
-				// SIGKILL to the lone PID can orphan the child Electron processes.
+				// The overlay is spawned detached (its own process group), so kill
+				// the group to avoid leaking an orphaned GUI process.
 				// Kill the whole group; fall back to the single PID.
 				try {
 					process.kill(-overlayPid, "SIGKILL");
