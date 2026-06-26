@@ -111,7 +111,7 @@ describe("SonioxStreamingTranscriber", () => {
 			}),
 		);
 
-		expect(events).toEqual(["hello ", "world!"]);
+		expect(events).toEqual(["hello", "world !"]);
 	});
 
 	test("sends an empty frame on stop and returns the final transcript", async () => {
@@ -137,6 +137,179 @@ describe("SonioxStreamingTranscriber", () => {
 		expect(socket.sent).toContain("");
 		expect(result.text).toBe("done");
 		expect(result.chunkCount).toBe(1);
+		expect(result.paragraphBreakCount).toBe(0);
 		expect(result.stopReason).toBe("finalize_transcript");
+	});
+
+	test("joins tokens with spaces and collapses double spaces", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+		});
+		const events: string[] = [];
+		transcriber.on("transcript", (text) => events.push(text));
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+		socket.receive(
+			JSON.stringify({
+				tokens: [
+					{ text: "hello", is_final: true },
+					{ text: "  ", is_final: true },
+					{ text: "world", is_final: true },
+				],
+			}),
+		);
+
+		expect(events).toEqual(["hello world"]);
+	});
+
+	test("inserts double-space paragraph break on long pause", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			paragraphPauseMs: 100,
+		});
+		const events: string[] = [];
+		transcriber.on("transcript", (text) => events.push(text));
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+
+		socket.receive(
+			JSON.stringify({
+				tokens: [{ text: "first sentence", is_final: true }],
+			}),
+		);
+
+		await new Promise((resolve) => setTimeout(resolve, 150));
+
+		socket.receive(
+			JSON.stringify({
+				tokens: [{ text: "second sentence", is_final: true }],
+			}),
+		);
+
+		expect(events.length).toBe(2);
+		expect(events[1]).toContain("  ");
+	});
+
+	test("does not insert paragraph break on short pause", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			paragraphPauseMs: 5000,
+		});
+		const events: string[] = [];
+		transcriber.on("transcript", (text) => events.push(text));
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+
+		socket.receive(
+			JSON.stringify({
+				tokens: [{ text: "first", is_final: true }],
+			}),
+		);
+
+		socket.receive(
+			JSON.stringify({
+				tokens: [{ text: "second", is_final: true }],
+			}),
+		);
+
+		expect(events.length).toBe(2);
+		expect(events[1]).not.toContain("  ");
+	});
+
+	test("includes paragraphBreakCount in stop result", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			paragraphPauseMs: 100,
+		});
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+
+		socket.receive(
+			JSON.stringify({
+				tokens: [{ text: "first", is_final: true }],
+			}),
+		);
+
+		await new Promise((resolve) => setTimeout(resolve, 150));
+
+		socket.receive(
+			JSON.stringify({
+				tokens: [{ text: "second", is_final: true }],
+			}),
+		);
+
+		const resultPromise = transcriber.stop();
+		socket.close();
+		const result = await resultPromise;
+
+		expect(result.paragraphBreakCount).toBe(1);
+	});
+
+	test("resets paragraphBreakCount on start", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			paragraphPauseMs: 100,
+		});
+
+		await transcriber.start("en");
+		const socket1 = getSocket();
+		socket1.open();
+
+		socket1.receive(
+			JSON.stringify({
+				tokens: [{ text: "first", is_final: true }],
+			}),
+		);
+
+		await new Promise((resolve) => setTimeout(resolve, 150));
+
+		socket1.receive(
+			JSON.stringify({
+				tokens: [{ text: "second", is_final: true }],
+			}),
+		);
+
+		const result1 = await (async () => {
+			const p = transcriber.stop();
+			socket1.close();
+			return p;
+		})();
+
+		expect(result1.paragraphBreakCount).toBe(1);
+
+		MockSonioxWebSocket.instances = [];
+		await transcriber.start("en");
+		const socket2 = getSocket();
+		socket2.open();
+
+		socket2.receive(
+			JSON.stringify({
+				tokens: [{ text: "fresh", is_final: true }],
+			}),
+		);
+
+		const result2Promise = transcriber.stop();
+		socket2.close();
+		const result2 = await result2Promise;
+
+		expect(result2.paragraphBreakCount).toBe(0);
 	});
 });
