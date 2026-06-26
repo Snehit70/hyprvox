@@ -55,4 +55,22 @@ describe("LiveDictationWriter", () => {
 			},
 		]);
 	});
+
+	test("honors an explicit focused text insertion command", async () => {
+		const commands: Array<{ command: string; args: string[] }> = [];
+		const typer = new DesktopTextTyper({
+			preferredCommand: "wtype",
+			env: {},
+			isCommandAvailable: (command) => command === "wtype",
+			runCommand: async (command, args) => {
+				commands.push({ command, args });
+			},
+		});
+
+		await typer.typeText("forced wayland command");
+
+		expect(commands).toEqual([
+			{ command: "wtype", args: ["forced wayland command"] },
+		]);
+	});
 });

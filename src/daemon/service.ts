@@ -4,32 +4,29 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { convertAudio } from "../audio/converter";
 import {
-	assertAudioBackendAvailable,
 	type AudioLevelPayload,
 	AudioRecorder,
+	assertAudioBackendAvailable,
 	type PcmAudioPayload,
 } from "../audio/recorder";
 import type { Config } from "../config/schema";
 import { configService } from "../config/service";
 import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
+import { DesktopTextTyper } from "../output/live-dictation";
 import { notify } from "../output/notification";
 import type { DaemonStatus } from "../shared/ipc-types";
 import { appendStatsAggregateEntry } from "../stats/aggregate";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
-import {
+import type {
 	DeepgramStreamingTranscriber,
-	type StreamingFailureReason,
-	type StreamingStopReason,
+	StreamingStopReason,
 } from "../transcribe/deepgram-streaming";
 import { GroqClient } from "../transcribe/groq";
 import {
 	createGroqChunkingMetrics,
 	GroqChunkingError,
-	type GroqChunkingMetrics,
 } from "../transcribe/groq-chunking";
-import {
-	GroqLiveChunkSession,
-} from "../transcribe/groq-live-chunking";
+import type { GroqLiveChunkSession } from "../transcribe/groq-live-chunking";
 import { assessGroqLiveQualityFallback } from "../transcribe/groq-live-quality";
 import { buildContextLexicon } from "../transcribe/lexicon";
 import { assessLongRecordingQuality } from "../transcribe/long-recording";
@@ -41,14 +38,15 @@ import { errorIncludes, getErrorCode } from "../utils/errors";
 import { appendHistory } from "../utils/history";
 import { logError, logger } from "../utils/logger";
 import { incrementTranscriptionCount, loadStats } from "../utils/stats";
-import { checkHotkeyConflict } from "./conflict";
 import { shouldCompressAudio } from "./audio-strategy";
+import { checkHotkeyConflict } from "./conflict";
 import { saveDebugAudioCapture } from "./debug-audio";
 import { runGroqTranscriptionWithLiveSession } from "./groq-transcription";
 import { HotkeyListener } from "./hotkey";
 import { getIPCServer, type IPCServer } from "./ipc";
 import { OverlayProcessManager } from "./overlay-process";
 import {
+	attachLiveDictationTranscriptHandler,
 	attachStreamingPcmHandler,
 	createLiveGroqSession,
 	startDeepgramStreaming,
@@ -107,6 +105,7 @@ export class DaemonService {
 	private deepgram: DeepgramTranscriber;
 	private deepgramStreaming?: DeepgramStreamingTranscriber;
 	private streamingPcmHandler?: (payload: PcmAudioPayload) => void;
+	private liveDictationTranscriptDetach?: () => void;
 	private liveGroqSession?: GroqLiveChunkSession;
 	private merger: TranscriptMerger;
 	private clipboard: ClipboardManager;
@@ -471,6 +470,10 @@ export class DaemonService {
 	 * half-started recording never leaks an open socket or in-flight chunk.
 	 */
 	private async teardownStreaming(reason: string): Promise<void> {
+		if (this.liveDictationTranscriptDetach) {
+			this.liveDictationTranscriptDetach();
+			this.liveDictationTranscriptDetach = undefined;
+		}
 		if (this.streamingPcmHandler) {
 			this.recorder.off("pcm-data", this.streamingPcmHandler);
 			this.streamingPcmHandler = undefined;
@@ -489,16 +492,25 @@ export class DaemonService {
 			try {
 				this.setStatus("starting");
 
-					if (this.streamingPcmHandler) {
-						this.recorder.off("pcm-data", this.streamingPcmHandler);
-						logger.debug("Removed old streaming PCM handler");
-					}
-					this.streamingPcmHandler = undefined;
+				if (this.streamingPcmHandler) {
+					this.recorder.off("pcm-data", this.streamingPcmHandler);
+					logger.debug("Removed old streaming PCM handler");
+				}
+				this.streamingPcmHandler = undefined;
 
-					this.liveGroqSession = createLiveGroqSession({
-						config: this.config,
-						boostWords: this.providerBoostWords,
-						transcribe: (
+				this.liveGroqSession = createLiveGroqSession({
+					config: this.config,
+					boostWords: this.providerBoostWords,
+					transcribe: (
+						buffer,
+						language,
+						boostWords,
+						format,
+						recordingMs,
+						contextHint,
+						signal,
+					) =>
+						this.groq.transcribe(
 							buffer,
 							language,
 							boostWords,
@@ -506,69 +518,69 @@ export class DaemonService {
 							recordingMs,
 							contextHint,
 							signal,
-						) =>
-							this.groq.transcribe(
-								buffer,
-								language,
-								boostWords,
-								format,
-								recordingMs,
-								contextHint,
-								signal,
-							),
+						),
+				});
+
+				if (this.config.transcription.streaming) {
+					this.deepgramStreaming = startDeepgramStreaming({
+						config: this.config,
+						boostWords: this.providerBoostWords,
+						onStreamingInterrupted: () => {
+							this.notifyStateChange(
+								"Streaming Interrupted",
+								"Using batch transcription",
+								"warning",
+							);
+						},
 					});
-
-					if (this.config.transcription.streaming) {
-						this.deepgramStreaming = startDeepgramStreaming({
-							config: this.config,
-							boostWords: this.providerBoostWords,
-							onStreamingInterrupted: () => {
-								this.notifyStateChange(
-									"Streaming Interrupted",
-									"Using batch transcription",
-									"warning",
-								);
-							},
-						});
+					if (this.config.liveDictation.enabled) {
+						this.liveDictationTranscriptDetach =
+							attachLiveDictationTranscriptHandler({
+								provider: this.deepgramStreaming,
+								typer: new DesktopTextTyper({
+									preferredCommand: this.config.liveDictation.insertionCommand,
+								}),
+							});
 					}
+				}
 
-					if (this.cancelPending) {
-						logger.info("Recording cancelled during setup, cleaning up");
-						this.cancelPending = false;
-						await this.teardownStreaming(
-							"Failed to stop streaming after cancellation",
-						);
-						this.setStatus("idle");
-						return;
-					}
+				if (this.cancelPending) {
+					logger.info("Recording cancelled during setup, cleaning up");
+					this.cancelPending = false;
+					await this.teardownStreaming(
+						"Failed to stop streaming after cancellation",
+					);
+					this.setStatus("idle");
+					return;
+				}
 
-					if (this.deepgramStreaming || this.liveGroqSession) {
-						this.streamingPcmHandler = attachStreamingPcmHandler({
-							recorder: this.recorder,
-							deepgramStreaming: this.deepgramStreaming,
-							liveGroqSession: this.liveGroqSession,
-						});
-					}
+				if (this.deepgramStreaming || this.liveGroqSession) {
+					this.streamingPcmHandler = attachStreamingPcmHandler({
+						recorder: this.recorder,
+						deepgramStreaming: this.deepgramStreaming,
+						liveGroqSession: this.liveGroqSession,
+					});
+				}
 
-					if (this.cancelPending) {
-						logger.info("Recording cancelled before recorder start, cleaning up");
-						this.cancelPending = false;
-						await this.teardownStreaming(
-							"Failed to stop streaming after cancellation",
-						);
-						this.setStatus("idle");
-						return;
-					}
+				if (this.cancelPending) {
+					logger.info("Recording cancelled before recorder start, cleaning up");
+					this.cancelPending = false;
+					await this.teardownStreaming(
+						"Failed to stop streaming after cancellation",
+					);
+					this.setStatus("idle");
+					return;
+				}
 
 				await this.recorder.start();
 			} catch (error) {
-					this.cancelPending = false;
-					logError("Failed to start recording", error);
-					await this.teardownStreaming(
-						"Failed to stop streaming after start failure",
-					);
-					this.setStatus("idle");
-				}
+				this.cancelPending = false;
+				logError("Failed to start recording", error);
+				await this.teardownStreaming(
+					"Failed to stop streaming after start failure",
+				);
+				this.setStatus("idle");
+			}
 		} else if (this.status === "recording") {
 			this.setStatus("stopping");
 			await this.recorder.stop();
@@ -589,9 +601,11 @@ export class DaemonService {
 			audioBuffer.length,
 			duration,
 		);
-		void saveDebugAudioCapture(this.config, audioBuffer, duration).catch((error) => {
-			logError("Failed to save debug transcription audio", error);
-		});
+		void saveDebugAudioCapture(this.config, audioBuffer, duration).catch(
+			(error) => {
+				logError("Failed to save debug transcription audio", error);
+			},
+		);
 
 		try {
 			const language = this.config.transcription.language;
@@ -907,7 +921,8 @@ export class DaemonService {
 				}
 
 				if (groqErr) handleProviderTranscriptionError(groqErr, "Groq");
-				if (deepgramErr) handleProviderTranscriptionError(deepgramErr, "Deepgram");
+				if (deepgramErr)
+					handleProviderTranscriptionError(deepgramErr, "Deepgram");
 
 				const template = ErrorTemplates.API.BOTH_SERVICES_FAILED;
 				notify("Transcription Failed", formatUserError(template), "error");

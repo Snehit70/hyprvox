@@ -6,19 +6,23 @@ export interface TextTyper {
 
 type RunCommand = (command: string, args: string[]) => Promise<void>;
 type IsCommandAvailable = (command: string) => boolean;
+export type TextInsertionCommand = "auto" | "wtype" | "xdotool";
 
 interface DesktopTextTyperOptions {
+	preferredCommand?: TextInsertionCommand;
 	env?: NodeJS.ProcessEnv;
 	isCommandAvailable?: IsCommandAvailable;
 	runCommand?: RunCommand;
 }
 
 export class DesktopTextTyper implements TextTyper {
+	private readonly preferredCommand: TextInsertionCommand;
 	private readonly env: NodeJS.ProcessEnv;
 	private readonly isCommandAvailable: IsCommandAvailable;
 	private readonly runCommand: RunCommand;
 
 	public constructor(options: DesktopTextTyperOptions = {}) {
+		this.preferredCommand = options.preferredCommand ?? "auto";
 		this.env = options.env ?? process.env;
 		this.isCommandAvailable =
 			options.isCommandAvailable ?? defaultIsCommandAvailable;
@@ -31,6 +35,16 @@ export class DesktopTextTyper implements TextTyper {
 	}
 
 	private resolveCommand(): { command: string; args: string[] } {
+		if (this.preferredCommand === "wtype") {
+			this.assertCommandAvailable("wtype");
+			return { command: "wtype", args: [] };
+		}
+
+		if (this.preferredCommand === "xdotool") {
+			this.assertCommandAvailable("xdotool");
+			return { command: "xdotool", args: ["type", "--clearmodifiers", "--"] };
+		}
+
 		if (this.env.WAYLAND_DISPLAY && this.isCommandAvailable("wtype")) {
 			return { command: "wtype", args: [] };
 		}
@@ -42,6 +56,14 @@ export class DesktopTextTyper implements TextTyper {
 		throw new Error(
 			"Live Dictation requires wtype on Wayland or xdotool on X11",
 		);
+	}
+
+	private assertCommandAvailable(command: "wtype" | "xdotool"): void {
+		if (this.isCommandAvailable(command)) {
+			return;
+		}
+
+		throw new Error(`Live Dictation command not found: ${command}`);
 	}
 }
 
