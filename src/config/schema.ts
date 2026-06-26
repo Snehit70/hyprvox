@@ -212,6 +212,15 @@ const defaultAudio = {
 	compressionThreshold: 1048576, // 1MB in bytes (~32 seconds of audio)
 };
 
+const defaultLiveDictation = {
+	enabled: false,
+	insertionCommand: "auto" as const,
+	soniox: {
+		enabled: false,
+		triggerKey: "Right Alt",
+	},
+};
+
 export const ApiKeysSchema = z.object({
 	groq: z
 		.string()
@@ -225,6 +234,10 @@ export const ApiKeysSchema = z.object({
 		.min(10, { message: "Fallback Groq API key is too short" })
 		.optional(),
 	deepgram: DeepgramApiKeySchema,
+	soniox: z
+		.string()
+		.min(1, { message: "Soniox API key is too short" })
+		.optional(),
 });
 
 export const ApiKeysFileSchema = ApiKeysSchema.partial().refine(
@@ -402,6 +415,27 @@ export const AudioSchema = z
 	})
 	.default(defaultAudio);
 
+export const LiveDictationSchema = z
+	.object({
+		enabled: z.boolean().default(defaultLiveDictation.enabled),
+		insertionCommand: z
+			.enum(["auto", "wtype", "xdotool"])
+			.default(defaultLiveDictation.insertionCommand),
+		soniox: z
+			.object({
+				enabled: z.boolean().default(defaultLiveDictation.soniox.enabled),
+				triggerKey: z
+					.string()
+					.default(defaultLiveDictation.soniox.triggerKey)
+					.refine(hotkeyValidator, {
+						message:
+							"Invalid Soniox trigger key format. Use 'Modifier+Key' (e.g., 'Ctrl+Space', 'Right Alt').",
+					}),
+			})
+			.default(defaultLiveDictation.soniox),
+	})
+	.default(defaultLiveDictation);
+
 export const ConfigSchema = z.object({
 	apiKeys: ApiKeysSchema,
 	behavior: BehaviorSchema.default(defaultBehavior),
@@ -409,6 +443,7 @@ export const ConfigSchema = z.object({
 	transcription: TranscriptionSchema.default(defaultTranscription),
 	overlay: OverlaySchema,
 	audio: AudioSchema,
+	liveDictation: LiveDictationSchema,
 });
 
 export const ConfigFileSchema = z.object({
@@ -418,6 +453,7 @@ export const ConfigFileSchema = z.object({
 	transcription: TranscriptionSchema.default(defaultTranscription),
 	overlay: OverlaySchema,
 	audio: AudioSchema,
+	liveDictation: LiveDictationSchema,
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

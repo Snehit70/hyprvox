@@ -23,6 +23,7 @@ describe("Config Loader", () => {
 		delete process.env.GROQ_API_KEY;
 		delete process.env.GROQ_FALLBACK_API_KEY;
 		delete process.env.DEEPGRAM_API_KEY;
+		delete process.env.SONIOX_API_KEY;
 		vi.clearAllMocks();
 	});
 
@@ -49,6 +50,10 @@ describe("Config Loader", () => {
 		expect(config.apiKeys.deepgram).toBe(
 			"4b5c1234-5678-90ab-cdef-1234567890ab",
 		);
+		expect(config.apiKeys.soniox).toBeUndefined();
+		expect(config.liveDictation.enabled).toBe(false);
+		expect(config.liveDictation.insertionCommand).toBe("auto");
+		expect(config.liveDictation.soniox.enabled).toBe(false);
 	});
 
 	test("should load fallback Groq API key from env if missing in file", () => {
@@ -64,6 +69,21 @@ describe("Config Loader", () => {
 
 		const config = loadConfig(CONFIG_FILE, true);
 		expect(config.apiKeys.groqFallback).toBe("gsk_env_fallback_12345");
+	});
+
+	test("should load optional Soniox API key from env", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+		process.env.SONIOX_API_KEY = "soniox_test_key";
+
+		const config = loadConfig(CONFIG_FILE, true);
+		expect(config.apiKeys.soniox).toBe("soniox_test_key");
 	});
 
 	test("should load config when file does not exist (env fallback)", () => {
@@ -538,5 +558,26 @@ describe("Config Loader", () => {
 
 			expect(() => loadConfig(CONFIG_FILE)).toThrow("Invalid hotkey format");
 		}
+	});
+
+	test("should reject invalid Soniox provider bypass trigger key", () => {
+		const configData = {
+			apiKeys: {
+				groq: "gsk_1234567890",
+				deepgram: "4b5c1234-5678-90ab-cdef-1234567890ab",
+			},
+			liveDictation: {
+				soniox: {
+					enabled: true,
+					triggerKey: "Definitely Not A Key",
+				},
+			},
+		};
+		writeFileSync(CONFIG_FILE, JSON.stringify(configData));
+		chmodSync(CONFIG_FILE, 0o600);
+
+		expect(() => loadConfig(CONFIG_FILE)).toThrow(
+			"Invalid Soniox trigger key format",
+		);
 	});
 });

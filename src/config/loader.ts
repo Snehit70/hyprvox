@@ -128,6 +128,7 @@ export const loadConfig = (
 			groq: process.env.GROQ_API_KEY,
 			groqFallback: process.env.GROQ_FALLBACK_API_KEY,
 			deepgram: process.env.DEEPGRAM_API_KEY,
+			soniox: process.env.SONIOX_API_KEY,
 		},
 	};
 
@@ -144,6 +145,7 @@ export const loadConfig = (
 				envConfig.apiKeys.groqFallback,
 			deepgram:
 				parsedFileConfig.apiKeys?.deepgram ?? envConfig.apiKeys.deepgram,
+			soniox: parsedFileConfig.apiKeys?.soniox ?? envConfig.apiKeys.soniox,
 		},
 		// Other sections are handled by Zod defaults if missing
 	};
