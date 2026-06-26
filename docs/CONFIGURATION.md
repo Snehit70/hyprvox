@@ -93,9 +93,11 @@ The configuration is a JSON file structured into several sections.
   "liveDictation": {
     "enabled": false,
     "insertionCommand": "auto",
+    "retypeFormatted": true,
     "soniox": {
       "enabled": false,
-      "triggerKey": "Right Alt"
+      "triggerKey": "Right Alt",
+      "paragraphPauseMs": 3000
     }
   }
 }
@@ -324,8 +326,12 @@ Live Dictation controls focused-text insertion while recording. It is disabled b
 | :--- | :--- | :--- | :--- | :--- |
 | `enabled` | Boolean | `false` | Type stable live transcript text into the currently focused input during the normal streaming path. | Requires `transcription.streaming: true` to receive Deepgram live transcript events. |
 | `insertionCommand` | String | `"auto"` | Command used for focused text insertion. | `"auto"`, `"wtype"`, or `"xdotool"`. |
+| `retypeFormatted` | Boolean | `true` | After stop, replace the typed text with the LLM-formatted version using Home + Shift+End selection. When off, formatted text only affects clipboard and history. | N/A |
 | `soniox.enabled` | Boolean | `false` | Enable the separate Soniox provider-bypass hotkey. | Requires `apiKeys.soniox` or `SONIOX_API_KEY` when used. |
 | `soniox.triggerKey` | String | `"Right Alt"` | Separate hotkey for Soniox live dictation. | Same hotkey format as `behavior.hotkey`. |
+| `soniox.paragraphPauseMs` | Number | `3000` | Minimum gap between consecutive Soniox token messages (in ms) before a paragraph break is inserted. | Integer `500`-`10000`. |
+| `retypeFormatted` | Boolean | `true` | After stop, replace typed text with LLM-formatted version (Home + Shift+End + retype). If false, formatting only affects clipboard/history. | N/A |
+| `soniox.paragraphPauseMs` | Number | `3000` | Minimum pause (ms) between Soniox token messages to trigger a paragraph break during live typing. | Integer `>= 500` |
 
 #### Normal Live Dictation
 
@@ -334,6 +340,8 @@ When `liveDictation.enabled` and `transcription.streaming` are both enabled, Hyp
 #### Soniox Provider Bypass
 
 When `liveDictation.soniox.enabled` is enabled, pressing `liveDictation.soniox.triggerKey` starts a Soniox real-time STT session. Recorder PCM is sent directly to Soniox, stable final tokens are typed into the focused input, and the final Soniox transcript is copied to clipboard and appended to history when recording stops.
+
+Tokens are joined with a single space; double spaces are collapsed and trailing spaces are trimmed. Paragraph breaks are inserted when the inter-token pause exceeds `soniox.paragraphPauseMs`. After stop, a minimal LLM pass adds paragraph breaks only — no rewriting. When `retypeFormatted` is true, the formatted text replaces what was typed via Home + Shift+End selection.
 
 This path intentionally skips Groq, Deepgram batch transcription, merge, repair, and quality recovery. Use it when low-latency live dictation is more important than the normal multi-provider quality pipeline.
 

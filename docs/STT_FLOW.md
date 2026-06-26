@@ -103,6 +103,25 @@ Live Dictation is an opt-in output path for committed streaming transcript chunk
 - In Soniox provider bypass mode, `liveDictation.soniox.triggerKey` starts a Soniox real-time WebSocket session. Recorder PCM is sent directly as 16 kHz mono `pcm_s16le`, final Soniox tokens are typed into the focused input, and the final Soniox transcript is copied to clipboard and history when recording stops.
 - Soniox provider bypass intentionally skips Groq, Deepgram batch transcription, merge, repair, and quality recovery. The history engine is recorded as `soniox`, and aggregate performance logs use `mergeStrategy: "provider_bypass"`.
 
+#### Soniox Formatting Pipeline
+
+Tokens arriving from Soniox are joined with a single space; double spaces are collapsed and trailing spaces are trimmed. When the pause between consecutive Soniox token messages exceeds `liveDictation.soniox.paragraphPauseMs` (default: 3000ms), a paragraph break is inserted as a double-space prefix to the next token. Only final tokens are emitted — interim/partial tokens are discarded to avoid flickering. Self-corrections are not backspaced; mistakes remain in the typed text and can be corrected manually after recording stops.
+
+After stop, a minimal Groq/Llama 3.3 pass runs over the Soniox transcript. This pass adds only paragraph breaks at natural sentence boundaries — it does not remove filler, fix punctuation, or rewrite content. When `liveDictation.retypeFormatted` is true (default), the LLM-formatted text replaces what was typed using Home + Shift+End selection followed by a retype, avoiding Ctrl+A risk in editors. When off, the formatted text only affects clipboard and history.
+
+Per-token debug logging is available at `LOG_LEVEL=debug`. Structured perf entries (`type: "perf"`) include `paragraphBreakCount` and `llmFormattingMs` for statistical analysis.
+
+#### Soniox Formatting Pipeline
+
+After recording stops, the Soniox transcript goes through a lightweight formatting pipeline:
+
+1. **Token spacing**: Final tokens are joined with a single space; double spaces are collapsed and trailing spaces are trimmed.
+2. **Paragraph breaks**: When the pause between consecutive Soniox token messages exceeds `liveDictation.soniox.paragraphPauseMs` (default: 3000ms), a paragraph break is inserted as a double-space prefix to the next token.
+3. **LLM formatting pass** (if `liveDictation.retypeFormatted` is true): A minimal Groq/Llama 3.3 call adds paragraph breaks at natural sentence boundaries — no filler removal, no punctuation fixes, no rewriting.
+4. **Retype**: If `retypeFormatted` is true, the LLM-formatted text replaces what was typed using Home + Shift+End selection + retype (avoiding Ctrl+A risk in editors). If off, formatting only affects clipboard/history.
+
+Per-token debug logging is available at `LOG_LEVEL=debug`. Structured perf entries (`type: "perf"`) include `paragraphBreakCount` and `llmFormattingMs`.
+
 ### 5. Merge And Quality Pipeline
 If both Groq and Deepgram return results, Hyprvox first decides whether deterministic selection is enough or whether an LLM merge is needed. The merge model is configured by `transcription.mergeModel`.
 

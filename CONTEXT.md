@@ -25,11 +25,11 @@ The on-screen status surface that reflects live daemon state.
 _Avoid_: popup, HUD
 
 **Live Dictation**:
-Entering stable transcript text into the currently focused text field while a recording is still active, then preserving the final transcript through the normal clipboard and history paths.
+Entering stable transcript text in the currently focused text field while a recording is still active, then preserving the final transcript through the normal clipboard and history paths. When driven by Deepgram streaming, the full quality pipeline runs after stop. When driven by Soniox, it operates as a [[Provider Bypass]]. During recording, only final tokens are typed — interim/partial tokens are discarded to avoid flickering and fragility. Tokens are joined with a single space; double spaces are collapsed and trailing spaces are trimmed. Paragraph breaks are inserted during live typing when the gap between consecutive Soniox token messages exceeds `liveDictation.soniox.paragraphPauseMs` (default: 3000ms) — a paragraph break is emitted as a double-space prefix to the next token. Self-corrections are not backspaced — mistakes remain in the typed text and can be corrected manually after recording stops. After stop, a minimal Groq/Llama 3.3 pass adds only paragraph breaks at natural sentence boundaries — no filler removal, no punctuation fixes, no rewriting. A config option (`liveDictation.retypeFormatted`, default: true) controls whether the LLM-formatted text replaces what was typed (via Home + Shift+End selection + retype, avoiding Ctrl+A risk in editors) or only affects clipboard/history (off). Per-token debug logging is available at `LOG_LEVEL=debug`. Structured perf entries (`type: "perf"`) include `paragraphBreakCount` and `llmFormattingMs` for statistical analysis.
 _Avoid_: live paste, streaming paste
 
 **Provider Bypass**:
-A recording path that uses one live transcription provider directly and skips the Groq plus Deepgram merge and quality pipeline by design.
+A recording path that uses one live transcription provider directly and skips the Groq plus Deepgram merge and quality pipeline by design. The Soniox live dictation path is the primary instance — it trusts Soniox output for real-time typing and skips validation, hallucination detection, and recovery entirely. Token spacing is normalized (joined with space, double spaces collapsed, trailing spaces trimmed) and paragraph breaks are inserted based on configurable inter-token pause thresholds. After stop, a minimal LLM formatting pass may add paragraph breaks only (no rewriting). See [[Live Dictation]] for the full formatting pipeline.
 _Avoid_: fallback, fast mode
 
 ## Observability
