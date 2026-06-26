@@ -22,9 +22,11 @@ function hotkeyConfig(
 		liveDictation: {
 			enabled: true,
 			insertionCommand: "auto",
+			retypeFormatted: true,
 			soniox: {
 				enabled: sonioxEnabled,
 				triggerKey: "Right Alt",
+				paragraphPauseMs: 3000,
 			},
 		},
 	};
