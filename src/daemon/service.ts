@@ -658,7 +658,10 @@ export class DaemonService {
 					});
 				this.liveDictationTranscriptDetach = liveDictationResult.detach;
 				this.liveDictationWriter = liveDictationResult.writer;
-				await this.sonioxStreaming.start(this.config.transcription.language);
+				await this.sonioxStreaming.start(
+					this.config.transcription.language,
+					this.providerBoostWords,
+				);
 				this.streamingPcmHandler = attachStreamingPcmHandler({
 					recorder: this.recorder,
 					liveProvider: this.sonioxStreaming,

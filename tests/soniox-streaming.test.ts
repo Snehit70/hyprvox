@@ -340,4 +340,22 @@ describe("SonioxStreamingTranscriber", () => {
 
 		expect(result2.paragraphBreakCount).toBe(0);
 	});
+
+	test("sends boost words as context.terms in config message", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+		});
+
+		await transcriber.start("en", ["Hyprvox", "Groq", "Deepgram"]);
+		const socket = getSocket();
+		socket.open();
+
+		const configMessage = JSON.parse(String(socket.sent[0]));
+		expect(configMessage.context).toBeDefined();
+		expect(configMessage.context.terms).toEqual(["Hyprvox", "Groq", "Deepgram"]);
+
+		socket.close();
+	});
 });
