@@ -22,6 +22,7 @@ If an API key is missing from `config.json`, the application will fall back to t
 - `GROQ_API_KEY`: Fallback for `apiKeys.groq`
 - `GROQ_FALLBACK_API_KEY`: Fallback for `apiKeys.groqFallback`
 - `DEEPGRAM_API_KEY`: Fallback for `apiKeys.deepgram`
+- `SONIOX_API_KEY`: Fallback for `apiKeys.soniox` when Soniox live dictation is enabled
 
 ### Logging
 - `LOG_LEVEL`: Sets the minimum logging level. Options: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`. Default: `info`.
@@ -44,7 +45,8 @@ The configuration is a JSON file structured into several sections.
   "apiKeys": {
     "groq": "gsk_...",
     "groqFallback": "gsk_...",
-    "deepgram": "00000000-0000-0000-0000-000000000000"
+    "deepgram": "00000000-0000-0000-0000-000000000000",
+    "soniox": "soniox_..."
   },
   "behavior": {
     "hotkey": "Right Control",
@@ -87,6 +89,14 @@ The configuration is a JSON file structured into several sections.
       "Groq",
       "Deepgram"
     ]
+  },
+  "liveDictation": {
+    "enabled": false,
+    "insertionCommand": "auto",
+    "soniox": {
+      "enabled": false,
+      "triggerKey": "Right Alt"
+    }
   }
 }
 ```
@@ -104,6 +114,7 @@ Authentication credentials for the transcription services.
 | `groq` | String | N/A | API key for Groq (Whisper V3). | Must start with `gsk_`. | [Groq Console](https://console.groq.com/keys) |
 | `groqFallback` | String | Optional | Secondary Groq API key used only when the primary merge key is rate-limited/quota-limited. | Must start with `gsk_` if provided. | [Groq Console](https://console.groq.com/keys) |
 | `deepgram` | String | N/A | API key for Deepgram (Nova-3). | 40-char hex string or UUID. | [Deepgram Console](https://console.deepgram.com/) |
+| `soniox` | String | Optional | API key for Soniox real-time STT. Required only when `liveDictation.soniox.enabled` is used. | Non-empty string. | [Soniox Console](https://console.soniox.com/) |
 
 #### How to obtain API Keys
 
@@ -116,6 +127,11 @@ Authentication credentials for the transcription services.
    - Go to the [Deepgram Console](https://console.deepgram.com/).
    - Navigate to **API Keys** and create a new key.
    - **Format**: The key is typically a **40-character hexadecimal string** (e.g., `abcdef1234567890abcdef1234567890abcdef12`). Legacy keys or specific project IDs might use a UUID format, both are supported.
+
+3. **Soniox API Key**:
+   - Go to the [Soniox Console](https://console.soniox.com/).
+   - Create an API key for real-time speech-to-text.
+   - Hyprvox reads it from `apiKeys.soniox` or `SONIOX_API_KEY`.
 
 ---
 
@@ -299,6 +315,27 @@ In streaming mode, performance logs include Deepgram finalization observability:
 - `deepgramHadSpeechFinal`
 
 These fields are for analysis and future tuning. Do not treat a frequent `finalize_timeout` by itself as proof that endpointing should change; compare the final transcript quality and late finalization signals first.
+
+### 5. Live Dictation (`liveDictation`)
+
+Live Dictation controls focused-text insertion while recording. It is disabled by default.
+
+| Option | Type | Default | Description | Validation Rules |
+| :--- | :--- | :--- | :--- | :--- |
+| `enabled` | Boolean | `false` | Type stable live transcript text into the currently focused input during the normal streaming path. | Requires `transcription.streaming: true` to receive Deepgram live transcript events. |
+| `insertionCommand` | String | `"auto"` | Command used for focused text insertion. | `"auto"`, `"wtype"`, or `"xdotool"`. |
+| `soniox.enabled` | Boolean | `false` | Enable the separate Soniox provider-bypass hotkey. | Requires `apiKeys.soniox` or `SONIOX_API_KEY` when used. |
+| `soniox.triggerKey` | String | `"Right Alt"` | Separate hotkey for Soniox live dictation. | Same hotkey format as `behavior.hotkey`. |
+
+#### Normal Live Dictation
+
+When `liveDictation.enabled` and `transcription.streaming` are both enabled, Hyprvox types committed Deepgram streaming transcript chunks into the focused input as they arrive. The final transcript still follows the normal Groq plus Deepgram merge, clipboard, history, and validation path after recording stops.
+
+#### Soniox Provider Bypass
+
+When `liveDictation.soniox.enabled` is enabled, pressing `liveDictation.soniox.triggerKey` starts a Soniox real-time STT session. Recorder PCM is sent directly to Soniox, stable final tokens are typed into the focused input, and the final Soniox transcript is copied to clipboard and appended to history when recording stops.
+
+This path intentionally skips Groq, Deepgram batch transcription, merge, repair, and quality recovery. Use it when low-latency live dictation is more important than the normal multi-provider quality pipeline.
 
 #### Language Options
 

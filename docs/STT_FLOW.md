@@ -49,6 +49,7 @@ sequenceDiagram
 - **Key**: Default is `Right Control`.
 - **Behavior**: Toggle mode. The first press starts the recording; the second press stops it.
 - **Verification**: Checks for hotkey conflicts at startup.
+- **Soniox bypass**: If `liveDictation.soniox.enabled` is true, `liveDictation.soniox.triggerKey` starts a separate Soniox live dictation path instead of the normal Groq plus Deepgram path.
 
 ### 2. Audio Capture
 - **Utility**: `arecord` (via `node-record-lpcm16`).
@@ -93,6 +94,14 @@ Before provider calls, the daemon builds technical-term hints from configured bo
 **Deepgram Finalization Metrics**: In streaming mode, each session records `deepgramFinalizeWaitMs`, `deepgramCloseWaitMs`, `deepgramEndpointingMs`, `deepgramReceivedFinalChunk`, and `deepgramHadSpeechFinal`. These explain whether stop latency came from waiting for the final transcript, closing the WebSocket, or missing Deepgram finalization signals.
 
 **Live Groq Chunk Metrics**: Live chunking perf events include chunk counts, finalize wait, final-tail length, background request time, dropped/recovered chunk counts, and quality fallback status. `groqLiveDroppedChunks` tracks chunk-local outputs removed before stitching; `groqLiveRecoveredChunks` tracks dropped chunks recovered by contextual repair; `groqLiveQualityFallback` records when a clean-looking live Groq transcript was materially shorter than Deepgram and Hyprvox ran one full-audio Groq request before merge.
+
+### 4b. Live Dictation And Soniox Provider Bypass
+
+Live Dictation is an opt-in output path for committed streaming transcript chunks:
+
+- In the normal path, `liveDictation.enabled` plus `transcription.streaming` types committed Deepgram transcript chunks into the focused input while recording continues. Stop still runs the normal Groq plus Deepgram merge, validation, clipboard, and history flow.
+- In Soniox provider bypass mode, `liveDictation.soniox.triggerKey` starts a Soniox real-time WebSocket session. Recorder PCM is sent directly as 16 kHz mono `pcm_s16le`, final Soniox tokens are typed into the focused input, and the final Soniox transcript is copied to clipboard and history when recording stops.
+- Soniox provider bypass intentionally skips Groq, Deepgram batch transcription, merge, repair, and quality recovery. The history engine is recorded as `soniox`, and aggregate performance logs use `mergeStrategy: "provider_bypass"`.
 
 ### 5. Merge And Quality Pipeline
 If both Groq and Deepgram return results, Hyprvox first decides whether deterministic selection is enough or whether an LLM merge is needed. The merge model is configured by `transcription.mergeModel`.
