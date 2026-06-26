@@ -9,6 +9,10 @@ import {
 import { loadConfig } from "../config/loader";
 import { logError, logger } from "../utils/logger";
 import { sanitizeDeepgramKeyterms } from "./deepgram-boost";
+import type {
+	LiveStreamingProvider,
+	LiveTranscriptEvent,
+} from "./live-provider";
 
 export type StreamingStopReason =
 	| "finalize_transcript"
@@ -36,7 +40,10 @@ export interface StreamingFailureReason {
 	chunksSent: number;
 }
 
-export class DeepgramStreamingTranscriber extends EventEmitter {
+export class DeepgramStreamingTranscriber
+	extends EventEmitter
+	implements LiveStreamingProvider
+{
 	private client: DeepgramClient;
 	private connection: LiveClient | null = null;
 	private transcriptChunks: string[] = [];
@@ -120,20 +127,24 @@ export class DeepgramStreamingTranscriber extends EventEmitter {
 							{ transcript: transcript.trim(), isFinal: true },
 							"Deepgram chunk finalized (speech_final)",
 						);
-						this.emit("transcript", transcript.trim(), {
+						const event: LiveTranscriptEvent = {
+							text: transcript.trim(),
 							isFinal: data.is_final,
 							speechFinal: data.speech_final,
-						});
+						};
+						this.emit("transcript", transcript.trim(), event);
 					} else if (data.is_final) {
 						this.transcriptChunks.push(transcript.trim());
 						logger.debug(
 							{ transcript: transcript.trim(), isFinal: data.is_final },
 							"Deepgram chunk finalized (is_final)",
 						);
-						this.emit("transcript", transcript.trim(), {
+						const event: LiveTranscriptEvent = {
+							text: transcript.trim(),
 							isFinal: data.is_final,
 							speechFinal: data.speech_final,
-						});
+						};
+						this.emit("transcript", transcript.trim(), event);
 					}
 				}
 			});
