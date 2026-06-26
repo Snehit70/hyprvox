@@ -305,6 +305,41 @@ program
 	});
 
 program
+	.command("soniox-toggle")
+	.description("Toggle Soniox live dictation (start/stop)")
+	.action(async () => {
+		const socketPath = join(
+			homedir(),
+			".config",
+			"hypr",
+			"vox",
+			"daemon.sock",
+		);
+		if (!existsSync(socketPath)) {
+			console.error(colors.red("Error: Daemon is not running."));
+			console.log(`Start it with: ${colors.cyan("hyprvox start")}`);
+			process.exit(1);
+		}
+
+		const { createConnection } = await import("node:net");
+		const client = createConnection({ path: socketPath });
+
+		client.on("connect", () => {
+			client.write(
+				JSON.stringify({ type: "action", action: "soniox-toggle" }) + "\n",
+			);
+			console.log(colors.green("✅") + " Soniox toggle sent to daemon");
+			client.destroy();
+			process.exit(0);
+		});
+
+		client.on("error", (err) => {
+			console.error(colors.red("Failed to reach daemon:"), err.message);
+			process.exit(1);
+		});
+	});
+
+program
 	.command("install")
 	.description("Install systemd service")
 	.action(() => {
