@@ -111,7 +111,7 @@ describe("SonioxStreamingTranscriber", () => {
 			}),
 		);
 
-		expect(events).toEqual(["hello", "world !"]);
+		expect(events).toEqual(["hello", "world!"]);
 	});
 
 	test("sends an empty frame on stop and returns the final transcript", async () => {
