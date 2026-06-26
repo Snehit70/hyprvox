@@ -69,7 +69,7 @@ describe("LiveDictationWriter", () => {
 		await typer.selectLineAndType("hello world");
 
 		expect(commands).toEqual([
-			{ command: "wtype", args: ["--", "\x1b[H\x1b[1;2F"] },
+			{ command: "wtype", args: ["-k", "Home", "-M", "shift", "-k", "End", "-m", "shift"] },
 			{ command: "wtype", args: ["hello world"] },
 		]);
 	});

@@ -44,7 +44,10 @@ export class DesktopTextTyper implements TextTyper {
 
 	private resolveSelectCommand(): { command: string; args: string[] } {
 		if (this.env.WAYLAND_DISPLAY && this.isCommandAvailable("wtype")) {
-			return { command: "wtype", args: ["--", "\x1b[H\x1b[1;2F"] };
+			return {
+				command: "wtype",
+				args: ["-k", "Home", "-M", "shift", "-k", "End", "-m", "shift"],
+			};
 		}
 
 		if (this.isCommandAvailable("xdotool")) {
