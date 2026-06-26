@@ -1,8 +1,13 @@
 import type { AudioRecorder, PcmAudioPayload } from "../audio/recorder";
 import type { Config } from "../config/schema";
-import type { GroqSingleFileTranscriber } from "../transcribe/groq-chunking";
+import { LiveDictationWriter, type TextTyper } from "../output/live-dictation";
 import { DeepgramStreamingTranscriber } from "../transcribe/deepgram-streaming";
+import type { GroqSingleFileTranscriber } from "../transcribe/groq-chunking";
 import { GroqLiveChunkSession } from "../transcribe/groq-live-chunking";
+import {
+	isCommittedLiveTranscript,
+	type LiveTranscriptEvent,
+} from "../transcribe/live-provider";
 import { logError, logger } from "../utils/logger";
 
 interface StartDeepgramStreamingInput {
@@ -21,6 +26,22 @@ interface AttachStreamingPcmHandlerInput {
 	recorder: AudioRecorder;
 	deepgramStreaming?: DeepgramStreamingTranscriber;
 	liveGroqSession?: GroqLiveChunkSession;
+}
+
+interface TranscriptEventSource {
+	on(
+		event: "transcript",
+		listener: (text: string, event: LiveTranscriptEvent) => void,
+	): unknown;
+	off(
+		event: "transcript",
+		listener: (text: string, event: LiveTranscriptEvent) => void,
+	): unknown;
+}
+
+interface AttachLiveDictationTranscriptHandlerInput {
+	provider: TranscriptEventSource;
+	typer: TextTyper;
 }
 
 export async function stopDeepgramStreaming(
@@ -65,6 +86,31 @@ export function startDeepgramStreaming(
 	});
 	logger.info("Deepgram streaming initiated (background)");
 	return deepgramStreaming;
+}
+
+export function attachLiveDictationTranscriptHandler(
+	input: AttachLiveDictationTranscriptHandlerInput,
+): () => void {
+	const { provider, typer } = input;
+	const writer = new LiveDictationWriter(typer);
+	let pendingWrite = Promise.resolve();
+
+	const handler = (_text: string, event: LiveTranscriptEvent) => {
+		if (!isCommittedLiveTranscript(event)) {
+			return;
+		}
+
+		pendingWrite = pendingWrite
+			.then(() => writer.acceptCommittedTranscript(event.text))
+			.catch((error) => {
+				logError("Failed to type live dictation transcript", error);
+			});
+	};
+
+	provider.on("transcript", handler);
+	return () => {
+		provider.off("transcript", handler);
+	};
 }
 
 export function createLiveGroqSession(
