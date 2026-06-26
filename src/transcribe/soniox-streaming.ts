@@ -80,7 +80,7 @@ export class SonioxStreamingTranscriber
 			((url) => new WebSocket(url) as unknown as SonioxWebSocketLike);
 	}
 
-	public async start(language: string = "en"): Promise<void> {
+	public async start(language: string = "en", boostWords: string[] = []): Promise<void> {
 		this.transcriptChunks = [];
 		this.audioBuffer = [];
 		this.isConnected = false;
@@ -97,17 +97,22 @@ export class SonioxStreamingTranscriber
 
 			this.isConnected = true;
 			this.isConnecting = false;
-			this.connection.send(
-				JSON.stringify({
-					api_key: this.apiKey,
-					model: SONIOX_MODEL,
-					audio_format: "pcm_s16le",
-					sample_rate: SONIOX_SAMPLE_RATE,
-					num_channels: 1,
-					language_hints: [language],
-					enable_endpoint_detection: true,
-				}),
-			);
+
+			const config: Record<string, unknown> = {
+				api_key: this.apiKey,
+				model: SONIOX_MODEL,
+				audio_format: "pcm_s16le",
+				sample_rate: SONIOX_SAMPLE_RATE,
+				num_channels: 1,
+				language_hints: [language],
+				enable_endpoint_detection: true,
+			};
+
+			if (boostWords.length > 0) {
+				config.context = { terms: boostWords };
+			}
+
+			this.connection.send(JSON.stringify(config));
 			logger.info({ language }, "Soniox streaming connection opened");
 			this.emit("open");
 			this.flushBuffer();
