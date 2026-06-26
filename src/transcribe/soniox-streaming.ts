@@ -272,10 +272,13 @@ export class SonioxStreamingTranscriber
 const SONIOX_STRIP_PATTERN = /<\|?end\|?>|<\|?start\|?>|<\|\d+\.\d+\|>/g;
 
 function renderFinalTokenText(tokens: SonioxToken[]): string {
-	return tokens
+	const text = tokens
 		.filter((token) => token.is_final && token.text)
 		.map((token) => (token.text ?? "").replace(SONIOX_STRIP_PATTERN, ""))
-		.join("")
+		.join("");
+
+	return text
+		.replace(/ ([,.\u00!?;:'"%)])/g, "$1")
 		.replace(/  +/g, " ")
 		.trim();
 }
