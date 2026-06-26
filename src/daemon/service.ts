@@ -12,7 +12,8 @@ import {
 import type { Config } from "../config/schema";
 import { configService } from "../config/service";
 import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
-import { DesktopTextTyper } from "../output/live-dictation";
+import { DesktopTextTyper, LiveDictationWriter } from "../output/live-dictation";
+import { formatSonioxWithLLM } from "../transcribe/soniox-streaming";
 import { notify } from "../output/notification";
 import type { DaemonStatus } from "../shared/ipc-types";
 import { appendStatsAggregateEntry } from "../stats/aggregate";
@@ -108,6 +109,7 @@ export class DaemonService {
 	private sonioxStreaming?: SonioxStreamingTranscriber;
 	private streamingPcmHandler?: (payload: PcmAudioPayload) => void;
 	private liveDictationTranscriptDetach?: () => void;
+	private liveDictationWriter?: LiveDictationWriter;
 	private liveGroqSession?: GroqLiveChunkSession;
 	private recordingMode: "standard" | "soniox" = "standard";
 	private merger: TranscriptMerger;
@@ -334,6 +336,12 @@ export class DaemonService {
 	private setupListeners() {
 		this.hotkeyListener.on("trigger", () => this.handleTrigger());
 		this.hotkeyListener.on("soniox-trigger", () => this.handleSonioxTrigger());
+		this.ipcServer.on("command", (action: string) => {
+			if (action === "soniox-toggle") {
+				logger.info("Received soniox-toggle command via IPC");
+				this.handleSonioxTrigger();
+			}
+		});
 
 		this.recorder.on("start", () => {
 			this.lastOverlayAudioLevelAt = 0;
@@ -564,13 +572,13 @@ export class DaemonService {
 						},
 					});
 					if (this.config.liveDictation.enabled) {
-						this.liveDictationTranscriptDetach =
-							attachLiveDictationTranscriptHandler({
-								provider: this.deepgramStreaming,
-								typer: new DesktopTextTyper({
-									preferredCommand: this.config.liveDictation.insertionCommand,
-								}),
-							});
+						const result = attachLiveDictationTranscriptHandler({
+							provider: this.deepgramStreaming,
+							typer: new DesktopTextTyper({
+								preferredCommand: this.config.liveDictation.insertionCommand,
+							}),
+						});
+						this.liveDictationTranscriptDetach = result.detach;
 					}
 				}
 
@@ -634,17 +642,22 @@ export class DaemonService {
 			this.cancelPending = false;
 			try {
 				this.setStatus("starting");
-				this.sonioxStreaming = new SonioxStreamingTranscriber();
+				this.sonioxStreaming = new SonioxStreamingTranscriber({
+					paragraphPauseMs:
+						this.config.liveDictation.soniox.paragraphPauseMs,
+				});
 				this.sonioxStreaming.on("error", (error) => {
 					logError("Soniox streaming error", error);
 				});
-				this.liveDictationTranscriptDetach =
+				const liveDictationResult =
 					attachLiveDictationTranscriptHandler({
 						provider: this.sonioxStreaming,
 						typer: new DesktopTextTyper({
 							preferredCommand: this.config.liveDictation.insertionCommand,
 						}),
 					});
+				this.liveDictationTranscriptDetach = liveDictationResult.detach;
+				this.liveDictationWriter = liveDictationResult.writer;
 				await this.sonioxStreaming.start(this.config.transcription.language);
 				this.streamingPcmHandler = attachStreamingPcmHandler({
 					recorder: this.recorder,
@@ -684,8 +697,8 @@ export class DaemonService {
 			}
 
 			const result = await this.sonioxStreaming.stop();
-			const finalText = result.text.trim();
-			if (!finalText) {
+			const rawText = result.text.trim();
+			if (!rawText) {
 				logger.info({ duration }, "No speech detected in Soniox recording");
 				notify(
 					"No Speech Detected",
@@ -696,7 +709,17 @@ export class DaemonService {
 				return;
 			}
 
-			await this.clipboard.append(finalText);
+			const { formattedText, llmFormattingMs } = await formatSonioxWithLLM(
+				rawText,
+				this.config.apiKeys.groq,
+				this.config.apiKeys.groqFallback,
+			);
+
+			if (this.config.liveDictation.retypeFormatted && this.liveDictationWriter) {
+				await this.liveDictationWriter.retypeFormattedText(formattedText);
+			}
+
+			await this.clipboard.append(formattedText);
 			const processingTime = Date.now() - totalStart;
 
 			const stats = await incrementTranscriptionCount();
@@ -705,7 +728,7 @@ export class DaemonService {
 
 			await appendHistory({
 				timestamp: new Date().toISOString(),
-				text: finalText,
+				text: formattedText,
 				duration: duration / 1000,
 				engine: "soniox",
 				processingTime,
@@ -715,6 +738,7 @@ export class DaemonService {
 				timestamp: new Date().toISOString(),
 				engine: "soniox",
 				processingMs: processingTime,
+				llmFormattingMs,
 				mergeStrategy: "provider_bypass",
 				mergeReason: "soniox_live",
 				validationReasons: [],
@@ -733,12 +757,28 @@ export class DaemonService {
 			logger.info(
 				{
 					engine: "soniox",
-					textLength: finalText.length,
+					textLength: formattedText.length,
 					recordingDurationMs: duration,
 					processingMs: processingTime,
 					stopReason: result.stopReason,
 				},
 				"Soniox provider bypass transcription complete",
+			);
+
+			logger.info(
+				{
+					type: "perf",
+					engine: "soniox",
+					textLength: formattedText.length,
+					recordingDurationMs: duration,
+					processingMs: processingTime,
+					llmFormattingMs,
+					tokenCount: result.chunkCount,
+					paragraphBreakCount: result.paragraphBreakCount,
+					stopReason: result.stopReason,
+					closeWaitMs: result.closeWaitMs,
+				},
+				"Soniox transcription performance",
 			);
 		} catch (error: unknown) {
 			logError("Soniox processing failed", error, { duration });
