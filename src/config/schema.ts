@@ -215,9 +215,11 @@ const defaultAudio = {
 const defaultLiveDictation = {
 	enabled: false,
 	insertionCommand: "auto" as const,
+	retypeFormatted: true,
 	soniox: {
 		enabled: false,
 		triggerKey: "Right Alt",
+		paragraphPauseMs: 3000,
 	},
 };
 
@@ -421,6 +423,7 @@ export const LiveDictationSchema = z
 		insertionCommand: z
 			.enum(["auto", "wtype", "xdotool"])
 			.default(defaultLiveDictation.insertionCommand),
+		retypeFormatted: z.boolean().default(defaultLiveDictation.retypeFormatted),
 		soniox: z
 			.object({
 				enabled: z.boolean().default(defaultLiveDictation.soniox.enabled),
@@ -431,6 +434,10 @@ export const LiveDictationSchema = z
 						message:
 							"Invalid Soniox trigger key format. Use 'Modifier+Key' (e.g., 'Ctrl+Space', 'Right Alt').",
 					}),
+				paragraphPauseMs: z
+					.number()
+					.min(1000, { message: "paragraphPauseMs must be at least 1000ms" })
+					.default(defaultLiveDictation.soniox.paragraphPauseMs),
 			})
 			.default(defaultLiveDictation.soniox),
 	})
