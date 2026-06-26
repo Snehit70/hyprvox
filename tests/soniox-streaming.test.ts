@@ -166,6 +166,34 @@ describe("SonioxStreamingTranscriber", () => {
 		expect(events).toEqual(["hello world"]);
 	});
 
+	test("strips spaces before punctuation", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+		});
+		const events: string[] = [];
+		transcriber.on("transcript", (text) => events.push(text));
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+		socket.receive(
+			JSON.stringify({
+				tokens: [
+					{ text: "world ", is_final: true },
+					{ text: ", ", is_final: true },
+					{ text: "test ", is_final: true },
+					{ text: ". ", is_final: true },
+					{ text: "Hello ", is_final: true },
+					{ text: "! ", is_final: true },
+				],
+			}),
+		);
+
+		expect(events).toEqual(["world, test. Hello!"]);
+	});
+
 	test("inserts double-space paragraph break on long pause", async () => {
 		MockSonioxWebSocket.instances = [];
 		const transcriber = new SonioxStreamingTranscriber({
