@@ -33,6 +33,7 @@ import { assessLongRecordingQuality } from "../transcribe/long-recording";
 import { type MergeResult, TranscriptMerger } from "../transcribe/merger";
 import { validateTranscript } from "../transcribe/quality";
 import { recoverTranscriptQuality } from "../transcribe/recovery";
+import { SonioxStreamingTranscriber } from "../transcribe/soniox-streaming";
 import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { errorIncludes, getErrorCode } from "../utils/errors";
 import { appendHistory } from "../utils/history";
@@ -104,9 +105,11 @@ export class DaemonService {
 	private groq: GroqClient;
 	private deepgram: DeepgramTranscriber;
 	private deepgramStreaming?: DeepgramStreamingTranscriber;
+	private sonioxStreaming?: SonioxStreamingTranscriber;
 	private streamingPcmHandler?: (payload: PcmAudioPayload) => void;
 	private liveDictationTranscriptDetach?: () => void;
 	private liveGroqSession?: GroqLiveChunkSession;
+	private recordingMode: "standard" | "soniox" = "standard";
 	private merger: TranscriptMerger;
 	private clipboard: ClipboardManager;
 	private pidFile: string;
@@ -330,6 +333,7 @@ export class DaemonService {
 
 	private setupListeners() {
 		this.hotkeyListener.on("trigger", () => this.handleTrigger());
+		this.hotkeyListener.on("soniox-trigger", () => this.handleSonioxTrigger());
 
 		this.recorder.on("start", () => {
 			this.lastOverlayAudioLevelAt = 0;
@@ -342,6 +346,14 @@ export class DaemonService {
 			this.lastOverlayAudioLevelAt = 0;
 			this.smoothedOverlayLevel = 0;
 			this.setStatus("processing");
+			if (this.recordingMode === "soniox") {
+				this.notifyStateChange(
+					"Soniox Recording Stopped",
+					"Finalizing live transcription...",
+				);
+				this.processSonioxAudio(duration);
+				return;
+			}
 			this.notifyStateChange(
 				"Recording Stopped",
 				"Processing transcription...",
@@ -407,15 +419,24 @@ export class DaemonService {
 			this.updateState();
 			this.overlay.start();
 
-			const hotkeyDisabled =
+			const defaultHotkeyDisabled =
 				this.config.behavior.hotkey.toLowerCase() === "disabled";
+			const anyHotkeyEnabled =
+				!defaultHotkeyDisabled || this.config.liveDictation.soniox.enabled;
 
 			const isWayland =
 				!!process.env.WAYLAND_DISPLAY ||
 				process.env.XDG_SESSION_TYPE === "wayland";
 
-			if (!hotkeyDisabled) {
-				await checkHotkeyConflict(this.config.behavior.hotkey);
+			if (anyHotkeyEnabled) {
+				if (!defaultHotkeyDisabled) {
+					await checkHotkeyConflict(this.config.behavior.hotkey);
+				}
+				if (this.config.liveDictation.soniox.enabled) {
+					await checkHotkeyConflict(
+						this.config.liveDictation.soniox.triggerKey,
+					);
+				}
 				this.hotkeyListener.start();
 				logger.info("Daemon started. Waiting for hotkey...");
 
@@ -480,6 +501,14 @@ export class DaemonService {
 		}
 		await stopDeepgramStreaming(this.deepgramStreaming, reason);
 		this.deepgramStreaming = undefined;
+		if (this.sonioxStreaming) {
+			try {
+				await this.sonioxStreaming.stop();
+			} catch (error: unknown) {
+				logError(reason, error);
+			}
+			this.sonioxStreaming = undefined;
+		}
 		if (this.liveGroqSession) {
 			this.liveGroqSession.cancel();
 			this.liveGroqSession = undefined;
@@ -488,6 +517,7 @@ export class DaemonService {
 
 	private async handleTrigger() {
 		if (this.status === "idle" || this.status === "error") {
+			this.recordingMode = "standard";
 			this.cancelPending = false;
 			try {
 				this.setStatus("starting");
@@ -590,6 +620,146 @@ export class DaemonService {
 			notify("Cancelled", "Recording start cancelled", "info");
 		} else {
 			logger.warn(`Hotkey ignored in state: ${this.status}`);
+		}
+	}
+
+	private async handleSonioxTrigger() {
+		if (!this.config.liveDictation.soniox.enabled) {
+			logger.warn("Soniox trigger ignored because Soniox bypass is disabled");
+			return;
+		}
+
+		if (this.status === "idle" || this.status === "error") {
+			this.recordingMode = "soniox";
+			this.cancelPending = false;
+			try {
+				this.setStatus("starting");
+				this.sonioxStreaming = new SonioxStreamingTranscriber();
+				this.sonioxStreaming.on("error", (error) => {
+					logError("Soniox streaming error", error);
+				});
+				this.liveDictationTranscriptDetach =
+					attachLiveDictationTranscriptHandler({
+						provider: this.sonioxStreaming,
+						typer: new DesktopTextTyper({
+							preferredCommand: this.config.liveDictation.insertionCommand,
+						}),
+					});
+				await this.sonioxStreaming.start(this.config.transcription.language);
+				this.streamingPcmHandler = attachStreamingPcmHandler({
+					recorder: this.recorder,
+					liveProvider: this.sonioxStreaming,
+				});
+				await this.recorder.start();
+			} catch (error) {
+				this.cancelPending = false;
+				logError("Failed to start Soniox recording", error);
+				await this.teardownStreaming(
+					"Failed to stop Soniox streaming after start failure",
+				);
+				this.setStatus("idle");
+				notify(
+					"Soniox Error",
+					"Failed to start Soniox live dictation",
+					"error",
+				);
+			}
+		} else if (this.status === "recording") {
+			this.setStatus("stopping");
+			await this.recorder.stop();
+		} else if (this.status === "starting") {
+			this.cancelPending = true;
+			logger.info("Soniox recording start cancelled by user");
+			notify("Cancelled", "Soniox recording start cancelled", "info");
+		} else {
+			logger.warn(`Soniox hotkey ignored in state: ${this.status}`);
+		}
+	}
+
+	private async processSonioxAudio(duration: number) {
+		const totalStart = Date.now();
+		try {
+			if (!this.sonioxStreaming) {
+				throw new Error("Soniox streaming session missing");
+			}
+
+			const result = await this.sonioxStreaming.stop();
+			const finalText = result.text.trim();
+			if (!finalText) {
+				logger.info({ duration }, "No speech detected in Soniox recording");
+				notify(
+					"No Speech Detected",
+					"Recording was too short or contained no audible speech.",
+					"warning",
+				);
+				this.setStatus("idle");
+				return;
+			}
+
+			await this.clipboard.append(finalText);
+			const processingTime = Date.now() - totalStart;
+
+			const stats = await incrementTranscriptionCount();
+			this.transcriptionCountToday = stats.today;
+			this.transcriptionCountTotal = stats.total;
+
+			await appendHistory({
+				timestamp: new Date().toISOString(),
+				text: finalText,
+				duration: duration / 1000,
+				engine: "soniox",
+				processingTime,
+			});
+
+			void appendStatsAggregateEntry({
+				timestamp: new Date().toISOString(),
+				engine: "soniox",
+				processingMs: processingTime,
+				mergeStrategy: "provider_bypass",
+				mergeReason: "soniox_live",
+				validationReasons: [],
+				validationRetryCount: 0,
+				validationFallbackSource: "none",
+				sonioxChunkCount: result.chunkCount,
+				sonioxStopReason: result.stopReason,
+				sonioxCloseWaitMs: result.closeWaitMs,
+			});
+
+			await this.notifyStateChange(
+				"Success",
+				"Soniox transcription copied to clipboard",
+				"success",
+			);
+			logger.info(
+				{
+					engine: "soniox",
+					textLength: finalText.length,
+					recordingDurationMs: duration,
+					processingMs: processingTime,
+					stopReason: result.stopReason,
+				},
+				"Soniox provider bypass transcription complete",
+			);
+		} catch (error: unknown) {
+			logError("Soniox processing failed", error, { duration });
+			this.errorCount++;
+			this.setStatus("error", "Soniox transcription failed. Check logs.");
+			notify("Soniox Error", "Soniox transcription failed", "error");
+		} finally {
+			this.lastTranscription = new Date();
+			if (this.liveDictationTranscriptDetach) {
+				this.liveDictationTranscriptDetach();
+				this.liveDictationTranscriptDetach = undefined;
+			}
+			if (this.streamingPcmHandler) {
+				this.recorder.off("pcm-data", this.streamingPcmHandler);
+				this.streamingPcmHandler = undefined;
+			}
+			this.sonioxStreaming = undefined;
+			this.recordingMode = "standard";
+			if (this.status !== "error") {
+				this.setStatus("idle");
+			}
 		}
 	}
 
