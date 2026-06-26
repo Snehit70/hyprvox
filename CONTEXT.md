@@ -24,6 +24,14 @@ _Avoid_: hotkey, shortcut
 The on-screen status surface that reflects live daemon state.
 _Avoid_: popup, HUD
 
+**Live Dictation**:
+Entering stable transcript text into the currently focused text field while a recording is still active, then preserving the final transcript through the normal clipboard and history paths.
+_Avoid_: live paste, streaming paste
+
+**Provider Bypass**:
+A recording path that uses one live transcription provider directly and skips the Groq plus Deepgram merge and quality pipeline by design.
+_Avoid_: fallback, fast mode
+
 ## Observability
 
 **Readiness**:
