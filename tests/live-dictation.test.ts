@@ -56,6 +56,42 @@ describe("LiveDictationWriter", () => {
 		]);
 	});
 
+	test("selectLineAndType on Wayland uses Home+Shift+End escape sequences", async () => {
+		const commands: Array<{ command: string; args: string[] }> = [];
+		const typer = new DesktopTextTyper({
+			env: { WAYLAND_DISPLAY: "wayland-1" },
+			isCommandAvailable: (command) => command === "wtype",
+			runCommand: async (command, args) => {
+				commands.push({ command, args });
+			},
+		});
+
+		await typer.selectLineAndType("hello world");
+
+		expect(commands).toEqual([
+			{ command: "wtype", args: ["--", "\x1b[H\x1b[1;2F"] },
+			{ command: "wtype", args: ["hello world"] },
+		]);
+	});
+
+	test("selectLineAndType on X11 uses Home+Shift+End via xdotool", async () => {
+		const commands: Array<{ command: string; args: string[] }> = [];
+		const typer = new DesktopTextTyper({
+			env: {},
+			isCommandAvailable: (command) => command === "xdotool",
+			runCommand: async (command, args) => {
+				commands.push({ command, args });
+			},
+		});
+
+		await typer.selectLineAndType("hello x11");
+
+		expect(commands).toEqual([
+			{ command: "xdotool", args: ["key", "--clearmodifiers", "Home", "shift+End"] },
+			{ command: "xdotool", args: ["type", "--clearmodifiers", "--", "hello x11"] },
+		]);
+	});
+
 	test("honors an explicit focused text insertion command", async () => {
 		const commands: Array<{ command: string; args: string[] }> = [];
 		const typer = new DesktopTextTyper({
