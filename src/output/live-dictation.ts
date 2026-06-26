@@ -34,6 +34,31 @@ export class DesktopTextTyper implements TextTyper {
 		await this.runCommand(command.command, [...command.args, text]);
 	}
 
+	public async selectLineAndType(text: string): Promise<void> {
+		const selectCommand = this.resolveSelectCommand();
+		await this.runCommand(selectCommand.command, selectCommand.args);
+
+		const typeCommand = this.resolveCommand();
+		await this.runCommand(typeCommand.command, [...typeCommand.args, text]);
+	}
+
+	private resolveSelectCommand(): { command: string; args: string[] } {
+		if (this.env.WAYLAND_DISPLAY && this.isCommandAvailable("wtype")) {
+			return { command: "wtype", args: ["--", "\x1b[H\x1b[1;2C"] };
+		}
+
+		if (this.isCommandAvailable("xdotool")) {
+			return {
+				command: "xdotool",
+				args: ["key", "--clearmodifiers", "Home", "shift+End"],
+			};
+		}
+
+		throw new Error(
+			"Live Dictation retype requires wtype on Wayland or xdotool on X11",
+		);
+	}
+
 	private resolveCommand(): { command: string; args: string[] } {
 		if (this.preferredCommand === "wtype") {
 			this.assertCommandAvailable("wtype");
@@ -88,6 +113,21 @@ export class LiveDictationWriter {
 		}
 
 		await this.typer.typeText(delta);
+	}
+
+	public async retypeFormattedText(formattedText: string): Promise<void> {
+		const typer = this.typer as DesktopTextTyper;
+		if (typeof typer.selectLineAndType !== "function") {
+			await this.typer.typeText(formattedText);
+			return;
+		}
+
+		await typer.selectLineAndType(formattedText);
+		this.committedText = formattedText;
+	}
+
+	public getCommittedText(): string {
+		return this.committedText;
 	}
 
 	public reset(): void {

@@ -92,7 +92,7 @@ export function startDeepgramStreaming(
 
 export function attachLiveDictationTranscriptHandler(
 	input: AttachLiveDictationTranscriptHandlerInput,
-): () => void {
+): { detach: () => void; writer: LiveDictationWriter } {
 	const { provider, typer } = input;
 	const writer = new LiveDictationWriter(typer);
 	let pendingWrite = Promise.resolve();
@@ -110,8 +110,11 @@ export function attachLiveDictationTranscriptHandler(
 	};
 
 	provider.on("transcript", handler);
-	return () => {
-		provider.off("transcript", handler);
+	return {
+		detach: () => {
+			provider.off("transcript", handler);
+		},
+		writer,
 	};
 }
 
