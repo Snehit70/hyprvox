@@ -6,6 +6,7 @@ import type { GroqSingleFileTranscriber } from "../transcribe/groq-chunking";
 import { GroqLiveChunkSession } from "../transcribe/groq-live-chunking";
 import {
 	isCommittedLiveTranscript,
+	type LiveStreamingProvider,
 	type LiveTranscriptEvent,
 } from "../transcribe/live-provider";
 import { logError, logger } from "../utils/logger";
@@ -25,6 +26,7 @@ interface CreateLiveGroqSessionInput {
 interface AttachStreamingPcmHandlerInput {
 	recorder: AudioRecorder;
 	deepgramStreaming?: DeepgramStreamingTranscriber;
+	liveProvider?: LiveStreamingProvider;
 	liveGroqSession?: GroqLiveChunkSession;
 }
 
@@ -132,6 +134,7 @@ export function attachStreamingPcmHandler(
 	input: AttachStreamingPcmHandlerInput,
 ): (payload: PcmAudioPayload) => void {
 	const { recorder, deepgramStreaming, liveGroqSession } = input;
+	const liveProvider = input.liveProvider ?? deepgramStreaming;
 	let chunkCount = 0;
 	const handler = (payload: PcmAudioPayload) => {
 		chunkCount++;
@@ -139,7 +142,7 @@ export function attachStreamingPcmHandler(
 			{ chunkNumber: chunkCount, chunkSize: payload.pcm.length },
 			"Handler called with PCM chunk",
 		);
-		deepgramStreaming?.send(payload.pcm);
+		liveProvider?.send(payload.pcm);
 		if (deepgramStreaming) {
 			logger.debug({ chunkNumber: chunkCount }, "Sent chunk to Deepgram");
 		}

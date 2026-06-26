@@ -4,81 +4,144 @@ import {
 	type IGlobalKeyEvent,
 } from "node-global-key-listener";
 import { loadConfig } from "../config/loader";
+import type { Config } from "../config/schema";
 import { notify } from "../output/notification";
 import { logError, logger } from "../utils/logger";
+
+export interface HotkeyBinding {
+	id: "default" | "soniox";
+	hotkey: string;
+	event: "trigger" | "soniox-trigger";
+	triggerKey: string;
+	modifiers: string[];
+}
+
+export function createHotkeyBindings(
+	config: Pick<Config, "behavior" | "liveDictation">,
+): HotkeyBinding[] {
+	const bindings: HotkeyBinding[] = [];
+	const defaultBinding = parseHotkeyBinding(
+		"default",
+		config.behavior.hotkey,
+		"trigger",
+	);
+	if (defaultBinding) {
+		bindings.push(defaultBinding);
+	}
+
+	if (config.liveDictation.soniox.enabled) {
+		const sonioxBinding = parseHotkeyBinding(
+			"soniox",
+			config.liveDictation.soniox.triggerKey,
+			"soniox-trigger",
+		);
+		if (sonioxBinding) {
+			bindings.push(sonioxBinding);
+		}
+	}
+
+	return bindings;
+}
+
+export function matchesHotkeyBinding(
+	binding: HotkeyBinding,
+	keyName: string | undefined,
+	down: Record<string, boolean>,
+): boolean {
+	const normalizedKeyName = keyName?.toUpperCase().replace("CONTROL", "CTRL");
+	if (normalizedKeyName !== binding.triggerKey) {
+		return false;
+	}
+
+	return binding.modifiers.every((mod) => {
+		if (mod === "CTRL" || mod === "CONTROL") {
+			return (
+				down["LEFT CTRL"] ||
+				down["RIGHT CTRL"] ||
+				down["LEFT CONTROL"] ||
+				down["RIGHT CONTROL"]
+			);
+		}
+		if (mod === "ALT") return down["LEFT ALT"] || down["RIGHT ALT"];
+		if (mod === "SHIFT") return down["LEFT SHIFT"] || down["RIGHT SHIFT"];
+		if (mod === "META" || mod === "SUPER" || mod === "WIN") {
+			return (
+				down["LEFT META"] ||
+				down["RIGHT META"] ||
+				down["LEFT WIN"] ||
+				down["RIGHT WIN"]
+			);
+		}
+
+		return down[mod];
+	});
+}
+
+function parseHotkeyBinding(
+	id: HotkeyBinding["id"],
+	hotkey: string,
+	event: HotkeyBinding["event"],
+): HotkeyBinding | null {
+	const normalizedHotkey = hotkey.toUpperCase();
+	if (normalizedHotkey === "DISABLED") {
+		return null;
+	}
+
+	const parts = normalizedHotkey.split("+").map((p) => p.trim());
+	const triggerKeyRaw = parts[parts.length - 1];
+	if (!triggerKeyRaw) {
+		return null;
+	}
+
+	return {
+		id,
+		hotkey: normalizedHotkey,
+		event,
+		triggerKey: triggerKeyRaw.replace("CONTROL", "CTRL"),
+		modifiers: parts.slice(0, parts.length - 1),
+	};
+}
 
 export class HotkeyListener extends EventEmitter {
 	private listener: GlobalKeyboardListener | null = null;
 	private registered = false;
-	private isPressed = false;
+	private pressedBindings = new Set<HotkeyBinding["id"]>();
 
 	public start() {
 		if (this.registered) return;
 
 		try {
 			const config = loadConfig();
-			const hotkey = config.behavior.hotkey.toUpperCase();
+			const bindings = createHotkeyBindings(config);
 
-			if (hotkey === "DISABLED") {
+			if (bindings.length === 0) {
 				logger.info("Hotkey listener is disabled in configuration");
-				return;
-			}
-
-			const parts = hotkey.split("+").map((p) => p.trim());
-			const triggerKeyRaw = parts[parts.length - 1];
-			if (!triggerKeyRaw) {
-				const msg = "Invalid hotkey configuration: empty trigger key";
-				logger.warn(msg);
-				notify("Configuration Error", msg, "error");
 				return;
 			}
 
 			this.listener = new GlobalKeyboardListener();
 
-			const modifiers = parts.slice(0, parts.length - 1);
-
-			const triggerKey = triggerKeyRaw.replace("CONTROL", "CTRL");
-
 			this.listener.addListener(
 				(e: IGlobalKeyEvent, down: Record<string, boolean>) => {
 					const keyName = e.name?.toUpperCase();
-					const normalizedKeyName = keyName?.replace("CONTROL", "CTRL");
 
 					if (e.state === "DOWN") {
-						if (normalizedKeyName === triggerKey) {
-							const allModifiersPressed = modifiers.every((mod) => {
-								if (mod === "CTRL" || mod === "CONTROL")
-									return (
-										down["LEFT CTRL"] ||
-										down["RIGHT CTRL"] ||
-										down["LEFT CONTROL"] ||
-										down["RIGHT CONTROL"]
-									);
-								if (mod === "ALT") return down["LEFT ALT"] || down["RIGHT ALT"];
-								if (mod === "SHIFT")
-									return down["LEFT SHIFT"] || down["RIGHT SHIFT"];
-								if (mod === "META" || mod === "SUPER" || mod === "WIN")
-									return (
-										down["LEFT META"] ||
-										down["RIGHT META"] ||
-										down["LEFT WIN"] ||
-										down["RIGHT WIN"]
-									);
-
-								return down[mod];
-							});
-
-							if (allModifiersPressed) {
-								if (!this.isPressed) {
-									this.isPressed = true;
-									logger.info(`Hotkey triggered: ${hotkey}`);
-									this.emit("trigger");
-								}
+						for (const binding of bindings) {
+							if (
+								matchesHotkeyBinding(binding, keyName, down) &&
+								!this.pressedBindings.has(binding.id)
+							) {
+								this.pressedBindings.add(binding.id);
+								logger.info(`Hotkey triggered: ${binding.hotkey}`);
+								this.emit(binding.event);
 							}
 						}
 					} else if (e.state === "UP") {
-						if (normalizedKeyName === triggerKey) {
-							this.isPressed = false;
+						const normalizedKeyName = keyName?.replace("CONTROL", "CTRL");
+						for (const binding of bindings) {
+							if (normalizedKeyName === binding.triggerKey) {
+								this.pressedBindings.delete(binding.id);
+							}
 						}
 					}
 				},
