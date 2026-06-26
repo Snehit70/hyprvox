@@ -43,6 +43,7 @@ interface SonioxStreamingTranscriberOptions {
 	apiKey?: string;
 	endpoint?: string;
 	createWebSocket?: CreateSonioxWebSocket;
+	paragraphPauseMs?: number;
 }
 
 export class SonioxStreamingTranscriber
@@ -52,12 +53,17 @@ export class SonioxStreamingTranscriber
 	private readonly apiKey: string;
 	private readonly endpoint: string;
 	private readonly createWebSocket: CreateSonioxWebSocket;
+	private readonly paragraphPauseMs: number;
 	private connection: SonioxWebSocketLike | null = null;
 	private transcriptChunks: string[] = [];
 	private audioBuffer: Buffer[] = [];
 	private isConnected = false;
 	private isConnecting = false;
 	private chunksSent = 0;
+	private lastEmittedFullText = "";
+	private lastMessageTimestamp = 0;
+	private hasReceivedMessage = false;
+	private paragraphBreakCount = 0;
 
 	public constructor(options: SonioxStreamingTranscriberOptions = {}) {
 		super();
@@ -68,6 +74,7 @@ export class SonioxStreamingTranscriber
 
 		this.apiKey = apiKey;
 		this.endpoint = options.endpoint ?? SONIOX_WEBSOCKET_ENDPOINT;
+		this.paragraphPauseMs = options.paragraphPauseMs ?? 3000;
 		this.createWebSocket =
 			options.createWebSocket ??
 			((url) => new WebSocket(url) as unknown as SonioxWebSocketLike);
@@ -79,6 +86,10 @@ export class SonioxStreamingTranscriber
 		this.isConnected = false;
 		this.isConnecting = true;
 		this.chunksSent = 0;
+		this.lastEmittedFullText = "";
+		this.lastMessageTimestamp = 0;
+		this.hasReceivedMessage = false;
+		this.paragraphBreakCount = 0;
 
 		this.connection = this.createWebSocket(this.endpoint);
 		this.connection.onopen = () => {
@@ -168,6 +179,7 @@ export class SonioxStreamingTranscriber
 		return {
 			text: finalText,
 			chunkCount: this.transcriptChunks.length,
+			paragraphBreakCount: this.paragraphBreakCount,
 			stopReason,
 			finalizeWaitMs: 0,
 			closeWaitMs,
@@ -189,16 +201,45 @@ export class SonioxStreamingTranscriber
 				return;
 			}
 
-			const finalText = renderFinalTokenText(response.tokens ?? []);
-			if (!finalText) return;
+			const tokens = response.tokens ?? [];
+			for (const token of tokens) {
+				logger.debug(
+					{ text: token.text, isFinal: token.is_final },
+					"Soniox token received",
+				);
+			}
 
-			this.transcriptChunks.push(finalText);
+			const fullText = renderFinalTokenText(tokens);
+			const delta = fullText.slice(this.lastEmittedFullText.length);
+			this.lastEmittedFullText = fullText;
+
+			if (!delta) return;
+
+			const now = Date.now();
+			const gapMs = this.lastMessageTimestamp > 0
+				? now - this.lastMessageTimestamp
+				: 0;
+			this.lastMessageTimestamp = now;
+
+			let prefix = "";
+			if (this.hasReceivedMessage && gapMs >= this.paragraphPauseMs) {
+				prefix = "  ";
+				this.paragraphBreakCount++;
+				logger.debug(
+					{ gapMs, paragraphPauseMs: this.paragraphPauseMs },
+					"Soniox paragraph break inserted",
+				);
+			}
+			this.hasReceivedMessage = true;
+
+			logger.debug({ delta, fullText }, "Soniox transcript delta emitted");
+			this.transcriptChunks.push(prefix + delta);
 			const event: LiveTranscriptEvent = {
-				text: finalText,
+				text: prefix + fullText,
 				isFinal: true,
 				speechFinal: true,
 			};
-			this.emit("transcript", finalText, event);
+			this.emit("transcript", prefix + fullText, event);
 		} catch (error) {
 			logError("Failed to parse Soniox streaming response", error);
 		}
@@ -228,9 +269,123 @@ export class SonioxStreamingTranscriber
 	}
 }
 
+const SONIOX_STRIP_PATTERN = /<\|?end\|?>|<\|?start\|?>|<\|\d+\.\d+\|>/g;
+
 function renderFinalTokenText(tokens: SonioxToken[]): string {
-	return tokens
+	const text = tokens
 		.filter((token) => token.is_final && token.text)
-		.map((token) => token.text)
-		.join("");
+		.map((token) => (token.text ?? "").replace(SONIOX_STRIP_PATTERN, ""))
+		.join(" ");
+
+	return text.replace(/  +/g, " ").trim();
+}
+
+const LLM_FORMAT_SYSTEM_PROMPT = `Task: add paragraph breaks to raw dictation text.
+
+Output contract:
+- Return the text with paragraph breaks inserted at natural sentence boundaries.
+- Do not add any content, metadata, or explanations.
+- Do not modify the text itself, only insert paragraph breaks (\\n\\n).
+- Preserve all original wording exactly.
+- Insert paragraph breaks between topics or after a pause in thought.
+
+Input: Raw dictation text with double-space paragraph markers.`;
+
+export async function formatSonioxWithLLM(
+	text: string,
+	apiKey: string,
+	fallbackApiKey?: string,
+): Promise<{ formattedText: string; llmFormattingMs: number }> {
+	const startTime = Date.now();
+	try {
+		const GroqModule = await import("groq-sdk");
+		const Groq = GroqModule.default;
+		const client = new Groq({ apiKey });
+
+		const completion = await client.chat.completions.create({
+			model: "llama-3.3-70b-versatile",
+			messages: [
+				{ role: "system", content: LLM_FORMAT_SYSTEM_PROMPT },
+				{ role: "user", content: text },
+			],
+			temperature: 0,
+			max_tokens: Math.ceil(text.length / 3),
+			seed: 42,
+		});
+
+		const formattedText =
+			completion.choices[0]?.message?.content?.trim() ?? text;
+		const llmFormattingMs = Date.now() - startTime;
+
+		logger.debug(
+			{ originalLength: text.length, formattedLength: formattedText.length, llmFormattingMs },
+			"Soniox LLM formatting complete",
+		);
+
+		return { formattedText, llmFormattingMs };
+	} catch (error) {
+		const llmFormattingMs = Date.now() - startTime;
+		logError("Soniox LLM formatting failed; using raw text", error);
+		return { formattedText: text, llmFormattingMs };
+	}
+}
+
+const LLM_FORMATTING_SYSTEM_PROMPT = `Task: add paragraph breaks to the following transcript text.
+
+Output contract:
+- Return the transcript text with paragraph breaks added.
+- Do not modify the wording, punctuation, or content in any way.
+- Do not remove filler words, fix grammar, or rewrite anything.
+- Do not emit metadata, labels, instructions, or explanations.
+
+Paragraph break rules:
+- Insert a blank line (double newline) between distinct topic changes or when there's a clear pause in thought.
+- Do not add paragraph breaks within sentences.
+- Do not add paragraph breaks to very short texts (under 100 characters).
+- If the text is already well-structured with paragraph breaks, return it unchanged.
+
+Invalid output:
+- Any changes to wording, punctuation, or content.
+- Added explanations or metadata.`;
+
+export async function formatSonioxWithLlm(text: string): Promise<string> {
+	if (text.length < 100) return text;
+
+	const config = loadConfig();
+	const apiKey = config.apiKeys.groq;
+	if (!apiKey) {
+		logger.warn("No Groq API key available for LLM formatting; returning raw text");
+		return text;
+	}
+
+	try {
+		const GroqSdk = (await import("groq-sdk")).default;
+		const client = new GroqSdk({ apiKey });
+
+		const response = await client.chat.completions.create({
+			model: "llama-3.3-70b-versatile",
+			messages: [
+				{ role: "system", content: LLM_FORMATTING_SYSTEM_PROMPT },
+				{ role: "user", content: text },
+			],
+			temperature: 0,
+			max_tokens: Math.min(Math.ceil(text.length * 1.5), 4096),
+			seed: 42,
+		});
+
+		const formatted = response.choices[0]?.message?.content?.trim();
+		if (formatted && formatted.length > 0) {
+			logger.debug(
+				{ rawLength: text.length, formattedLength: formatted.length },
+				"LLM formatting applied to Soniox transcript",
+			);
+			return formatted;
+		}
+
+		logger.warn("LLM returned empty formatting result; using raw text");
+		return text;
+	} catch (error) {
+		logError("LLM formatting failed; using raw text", error);
+		return text;
+	}
 }

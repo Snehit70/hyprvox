@@ -20,12 +20,13 @@ export const SOCKET_PATH = join(
 	"daemon.sock",
 );
 
-export type { DaemonStatus, IPCMessage } from "../shared/ipc-types";
+export type { DaemonStatus, IPCMessage, ActionMessage } from "../shared/ipc-types";
 
 export interface IPCServerEvents {
 	clientConnected: (clientId: number) => void;
 	clientDisconnected: (clientId: number) => void;
 	error: (error: Error) => void;
+	command: (action: string) => void;
 }
 
 type StateIPCMessage = Extract<IPCMessage, { type: "hello" | "state" }>;
@@ -159,6 +160,9 @@ export class IPCServer extends EventEmitter {
 				for (const line of lines) {
 					const msg = JSON.parse(line);
 					logger.debug({ clientId, msg }, "Received message from client");
+					if (msg.type === "action" && typeof msg.action === "string") {
+						this.emit("command", msg.action);
+					}
 				}
 			} catch {
 				// Malformed JSON - ignore
