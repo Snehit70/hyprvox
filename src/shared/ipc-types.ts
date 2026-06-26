@@ -22,6 +22,11 @@ export interface AudioLevelMessage {
 	timestamp: number;
 }
 
+export interface ActionMessage {
+	type: "action";
+	action: "soniox-toggle";
+}
+
 export type IPCMessage =
 	| {
 			type: "hello" | "state";
@@ -31,4 +36,5 @@ export type IPCMessage =
 			error?: string;
 			timestamp?: number;
 	  }
-	| AudioLevelMessage;
+	| AudioLevelMessage
+	| ActionMessage;

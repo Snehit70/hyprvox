@@ -30,6 +30,7 @@ export interface StreamingResult {
 	endpointingMs: number;
 	receivedFinalChunk: boolean;
 	hadSpeechFinal: boolean;
+	paragraphBreakCount?: number;
 }
 
 export interface StreamingFailureReason {
