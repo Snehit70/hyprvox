@@ -272,12 +272,12 @@ export class SonioxStreamingTranscriber
 const SONIOX_STRIP_PATTERN = /<\|?end\|?>|<\|?start\|?>|<\|\d+\.\d+\|>/g;
 
 function renderFinalTokenText(tokens: SonioxToken[]): string {
-	const text = tokens
+	return tokens
 		.filter((token) => token.is_final && token.text)
 		.map((token) => (token.text ?? "").replace(SONIOX_STRIP_PATTERN, ""))
-		.join(" ");
-
-	return text.replace(/  +/g, " ").trim();
+		.join("")
+		.replace(/  +/g, " ")
+		.trim();
 }
 
 const LLM_FORMAT_SYSTEM_PROMPT = `Task: add paragraph breaks to raw dictation text.
