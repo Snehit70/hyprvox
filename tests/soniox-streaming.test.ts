@@ -358,4 +358,110 @@ describe("SonioxStreamingTranscriber", () => {
 
 		socket.close();
 	});
+
+	test("sends language_hints_strict in config message", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			languageHintsStrict: true,
+		});
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+
+		const configMessage = JSON.parse(String(socket.sent[0]));
+		expect(configMessage.language_hints_strict).toBe(true);
+
+		socket.close();
+	});
+
+	test("sends context.general in config message", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			contextGeneral: [
+				{ key: "domain", value: "software development" },
+				{ key: "topic", value: "technical architecture" },
+			],
+		});
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+
+		const configMessage = JSON.parse(String(socket.sent[0]));
+		expect(configMessage.context).toBeDefined();
+		expect(configMessage.context.general).toEqual([
+			{ key: "domain", value: "software development" },
+			{ key: "topic", value: "technical architecture" },
+		]);
+
+		socket.close();
+	});
+
+	test("sends context.text in config message", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			contextText: "Dictating technical prompts for AI agents.",
+		});
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+
+		const configMessage = JSON.parse(String(socket.sent[0]));
+		expect(configMessage.context).toBeDefined();
+		expect(configMessage.context.text).toBe("Dictating technical prompts for AI agents.");
+
+		socket.close();
+	});
+
+	test("combines all context fields in config message", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			languageHintsStrict: true,
+			contextGeneral: [{ key: "domain", value: "software development" }],
+			contextText: "Technical dictation context.",
+		});
+
+		await transcriber.start("en", ["Hyprvox"]);
+		const socket = getSocket();
+		socket.open();
+
+		const configMessage = JSON.parse(String(socket.sent[0]));
+		expect(configMessage.language_hints_strict).toBe(true);
+		expect(configMessage.context.terms).toEqual(["Hyprvox"]);
+		expect(configMessage.context.general).toEqual([
+			{ key: "domain", value: "software development" },
+		]);
+		expect(configMessage.context.text).toBe("Technical dictation context.");
+
+		socket.close();
+	});
+
+	test("omits context when no context fields are provided", async () => {
+		MockSonioxWebSocket.instances = [];
+		const transcriber = new SonioxStreamingTranscriber({
+			apiKey: "soniox-test-key",
+			createWebSocket: (url) => new MockSonioxWebSocket(url),
+			contextGeneral: [],
+			contextText: "",
+		});
+
+		await transcriber.start("en");
+		const socket = getSocket();
+		socket.open();
+
+		const configMessage = JSON.parse(String(socket.sent[0]));
+		expect(configMessage.context).toBeUndefined();
+
+		socket.close();
+	});
 });

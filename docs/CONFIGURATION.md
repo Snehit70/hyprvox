@@ -97,7 +97,13 @@ The configuration is a JSON file structured into several sections.
     "soniox": {
       "enabled": false,
       "triggerKey": "Right Alt",
-      "paragraphPauseMs": 3000
+      "paragraphPauseMs": 3000,
+      "languageHintsStrict": true,
+      "contextGeneral": [
+        { "key": "domain", "value": "software development" },
+        { "key": "topic", "value": "technical architecture and implementation" }
+      ],
+      "contextText": "The speaker is dictating technical prompts for AI coding agents, software architecture discussions, code comments, and developer workflow instructions. Content includes programming terminology, API references, database schemas, CLI commands, and system administration tasks."
     }
   }
 }
@@ -332,6 +338,9 @@ Live Dictation controls focused-text insertion while recording. It is disabled b
 | `soniox.paragraphPauseMs` | Number | `3000` | Minimum gap between consecutive Soniox token messages (in ms) before a paragraph break is inserted. | Integer `500`-`10000`. |
 | `retypeFormatted` | Boolean | `true` | After stop, replace typed text with LLM-formatted version (Home + Shift+End + retype). If false, formatting only affects clipboard/history. | N/A |
 | `soniox.paragraphPauseMs` | Number | `3000` | Minimum pause (ms) between Soniox token messages to trigger a paragraph break during live typing. | Integer `>= 500` |
+| `soniox.languageHintsStrict` | Boolean | `true` | Restrict Soniox transcription to only the languages specified in `language_hints`. Prevents language drift. | N/A |
+| `soniox.contextGeneral` | Array | Software dev metadata | Key-value pairs providing domain context to Soniox for improved recognition. | Array of `{key: string, value: string}` objects. |
+| `soniox.contextText` | String | Technical context | Free-form text (max 10,000 chars) describing the typical dictation content for Soniox context. | String, max 10,000 chars. |
 
 #### Normal Live Dictation
 
