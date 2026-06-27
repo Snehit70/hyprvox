@@ -27,6 +27,12 @@ function hotkeyConfig(
 				enabled: sonioxEnabled,
 				triggerKey: "Right Alt",
 				paragraphPauseMs: 3000,
+				languageHintsStrict: true,
+				contextGeneral: [
+					{ key: "domain", value: "software development" },
+					{ key: "topic", value: "technical architecture and implementation" },
+				],
+				contextText: "The speaker is dictating technical prompts for AI coding agents, software architecture discussions, code comments, and developer workflow instructions. Content includes programming terminology, API references, database schemas, CLI commands, and system administration tasks.",
 			},
 		},
 	};
