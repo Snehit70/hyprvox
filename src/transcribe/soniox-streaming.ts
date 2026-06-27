@@ -39,11 +39,19 @@ interface SonioxWebSocketLike {
 
 type CreateSonioxWebSocket = (url: string) => SonioxWebSocketLike;
 
+interface SonioxContextGeneralEntry {
+	key: string;
+	value: string;
+}
+
 interface SonioxStreamingTranscriberOptions {
 	apiKey?: string;
 	endpoint?: string;
 	createWebSocket?: CreateSonioxWebSocket;
 	paragraphPauseMs?: number;
+	languageHintsStrict?: boolean;
+	contextGeneral?: SonioxContextGeneralEntry[];
+	contextText?: string;
 }
 
 export class SonioxStreamingTranscriber
@@ -54,6 +62,9 @@ export class SonioxStreamingTranscriber
 	private readonly endpoint: string;
 	private readonly createWebSocket: CreateSonioxWebSocket;
 	private readonly paragraphPauseMs: number;
+	private readonly languageHintsStrict: boolean;
+	private readonly contextGeneral: SonioxContextGeneralEntry[];
+	private readonly contextText: string;
 	private connection: SonioxWebSocketLike | null = null;
 	private transcriptChunks: string[] = [];
 	private audioBuffer: Buffer[] = [];
@@ -75,6 +86,9 @@ export class SonioxStreamingTranscriber
 		this.apiKey = apiKey;
 		this.endpoint = options.endpoint ?? SONIOX_WEBSOCKET_ENDPOINT;
 		this.paragraphPauseMs = options.paragraphPauseMs ?? 3000;
+		this.languageHintsStrict = options.languageHintsStrict ?? true;
+		this.contextGeneral = options.contextGeneral ?? [];
+		this.contextText = options.contextText ?? "";
 		this.createWebSocket =
 			options.createWebSocket ??
 			((url) => new WebSocket(url) as unknown as SonioxWebSocketLike);
@@ -106,10 +120,21 @@ export class SonioxStreamingTranscriber
 				num_channels: 1,
 				language_hints: [language],
 				enable_endpoint_detection: true,
+				language_hints_strict: this.languageHintsStrict,
 			};
 
+			const context: Record<string, unknown> = {};
 			if (boostWords.length > 0) {
-				config.context = { terms: boostWords };
+				context.terms = boostWords;
+			}
+			if (this.contextGeneral.length > 0) {
+				context.general = this.contextGeneral;
+			}
+			if (this.contextText.length > 0) {
+				context.text = this.contextText;
+			}
+			if (Object.keys(context).length > 0) {
+				config.context = context;
 			}
 
 			this.connection.send(JSON.stringify(config));
@@ -283,7 +308,7 @@ function renderFinalTokenText(tokens: SonioxToken[]): string {
 		.join("");
 
 	return text
-		.replace(/ ([,.\u00!?;:'"%)])/g, "$1")
+		.replace(/ ([,.\u0021!?;:'"%)])/g, "$1")
 		.replace(/  +/g, " ")
 		.trim();
 }
