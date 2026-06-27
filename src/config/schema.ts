@@ -215,11 +215,17 @@ const defaultAudio = {
 const defaultLiveDictation = {
 	enabled: false,
 	insertionCommand: "auto" as const,
-	retypeFormatted: true,
+	retypeFormatted: false,
 	soniox: {
 		enabled: false,
 		triggerKey: "Right Alt",
 		paragraphPauseMs: 3000,
+		languageHintsStrict: true,
+		contextGeneral: [
+			{ key: "domain", value: "software development" },
+			{ key: "topic", value: "technical architecture and implementation" },
+		],
+		contextText: "The speaker is dictating technical prompts for AI coding agents, software architecture discussions, code comments, and developer workflow instructions. Content includes programming terminology, API references, database schemas, CLI commands, and system administration tasks.",
 	},
 };
 
@@ -438,6 +444,21 @@ export const LiveDictationSchema = z
 					.number()
 					.min(1000, { message: "paragraphPauseMs must be at least 1000ms" })
 					.default(defaultLiveDictation.soniox.paragraphPauseMs),
+				languageHintsStrict: z
+					.boolean()
+					.default(defaultLiveDictation.soniox.languageHintsStrict),
+				contextGeneral: z
+					.array(
+						z.object({
+							key: z.string(),
+							value: z.string(),
+						}),
+					)
+					.default(defaultLiveDictation.soniox.contextGeneral),
+				contextText: z
+					.string()
+					.max(10000, { message: "contextText must be at most 10000 characters" })
+					.default(defaultLiveDictation.soniox.contextText),
 			})
 			.default(defaultLiveDictation.soniox),
 	})
