@@ -27,5 +27,5 @@
 		"noUnusedParameters": false,
 		"noPropertyAccessFromIndexSignature": false
 	},
-	"exclude": ["overlay"]
+	"exclude": ["overlay", "src/app"]
 }

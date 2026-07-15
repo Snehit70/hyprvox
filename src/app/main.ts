@@ -36,12 +36,18 @@ const OVERLAY_CONFIG = { width: 400, height: 60, marginBottom: 80 };
 
 let mainWindow: BrowserWindow | null = null;
 let ipcClient: IPCClient | null = null;
+let service: DaemonService | null = null;
 let restingPosition = { x: 0, y: 0 };
 let parkedPosition = { x: 0, y: 0 };
 let overlayVisible = false;
 
 process.on("uncaughtException", (err) => console.error("[App] uncaught:", err));
 process.on("unhandledRejection", (r) => console.error("[App] unhandled:", r));
+
+// Without these, a SIGTERM/SIGINT kills Electron before service.stop() runs,
+// leaving a stale socket file that fails the next boot with EADDRINUSE.
+process.on("SIGTERM", () => app.quit());
+process.on("SIGINT", () => app.quit());
 
 function createOverlayWindow(): BrowserWindow {
 	const display = screen.getPrimaryDisplay();
@@ -120,7 +126,14 @@ async function boot(): Promise<void> {
 	// 1. Start the daemon in-process. It binds its socket, installs its own
 	//    SIGUSR1 handler (so `hyprvox toggle` drives THIS process), and — with
 	//    HYPRVOX_EMBEDDED_OVERLAY set — does NOT spawn a child overlay.
-	const service = new DaemonService();
+	console.log(
+		"[App] boot: pid=%d socket=%s pidfile=%s embedded=%s",
+		process.pid,
+		process.env.HYPRVOX_SOCKET_PATH || "(default)",
+		process.env.HYPRVOX_PID_FILE || "(default)",
+		process.env.HYPRVOX_EMBEDDED_OVERLAY || "(unset)",
+	);
+	service = new DaemonService();
 	await service.start();
 	console.log("[App] DaemonService started in-process, pid", process.pid);
 
@@ -129,7 +142,7 @@ async function boot(): Promise<void> {
 	mainWindow.on("closed", () => {
 		mainWindow = null;
 	});
-	ipcMain.on("overlay-visible", (_e, visible: boolean) =>
+	ipcMain.on("overlay-visible", (_e: unknown, visible: boolean) =>
 		setOverlayWindowVisible(Boolean(visible)),
 	);
 	ipcMain.handle("get-daemon-state", () => ipcClient?.state || { status: "idle" });
@@ -138,7 +151,27 @@ async function boot(): Promise<void> {
 	console.log("[App] App ready (single process)");
 }
 
-app.whenReady().then(boot);
+app.whenReady().then(() =>
+	boot().catch((err) => {
+		// A half-alive app (window up, daemon dead) is worse than a dead one:
+		// it looks healthy while holding the pidfile and answering nothing.
+		console.error("[App] Boot failed, exiting:", err);
+		app.exit(1);
+	}),
+);
+
+let stopping = false;
+app.on("will-quit", (event: { preventDefault: () => void }) => {
+	if (stopping || !service) {
+		return;
+	}
+	stopping = true;
+	event.preventDefault();
+	service
+		.stop()
+		.catch((err) => console.error("[App] Shutdown error:", err))
+		.finally(() => app.exit(0));
+});
 
 app.on("window-all-closed", () => {
 	// Single-app model: the window IS the app. Keep the process alive so the
