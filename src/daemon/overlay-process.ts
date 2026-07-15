@@ -41,6 +41,11 @@ export class OverlayProcessManager {
 	}
 
 	public start(trigger: OverlayTrigger = "startup"): void {
+		// When the daemon runs inside the Electron main process (single-app
+		// topology), the overlay is the host — do not spawn a second Electron.
+		if (process.env.HYPRVOX_EMBEDDED_OVERLAY) {
+			return;
+		}
 		if (!this.config.overlay?.enabled || !this.config.overlay?.autoStart) {
 			return;
 		}

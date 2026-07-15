@@ -9,7 +9,9 @@ import type {
 	IPCMessage,
 } from "./shared/ipc-types";
 
-const SOCKET_PATH = join(homedir(), ".config", "hypr", "vox", "daemon.sock");
+const SOCKET_PATH =
+	process.env.HYPRVOX_SOCKET_PATH ||
+	join(homedir(), ".config", "hypr", "vox", "daemon.sock");
 const INITIAL_RECONNECT_DELAY = 100;
 const MAX_RECONNECT_DELAY = 5000;
 const MAX_RECONNECT_ATTEMPTS = 10;

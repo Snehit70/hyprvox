@@ -146,7 +146,7 @@ export class DaemonService {
 		this.clipboard = new ClipboardManager();
 		this.ipcServer = getIPCServer();
 		const configDir = join(homedir(), ".config", "hypr", "vox");
-		this.pidFile = join(configDir, "daemon.pid");
+		this.pidFile = process.env.HYPRVOX_PID_FILE || join(configDir, "daemon.pid");
 		this.stateFile = join(configDir, "daemon.state");
 		this.overlay = new OverlayProcessManager(
 			this.config,
