@@ -10,10 +10,10 @@ Lean repo guide for automated agents.
 - Product requirements live in GitHub issues (epics + child tickets), not a local `PRD.md`.
 
 ## Stack
-- Bun runtime and package manager
+- Bun runtime and package manager (CLI/tests); the app itself runs under Electron/Node
 - Strict TypeScript
 - pino logs with daily rotation
-- Electron overlay sidecar over local IPC
+- Single Electron app hosts the daemon and the overlay window (ADR-0003); state flows main → renderer via webContents.send
 
 ## Current Product State
 - Hyprvox uses parallel Groq + Deepgram transcription with merge/validation/recovery.
@@ -30,10 +30,10 @@ Lean repo guide for automated agents.
 
 ## Operational Data
 - Config: `~/.config/hypr/vox/config.json`
-- Logs: `paths.logs` from config
+- Logs: `paths.logs` from config; app stdout/stderr in `~/.config/hypr/vox/logs/app.log`
 - History: `~/.config/voice-cli/history.json`
-- IPC socket: `~/.config/hypr/vox/daemon.sock`
-- Overlay PID file: `~/.config/hypr/vox/overlay.pid`
+- Command socket (single-instance guard + `soniox-toggle`): `~/.config/hypr/vox/daemon.sock`
+- App bundle: `dist/app` (built by `bun run build:app`; `package.json` name there sets WM_CLASS)
 
 ## Workflow Notes
 - Default hotkey: Right Control; Hyprland users often bind `hyprvox toggle` in the compositor.

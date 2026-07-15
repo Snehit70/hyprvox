@@ -6,24 +6,29 @@
 
 ```
 src/
+├── app/            # Electron main: hosts the daemon + overlay window (single process)
 ├── audio/          # Recording and audio device management
 ├── cli/            # CLI command implementations
 ├── config/         # Configuration loading, validation, and storage
-├── daemon/         # Background service, hotkey handling, and supervisor
+├── daemon/         # Background service and hotkey handling
 ├── output/         # Clipboard and notification integration
+├── shared/         # IPC message types shared with the overlay renderer
 ├── transcribe/     # External API integrations (Groq & Deepgram)
 ├── utils/          # Shared utilities and helpers
 ├── types/          # External type definitions
+overlay/            # Renderer + preload assets for the overlay window (built to overlay/dist)
 ```
 
 ## Core Architecture
 
-### 1. Daemon Lifecycle & Supervision
-`hyprvox` operates as a persistent background daemon on Linux. It follows a multi-process architecture where a **Supervisor** ensures high availability of a **Worker** process.
+### 1. Single-App Topology (ADR-0003)
+`hyprvox` is one resident Electron app: the main process hosts the daemon (`DaemonService`) and the overlay `BrowserWindow`. There is no supervisor process, no systemd unit, and no daemon↔overlay socket — Electron is the single supervisor.
 
-- **Supervisor (`src/daemon/supervisor.ts`)**: The parent process that spawns and monitors the worker. It implements auto-restart logic with crash protection (max 3 crashes in 5 minutes).
-- **Service (`src/daemon/service.ts`)**: The main "Event Loop" and orchestrator for the worker process. It maintains system state and coordinates between hardware (audio/keyboard) and remote APIs.
-- **Systemd Integration**: The daemon can be managed as a systemd user service, which handles environment forwarding (`DISPLAY`, `WAYLAND_DISPLAY`) for clipboard and notification access.
+- **App main (`src/app/main.ts`)**: Boots the command socket (single-instance guard), starts `DaemonService` in-process, creates the overlay window, and forwards daemon state to the renderer via `webContents.send`.
+- **Service (`src/daemon/service.ts`)**: The orchestrator. Maintains the state machine and coordinates hardware (audio/keyboard) with remote APIs. Emits `state` and `audioLevel` events (it is an `EventEmitter`); the app main relays them to the renderer.
+- **Command socket (`src/app/command-server.ts`)**: A minimal unix socket (`daemon.sock`) for CLI verbs that need a payload (`soniox-toggle`); binding it doubles as the single-instance guard.
+- **Launch & crash recovery**: Started via Hyprland `exec-once = hyprvox start`. If the app dies, the next `hyprvox toggle` lazily respawns it.
+- **Window identity**: The window must map as an XWayland client with `WM_CLASS` `hyprvox-overlay` (Hyprland rules target that class, and self-positioning — how the overlay parks off-screen — only works under XWayland). The launcher strips `ELECTRON_OZONE_PLATFORM_HINT` and the app pins `--ozone-platform=x11`; the class comes from `dist/app/package.json`'s `name` field written by `bun run build:app`.
 
 ### 2. State Machine
 The daemon tracks its status via a formal state machine to ensure predictable behavior:
@@ -112,7 +117,9 @@ For details on using these modules programmatically, see the [Programmatic API R
 ### Getting Started
 1. Clone the repository: `git clone https://github.com/Snehit70/hyprvox.git`
 2. Install dependencies: `bun install`
-3. Run in development mode: `bun run index.ts start`
+3. Build the overlay assets (also installs the Electron runtime): `bun run build:overlay`
+4. Build the app bundle: `bun run build:app`
+5. Start the app: `bun run index.ts start` (add `--foreground` to stay attached)
 
 ### Testing
 We use [Vitest](https://vitest.dev/) for testing.
