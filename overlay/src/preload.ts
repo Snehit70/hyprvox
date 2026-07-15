@@ -56,6 +56,9 @@ const electronAPI = {
 	setOverlayVisible: (visible: boolean): void => {
 		ipcRenderer.send("overlay-visible", visible);
 	},
+	reportPaint: (forTimestamp: number, paintedAt: number): void => {
+		ipcRenderer.send("perf-paint", forTimestamp, paintedAt);
+	},
 };
 
 contextBridge.exposeInMainWorld("electronAPI", electronAPI);

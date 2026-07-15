@@ -75,6 +75,18 @@ export function useDaemonState(): UseDaemonStateResult {
 
 			setDaemonState(state);
 
+			// Report after the frame carrying this state has actually been
+			// painted, so the number reflects what the user sees rather than
+			// when the message arrived.
+			if (state.timestamp !== undefined) {
+				const forTimestamp = state.timestamp;
+				requestAnimationFrame(() => {
+					requestAnimationFrame(() => {
+						api.reportPaint(forTimestamp, Date.now());
+					});
+				});
+			}
+
 			if (errorTimeoutRef.current !== null) {
 				window.clearTimeout(errorTimeoutRef.current);
 				errorTimeoutRef.current = null;

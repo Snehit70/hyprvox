@@ -106,6 +106,24 @@ export class IPCClient extends EventEmitter {
 		});
 	}
 
+	// Fire-and-forget: a dropped perf report must never disturb the overlay.
+	reportPaint(forTimestamp: number, paintedAt: number): void {
+		if (!this.socket || this.socket.destroyed) {
+			return;
+		}
+		try {
+			this.socket.write(
+				JSON.stringify({
+					type: "perf_paint",
+					forTimestamp,
+					paintedAt,
+				}) + "\n",
+			);
+		} catch {
+			// Perf reporting is best-effort.
+		}
+	}
+
 	private handleData(chunk: Buffer): void {
 		this.buffer += chunk.toString();
 		const lines = this.buffer.split("\n");

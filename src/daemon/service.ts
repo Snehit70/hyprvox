@@ -15,7 +15,7 @@ import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
 import { DesktopTextTyper, LiveDictationWriter } from "../output/live-dictation";
 import { formatSonioxWithLLM } from "../transcribe/soniox-streaming";
 import { notify } from "../output/notification";
-import type { DaemonStatus } from "../shared/ipc-types";
+import type { DaemonStatus, PerfPaintMessage } from "../shared/ipc-types";
 import { appendStatsAggregateEntry } from "../stats/aggregate";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
 import type {
@@ -97,6 +97,12 @@ export interface DaemonState {
 	lastError?: string;
 }
 
+interface TriggerTrace {
+	triggerAt: number;
+	marks: Record<string, number>;
+	mark: (name: string) => void;
+}
+
 export class DaemonService {
 	private static readonly OVERLAY_AUDIO_LEVEL_INTERVAL_MS = 33;
 	private status: DaemonStatus = "idle";
@@ -122,6 +128,7 @@ export class DaemonService {
 	private errorCount: number = 0;
 	private lastError?: string;
 	private startTime: number = Date.now();
+	private triggerTrace?: TriggerTrace;
 	private signalHandler: () => void;
 	private reloadSignalHandler: () => void;
 	private keepAliveInterval?: NodeJS.Timeout;
@@ -159,8 +166,9 @@ export class DaemonService {
 		this.transcriptionCountTotal = stats.total;
 
 		this.signalHandler = () => {
+			const triggerAt = Date.now();
 			logger.info("Received SIGUSR1 signal, toggling recording");
-			this.handleTrigger();
+			this.handleTrigger(triggerAt);
 		};
 
 		this.reloadSignalHandler = () => {
@@ -334,13 +342,28 @@ export class DaemonService {
 	}
 
 	private setupListeners() {
-		this.hotkeyListener.on("trigger", () => this.handleTrigger());
+		this.hotkeyListener.on("trigger", () => this.handleTrigger(Date.now()));
 		this.hotkeyListener.on("soniox-trigger", () => this.handleSonioxTrigger());
 		this.ipcServer.on("command", (action: string) => {
 			if (action === "soniox-toggle") {
 				logger.info("Received soniox-toggle command via IPC");
 				this.handleSonioxTrigger();
 			}
+		});
+
+		// The overlay reports when it actually painted a state. Joined to the
+		// daemon's own trace by the state timestamp the renderer echoes back.
+		this.ipcServer.on("perfPaint", (msg: PerfPaintMessage) => {
+			logger.info(
+				{
+					type: "perf",
+					kind: "overlay_paint",
+					daemonUptimeMs: Date.now() - this.startTime,
+					broadcastToPaintMs: msg.paintedAt - msg.forTimestamp,
+					forTimestamp: msg.forTimestamp,
+				},
+				"Overlay paint latency",
+			);
 		});
 
 		this.recorder.on("start", () => {
@@ -523,12 +546,44 @@ export class DaemonService {
 		}
 	}
 
-	private async handleTrigger() {
+	// Measures the path from trigger to microphone-live. The daemon's own state
+	// timestamps are taken at setStatus("starting"), which happens before the
+	// session/streaming setup below, so they cannot see a stall in it. Marks are
+	// ms offsets from the trigger.
+	private beginTriggerTrace(triggerAt: number): TriggerTrace {
+		const marks: Record<string, number> = {};
+		const trace: TriggerTrace = {
+			triggerAt,
+			marks,
+			mark: (name: string) => {
+				marks[name] = Date.now() - triggerAt;
+			},
+		};
+		this.triggerTrace = trace;
+		return trace;
+	}
+
+	private emitTriggerPerf(trace: TriggerTrace): void {
+		logger.info(
+			{
+				type: "perf",
+				kind: "trigger_latency",
+				daemonUptimeMs: Date.now() - this.startTime,
+				streaming: this.config.transcription.streaming,
+				...trace.marks,
+			},
+			"Trigger latency",
+		);
+	}
+
+	private async handleTrigger(triggerAt: number = Date.now()) {
 		if (this.status === "idle" || this.status === "error") {
 			this.recordingMode = "standard";
 			this.cancelPending = false;
+			const trace = this.beginTriggerTrace(triggerAt);
 			try {
 				this.setStatus("starting");
+				trace.mark("statusStarting");
 
 				if (this.streamingPcmHandler) {
 					this.recorder.off("pcm-data", this.streamingPcmHandler);
@@ -558,6 +613,7 @@ export class DaemonService {
 							signal,
 						),
 				});
+				trace.mark("groqSessionReady");
 
 				if (this.config.transcription.streaming) {
 					this.deepgramStreaming = startDeepgramStreaming({
@@ -581,6 +637,7 @@ export class DaemonService {
 						this.liveDictationTranscriptDetach = result.detach;
 					}
 				}
+				trace.mark("streamingReady");
 
 				if (this.cancelPending) {
 					logger.info("Recording cancelled during setup, cleaning up");
@@ -610,7 +667,20 @@ export class DaemonService {
 					return;
 				}
 
+				// Fires once per recording. A stale listener from a recording that
+				// never produced audio is a no-op via the identity guard and is
+				// removed by `once` on the next chunk, so these cannot accumulate.
+				this.recorder.once("data", () => {
+					if (this.triggerTrace !== trace) {
+						return;
+					}
+					trace.mark("firstAudio");
+					this.emitTriggerPerf(trace);
+				});
+
+				trace.mark("recorderStartCalled");
 				await this.recorder.start();
+				trace.mark("recorderStartReturned");
 			} catch (error) {
 				this.cancelPending = false;
 				logError("Failed to start recording", error);

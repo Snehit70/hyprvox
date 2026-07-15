@@ -18,6 +18,7 @@ export interface ElectronAPI {
 	getDaemonState: () => Promise<DaemonState>;
 	getConnectionStatus: () => Promise<ConnectionStatus>;
 	setOverlayVisible: (visible: boolean) => void;
+	reportPaint: (forTimestamp: number, paintedAt: number) => void;
 }
 
 declare global {

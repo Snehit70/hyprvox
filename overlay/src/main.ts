@@ -264,6 +264,10 @@ app.whenReady().then(() => {
 		setOverlayWindowVisible(Boolean(visible));
 	});
 
+	ipcMain.on("perf-paint", (_event, forTimestamp: number, paintedAt: number) => {
+		ipcClient?.reportPaint(forTimestamp, paintedAt);
+	});
+
 	ipcMain.handle("get-daemon-state", () => {
 		return ipcClient?.state || { status: "idle" };
 	});

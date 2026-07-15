@@ -163,6 +163,13 @@ export class IPCServer extends EventEmitter {
 					if (msg.type === "action" && typeof msg.action === "string") {
 						this.emit("command", msg.action);
 					}
+					if (
+						msg.type === "perf_paint" &&
+						typeof msg.forTimestamp === "number" &&
+						typeof msg.paintedAt === "number"
+					) {
+						this.emit("perfPaint", msg);
+					}
 				}
 			} catch {
 				// Malformed JSON - ignore

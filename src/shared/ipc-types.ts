@@ -27,6 +27,15 @@ export interface ActionMessage {
 	action: "soniox-toggle";
 }
 
+// Sent overlay -> daemon once the renderer has painted a state. `forTimestamp`
+// echoes the state message's own timestamp, which is what joins this to the
+// daemon-side trigger trace.
+export interface PerfPaintMessage {
+	type: "perf_paint";
+	forTimestamp: number;
+	paintedAt: number;
+}
+
 export type IPCMessage =
 	| {
 			type: "hello" | "state";
@@ -37,4 +46,5 @@ export type IPCMessage =
 			timestamp?: number;
 	  }
 	| AudioLevelMessage
-	| ActionMessage;
+	| ActionMessage
+	| PerfPaintMessage;
