@@ -124,7 +124,8 @@ export class IPCClient extends EventEmitter {
 
 	private handleMessage(msg: IPCMessage): void {
 		const receivedAt = Date.now();
-		const latency = msg.timestamp ? receivedAt - msg.timestamp : null;
+		const latency =
+			"timestamp" in msg && msg.timestamp ? receivedAt - msg.timestamp : null;
 
 		if (latency !== null && process.env.HYPRVOX_DEBUG_TIMING) {
 			console.log(`[TIMING] IPC ${msg.type} received, latency=${latency}ms`);
