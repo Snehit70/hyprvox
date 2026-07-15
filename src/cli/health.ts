@@ -266,58 +266,35 @@ export const healthCommand = new Command("health")
 				.trim();
 			if (isServiceActive === "active") {
 				console.log(
-					`${colors.green("✅")} systemd service: ${colors.green("active")}`,
+					`${colors.yellow("⚠️")}  Legacy systemd service is active — the app now supervises itself; remove it with ${colors.cyan("hyprvox uninstall")}`,
 				);
 			} else {
 				console.log(
-					`${colors.yellow("⚠️")}  systemd service: ${colors.yellow(isServiceActive)}`,
+					`${colors.blue("ℹ️")}  Legacy systemd service present but ${isServiceActive}`,
 				);
 			}
 		} catch (_e) {
 			console.log(
-				`${colors.blue("ℹ️")}  systemd service not active or not installed`,
+				`${colors.blue("ℹ️")}  No legacy systemd service (expected; app is launched via exec-once)`,
 			);
 		}
 
 		// 6. Overlay Check
 		console.log(`\n${colors.bold("--- Overlay Status ---")}`);
-		const overlayPidFile = join(configDir, "overlay.pid");
 
 		if (config?.overlay?.enabled === false) {
 			console.log(`${colors.blue("ℹ️")}  Overlay is disabled in config`);
 		} else {
-			if (existsSync(overlayPidFile)) {
-				const overlayPid = parseInt(
-					readFileSync(overlayPidFile, "utf-8").trim(),
-					10,
-				);
-				try {
-					process.kill(overlayPid, 0);
-					console.log(
-						`${colors.green("✅")} Overlay is running (${colors.dim(`PID: ${overlayPid}`)})`,
-					);
-				} catch {
-					console.log(
-						`${colors.yellow("⚠️")}  Overlay PID file exists but process is dead`,
-					);
-				}
-			} else {
-				console.log(`${colors.blue("ℹ️")}  Overlay is not running`);
-				if (config?.overlay?.autoStart) {
-					console.log(
-						`${colors.yellow("⚠️")}  Auto-start is enabled but overlay not running`,
-					);
-				}
-			}
-
+			// The overlay window is hosted by the app process itself; a live
+			// command socket means the app (and therefore the window) is up.
 			const socketPath = join(configDir, "daemon.sock");
 			if (existsSync(socketPath)) {
 				console.log(
-					`${colors.green("✅")} IPC socket available for overlay connection`,
+					`${colors.green("✅")} App command socket present (overlay window hosted in-process)`,
 				);
 			} else {
 				console.log(
-					`${colors.yellow("⚠️")}  IPC socket not found (daemon not running?)`,
+					`${colors.yellow("⚠️")}  Command socket not found (app not running?)`,
 				);
 			}
 		}

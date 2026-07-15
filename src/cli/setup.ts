@@ -847,7 +847,7 @@ function installServiceIfRequested(
 		return;
 	}
 
-	if (!askYesNoQuit("Install and start the systemd user service now?")) {
+	if (!askYesNoQuit("Show Hyprland autostart instructions now?")) {
 		return;
 	}
 
@@ -1001,7 +1001,7 @@ export const setupCommand = new Command("setup")
 	.option("--check", "Run setup checks without changing anything")
 	.option("--json", "Print setup check output as JSON")
 	.option("--dry-run", "Show what setup would change without writing")
-	.option("--skip-service", "Do not install or start the systemd user service")
+	.option("--skip-service", "Do not show autostart (exec-once) instructions")
 	.option(
 		"--non-interactive",
 		"Run setup without prompts (automation-friendly)",

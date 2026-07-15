@@ -1,26 +1,21 @@
 import { execSync } from "node:child_process";
-import {
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	unlinkSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { Command } from "commander";
 import * as colors from "yoctocolors";
 import { AudioDeviceService } from "../audio/device-service";
-import { DaemonService, type DaemonState } from "../daemon/service";
-import { DaemonSupervisor } from "../daemon/supervisor";
+import type { DaemonState } from "../daemon/service";
+import { projectRoot } from "../utils/project-paths";
+import { SOCKET_PATH } from "../utils/socket-path";
 import { loadStats } from "../utils/stats";
+import { spawnAppDetached, spawnAppForeground } from "./app-launcher";
 import { boostCommand } from "./boost";
 import { configCommand } from "./config";
 import { errorsCommand } from "./errors";
 import { healthCommand } from "./health";
 import { historyCommand } from "./history";
 import { logsCommand } from "./logs";
-import { overlayCommand } from "./overlay";
 import { setupCommand } from "./setup";
 import { statsCommand } from "./stats";
 
@@ -28,9 +23,6 @@ const program = new Command();
 const configDir = join(homedir(), ".config", "hypr", "vox");
 const pidFile = join(configDir, "daemon.pid");
 const stateFile = join(configDir, "daemon.state");
-// Resolve project root relative to this file so the CLI works when invoked
-// as a global binary from any working directory (not just the project root).
-const projectRoot = join(import.meta.dir, "..", "..");
 
 interface PackageMetadata {
 	version: string;
@@ -56,84 +48,83 @@ program
 	.description("Speech-to-text daemon for Hyprland")
 	.version(packageMetadata.version);
 
+/** Pid from the pidfile if that process is alive; null otherwise. */
+function readAlivePid(): number | null {
+	if (!existsSync(pidFile)) {
+		return null;
+	}
+	try {
+		const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
+		if (Number.isNaN(pid)) {
+			return null;
+		}
+		process.kill(pid, 0);
+		return pid;
+	} catch {
+		return null;
+	}
+}
+
+function cleanStalePidFile(): void {
+	if (existsSync(pidFile) && readAlivePid() === null) {
+		console.log(
+			colors.yellow("Cleaning up stale PID file from previous session..."),
+		);
+		try {
+			unlinkSync(pidFile);
+		} catch {
+			// PID file may have already been removed
+		}
+	}
+}
+
+/** Wait for the app's DaemonService to write its pidfile after a spawn. */
+async function waitForAlivePid(timeoutMs = 10000): Promise<number | null> {
+	const start = Date.now();
+	while (Date.now() - start < timeoutMs) {
+		const pid = readAlivePid();
+		if (pid !== null) {
+			return pid;
+		}
+		await new Promise((resolve) => setTimeout(resolve, 200));
+	}
+	return null;
+}
+
+function startApp(foreground: boolean): void {
+	const runningPid = readAlivePid();
+	if (runningPid !== null) {
+		console.error(
+			colors.red(`Error: hyprvox is already running (PID: ${runningPid})`),
+		);
+		console.log(`To stop it, run: ${colors.cyan("hyprvox stop")}`);
+		process.exit(1);
+	}
+	cleanStalePidFile();
+
+	try {
+		if (foreground) {
+			console.log(`${colors.cyan("Starting hyprvox app (foreground)...")}`);
+			spawnAppForeground();
+		} else {
+			console.log(`${colors.cyan("Starting hyprvox app...")}`);
+			const pid = spawnAppDetached();
+			console.log(
+				`${colors.green("✅")} App launched${pid ? ` (${colors.dim(`PID: ${pid}`)})` : ""} — logs: ${colors.dim(join(configDir, "logs", "app.log"))}`,
+			);
+		}
+	} catch (err) {
+		console.error(colors.red("Failed to start app:"), (err as Error).message);
+		process.exit(1);
+	}
+}
+
 program
 	.command("start")
-	.description("Start the daemon")
-	.option("--no-supervisor", "Run directly without supervisor")
-	.option("--daemon-worker", "Internal: Run as daemon worker process")
+	.description("Start the hyprvox app (daemon + overlay in one process)")
+	.option("--foreground", "Stay attached to the terminal (for debugging)")
 	.action((options) => {
-		if (existsSync(pidFile) && !process.env.HYPRVOX_DAEMON_WORKER) {
-			try {
-				const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
-				try {
-					process.kill(pid, 0);
-					console.error(
-						colors.red(`Error: Daemon is already running (PID: ${pid})`),
-					);
-					console.log(
-						`To stop the daemon, run: ${colors.cyan("hyprvox stop")}`,
-					);
-					console.log(
-						`Or if using systemd: ${colors.cyan("systemctl --user stop hyprvox")}`,
-					);
-					process.exit(1);
-				} catch (killError: unknown) {
-					if (
-						killError instanceof Error &&
-						"code" in killError &&
-						(killError as NodeJS.ErrnoException).code === "ESRCH"
-					) {
-						// Process doesn't exist, clean up stale PID file
-						console.log(
-							colors.yellow(
-								"Cleaning up stale PID file from previous session...",
-							),
-						);
-						try {
-							unlinkSync(pidFile);
-						} catch {
-							// PID file may have already been removed
-						}
-					} else {
-						throw killError;
-					}
-				}
-			} catch {
-				// Failed to read PID file, assume not running
-			}
-		}
-
-		if (options.supervisor && !process.env.HYPRVOX_DAEMON_WORKER) {
-			console.log(`${colors.cyan("Starting daemon with supervisor...")}`);
-			const supervisor = new DaemonSupervisor(join(projectRoot, "index.ts"));
-			supervisor.start();
-		} else {
-			console.log(`${colors.cyan("Starting daemon worker...")}`);
-			let service: DaemonService;
-			try {
-				service = new DaemonService();
-				service.start().catch((err) => {
-					console.error(colors.red("\nFailed to start daemon:"), err.message);
-					process.exit(1);
-				});
-			} catch (err: any) {
-				console.error(
-					colors.red("\nFailed to initialize daemon:"),
-					err.message,
-				);
-				process.exit(1);
-			}
-
-			process.on("SIGINT", () => {
-				service.stop();
-				process.exit(0);
-			});
-
-			process.on("SIGTERM", () => {
-				service.stop();
-				process.exit(0);
-			});
-		}
+		startApp(Boolean(options.foreground));
 	});
 
 program
@@ -178,19 +169,29 @@ program
 
 program
 	.command("restart")
-	.description("Restart the daemon")
+	.description("Restart the hyprvox app")
 	.action(async () => {
 		if (existsSync(pidFile)) {
 			try {
 				const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
 				process.kill(pid, "SIGTERM");
-				console.log(colors.yellow("Stopping daemon..."));
-				await new Promise((resolve) => setTimeout(resolve, 1000));
+				console.log(colors.yellow("Stopping app..."));
+				// Wait for the old process to actually exit; spawning while it
+				// still holds the pidfile/socket would fail the instance guard.
+				const deadline = Date.now() + 5000;
+				while (Date.now() < deadline) {
+					try {
+						process.kill(pid, 0);
+						await new Promise((resolve) => setTimeout(resolve, 100));
+					} catch {
+						break;
+					}
+				}
 				if (existsSync(stateFile)) unlinkSync(stateFile);
 			} catch (error) {
 				const err = error as NodeJS.ErrnoException;
 				if (err.code !== "ESRCH") {
-					console.error(colors.red("Failed to stop daemon:"), err);
+					console.error(colors.red("Failed to stop app:"), err);
 					process.exit(1);
 				}
 				console.log(colors.yellow("Cleaning up stale PID file..."));
@@ -198,9 +199,7 @@ program
 				if (existsSync(stateFile)) unlinkSync(stateFile);
 			}
 		}
-		console.log(colors.cyan("Starting daemon..."));
-		const supervisor = new DaemonSupervisor(join(projectRoot, "index.ts"));
-		supervisor.start();
+		startApp(false);
 	});
 
 program
@@ -276,30 +275,42 @@ program
 
 program
 	.command("toggle")
-	.description("Toggle recording (start/stop)")
-	.action(() => {
-		if (!existsSync(pidFile)) {
-			console.error(colors.red("Error: Daemon is not running."));
-			console.log(`Start it with: ${colors.cyan("hyprvox start")}`);
-			process.exit(1);
+	.description("Toggle recording (start/stop); starts the app if it is down")
+	.action(async () => {
+		let pid = readAlivePid();
+
+		// Lazy-spawn crash recovery: if the app died (or was never started),
+		// a toggle brings it back up and then delivers the trigger.
+		if (pid === null) {
+			cleanStalePidFile();
+			if (existsSync(stateFile)) unlinkSync(stateFile);
+			console.log(colors.yellow("App not running; starting it..."));
+			try {
+				spawnAppDetached();
+			} catch (err) {
+				console.error(
+					colors.red("Failed to start app:"),
+					(err as Error).message,
+				);
+				process.exit(1);
+			}
+			pid = await waitForAlivePid();
+			if (pid === null) {
+				console.error(
+					colors.red("App did not come up in time. Check logs:"),
+					colors.dim(join(configDir, "logs", "app.log")),
+				);
+				process.exit(1);
+			}
 		}
 
 		try {
-			const pid = parseInt(readFileSync(pidFile, "utf-8").trim(), 10);
 			process.kill(pid, "SIGUSR1");
 			console.log(
 				`${colors.green("✅")} Toggle signal sent to daemon (${colors.dim(`PID: ${pid}`)})`,
 			);
 		} catch (error) {
-			const err = error as NodeJS.ErrnoException;
-			console.error(colors.red("Failed to send toggle signal:"), err);
-			if (err.code !== "ESRCH") {
-				process.exit(1);
-			}
-			console.log(colors.yellow("Cleaning up stale PID file..."));
-			if (existsSync(pidFile)) unlinkSync(pidFile);
-			if (existsSync(stateFile)) unlinkSync(stateFile);
-			console.log(`Start the daemon with: ${colors.cyan("hyprvox start")}`);
+			console.error(colors.red("Failed to send toggle signal:"), error);
 			process.exit(1);
 		}
 	});
@@ -308,21 +319,14 @@ program
 	.command("soniox-toggle")
 	.description("Toggle Soniox live dictation (start/stop)")
 	.action(async () => {
-		const socketPath = join(
-			homedir(),
-			".config",
-			"hypr",
-			"vox",
-			"daemon.sock",
-		);
-		if (!existsSync(socketPath)) {
+		if (!existsSync(SOCKET_PATH)) {
 			console.error(colors.red("Error: Daemon is not running."));
 			console.log(`Start it with: ${colors.cyan("hyprvox start")}`);
 			process.exit(1);
 		}
 
 		const { createConnection } = await import("node:net");
-		const client = createConnection({ path: socketPath });
+		const client = createConnection({ path: SOCKET_PATH });
 
 		client.on("connect", () => {
 			client.write(
@@ -341,128 +345,55 @@ program
 
 program
 	.command("install")
-	.description("Install systemd service")
+	.description("Show how to autostart hyprvox with Hyprland")
 	.action(() => {
-		try {
-			const serviceName = "hyprvox";
-			const serviceDir = join(homedir(), ".config", "systemd", "user");
-			const logsDir = join(configDir, "logs");
-			const servicePath = join(serviceDir, `${serviceName}.service`);
-			const workingDir = projectRoot;
-			const bunPath = process.argv[0];
-			const entryPoint = join(projectRoot, "index.ts");
-			const userId = process.getuid?.() ?? 1000;
-
-			if (!existsSync(serviceDir)) {
-				mkdirSync(serviceDir, { recursive: true });
-			}
-
-			if (!existsSync(logsDir)) {
-				console.log(`Creating log directory: ${logsDir}`);
-				mkdirSync(logsDir, { recursive: true, mode: 0o700 });
-			}
-
-			console.log(`Installing systemd service for ${serviceName}...`);
-
-			const serviceContent = `[Unit]
-Description=Hyprvox Daemon
-After=network.target sound.target
-StartLimitIntervalSec=300
-StartLimitBurst=3
-
-[Service]
-Type=simple
-WorkingDirectory=${workingDir}
-ExecStart=${bunPath} run ${entryPoint} start --no-supervisor
-Restart=always
-RestartSec=5
-Environment=PATH=${process.env.PATH}
-Environment=DISPLAY=${process.env.DISPLAY || ""}
-Environment=XAUTHORITY=${process.env.XAUTHORITY || ""}
-Environment=WAYLAND_DISPLAY=${process.env.WAYLAND_DISPLAY || ""}
-Environment=XDG_RUNTIME_DIR=/run/user/${userId}
-
-[Install]
-WantedBy=default.target
-`;
-
-			writeFileSync(servicePath, serviceContent);
-			console.log("Service file created.");
-
-			console.log("Reloading systemd daemon...");
-			execSync("systemctl --user daemon-reload");
-
-			console.log(`Enabling ${serviceName} service...`);
-			execSync(`systemctl --user enable ${serviceName}`);
-
-			console.log(`Starting ${serviceName} service...`);
-			execSync(`systemctl --user start ${serviceName}`);
-
-			const configPath = join(configDir, "config.json");
-			const configExists = existsSync(configPath);
-
-			console.log(
-				`\n${colors.green("------------------------------------------------")}`,
-			);
-			console.log(colors.bold("  Installation complete! 🚀"));
-
-			let statusStr = colors.red("Inactive");
-			try {
-				const isActive = execSync(`systemctl --user is-active ${serviceName}`)
-					.toString()
-					.trim();
-				if (isActive === "active") statusStr = colors.green("Active");
-				else if (isActive === "activating")
-					statusStr = colors.yellow("Activating");
-			} catch {
-				// Service not active, show default "Inactive"
-			}
-			console.log(`  Status: ${statusStr}`);
-			console.log(
-				colors.green("------------------------------------------------"),
-			);
-
-			console.log(colors.bold("\nNext Steps:"));
-
-			if (!configExists) {
-				console.log(
-					`  1. ${colors.yellow("CRITICAL:")} Initialize your API keys:`,
-				);
-				console.log(`     ${colors.cyan("bun run index.ts config init")}`);
-			} else {
-				console.log(`  1. Verify your configuration:`);
-				console.log(`     ${colors.cyan("bun run index.ts config list")}`);
-			}
-
-			console.log(`  2. Select your microphone device:`);
-			console.log(`     ${colors.cyan("bun run index.ts list-mics")}`);
-
-			console.log(`  3. Configure your hotkey (default: Right Control):`);
-			console.log(`     ${colors.cyan("bun run index.ts config bind")}`);
-
-			console.log(colors.bold("\nVerification:"));
-			console.log(
-				`  - Check service status: ${colors.cyan(`systemctl --user status ${serviceName}`)}`,
-			);
-			console.log(
-				`  - Follow live logs:     ${colors.cyan(`journalctl --user -u ${serviceName} -f`)}`,
-			);
-
-			console.log(colors.bold("\nFiles:"));
-			console.log(`  - Config: ${colors.dim(configPath)}`);
-			console.log(`  - Logs:   ${colors.dim(logsDir)}`);
-			console.log(
-				colors.green("------------------------------------------------\n"),
-			);
-		} catch (error) {
-			console.error("Installation failed:", (error as Error).message);
-			process.exit(1);
+		// The app supervises itself (Electron is the single supervisor,
+		// ADR-0003); autostart is a compositor exec-once, not a systemd unit.
+		const logsDir = join(configDir, "logs");
+		if (!existsSync(logsDir)) {
+			mkdirSync(logsDir, { recursive: true, mode: 0o700 });
 		}
+
+		const configPath = join(configDir, "config.json");
+		const legacyUnit = join(
+			homedir(),
+			".config",
+			"systemd",
+			"user",
+			"hyprvox.service",
+		);
+
+		console.log(colors.bold("\nAutostart hyprvox with Hyprland:"));
+		console.log("\nAdd to your hyprland.conf:");
+		console.log(`  ${colors.cyan("exec-once = hyprvox start")}`);
+		console.log("\nRecommended toggle binding (example):");
+		console.log(
+			`  ${colors.cyan("bind = , code:105, exec, hyprvox toggle")}  ${colors.dim("# Right Control")}`,
+		);
+		console.log(
+			`\nIf hyprvox dies, the next ${colors.cyan("hyprvox toggle")} restarts it automatically.`,
+		);
+
+		if (existsSync(legacyUnit)) {
+			console.log(
+				`\n${colors.yellow("⚠️")}  Legacy systemd unit found at ${colors.dim(legacyUnit)}.`,
+			);
+			console.log(
+				`   Remove it with: ${colors.cyan("hyprvox uninstall")} (the app now supervises itself).`,
+			);
+		}
+
+		if (!existsSync(configPath)) {
+			console.log(
+				`\n${colors.yellow("CRITICAL:")} Initialize your API keys first: ${colors.cyan("hyprvox config init")}`,
+			);
+		}
+		console.log("");
 	});
 
 program
 	.command("uninstall")
-	.description("Remove systemd service")
+	.description("Remove the legacy systemd service")
 	.action(() => {
 		const serviceName = "hyprvox";
 		const serviceDir = join(homedir(), ".config", "systemd", "user");
@@ -562,7 +493,6 @@ program.addCommand(boostCommand);
 program.addCommand(healthCommand);
 program.addCommand(errorsCommand);
 program.addCommand(historyCommand);
-program.addCommand(overlayCommand);
 program.addCommand(setupCommand);
 program.addCommand(statsCommand);
 
