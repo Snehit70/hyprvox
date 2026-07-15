@@ -12,11 +12,7 @@ import {
 	screen,
 } from "electron";
 import { DaemonService } from "../daemon/service";
-import type {
-	AudioLevelMessage,
-	ConnectionStatus,
-	DaemonState,
-} from "../shared/ipc-types";
+import type { ConnectionStatus, DaemonState } from "../shared/ipc-types";
 import { getBundledOverlayPath } from "../utils/project-paths";
 import { SOCKET_PATH } from "../utils/socket-path";
 import { CommandServer } from "./command-server";
@@ -207,9 +203,6 @@ async function boot(): Promise<void> {
 	service.on("state", (state: DaemonState) => {
 		lastState = state;
 		sendToRenderer("daemon-state", state);
-	});
-	service.on("audioLevel", (audioLevel: AudioLevelMessage) => {
-		sendToRenderer("audio-level", audioLevel);
 	});
 	await service.start();
 	console.log("[App] DaemonService started in-process, pid", process.pid);

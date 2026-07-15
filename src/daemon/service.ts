@@ -5,7 +5,6 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { convertAudio } from "../audio/converter";
 import {
-	type AudioLevelPayload,
 	AudioRecorder,
 	assertAudioBackendAvailable,
 	type PcmAudioPayload,
@@ -17,7 +16,6 @@ import { DesktopTextTyper, LiveDictationWriter } from "../output/live-dictation"
 import { formatSonioxWithLLM } from "../transcribe/soniox-streaming";
 import { notify } from "../output/notification";
 import type {
-	AudioLevelMessage,
 	DaemonState as DaemonStateMessage,
 	DaemonStatus,
 } from "../shared/ipc-types";
@@ -101,7 +99,6 @@ export interface DaemonState {
 }
 
 export class DaemonService extends EventEmitter {
-	private static readonly OVERLAY_AUDIO_LEVEL_INTERVAL_MS = 33;
 	private status: DaemonStatus = "idle";
 	private config: Config;
 	private recorder: AudioRecorder;
@@ -131,8 +128,6 @@ export class DaemonService extends EventEmitter {
 	private cancelPending = false;
 	private stateWriteDebounceTimer?: NodeJS.Timeout;
 	private pendingStateWrite = false;
-	private lastOverlayAudioLevelAt = 0;
-	private smoothedOverlayLevel = 0;
 	private contextLexicon: string[] = [];
 	private providerBoostWords: string[] = [];
 
@@ -280,35 +275,6 @@ export class DaemonService extends EventEmitter {
 		};
 	}
 
-	private handleRecorderLevel(payload: AudioLevelPayload): void {
-		if (!this.config.overlay?.enabled || this.status !== "recording") {
-			return;
-		}
-
-		if (this.listenerCount("audioLevel") === 0) {
-			return;
-		}
-
-		if (
-			payload.timestamp - this.lastOverlayAudioLevelAt <
-			DaemonService.OVERLAY_AUDIO_LEVEL_INTERVAL_MS
-		) {
-			return;
-		}
-
-		this.lastOverlayAudioLevelAt = payload.timestamp;
-		this.smoothedOverlayLevel =
-			this.smoothedOverlayLevel * 0.7 + payload.level * 0.3;
-
-		const message: AudioLevelMessage = {
-			type: "audio_level",
-			level: Math.min(1, this.smoothedOverlayLevel),
-			peak: payload.peak,
-			timestamp: payload.timestamp,
-		};
-		this.emit("audioLevel", message);
-	}
-
 	private setStatus(status: DaemonStatus, error?: string) {
 		const oldStatus = this.status;
 		this.status = status;
@@ -354,15 +320,11 @@ export class DaemonService extends EventEmitter {
 		this.hotkeyListener.on("soniox-trigger", () => this.handleSonioxTrigger());
 
 		this.recorder.on("start", () => {
-			this.lastOverlayAudioLevelAt = 0;
-			this.smoothedOverlayLevel = 0;
 			this.setStatus("recording");
 			this.notifyStateChange("Recording Started", "Listening...");
 		});
 
 		this.recorder.on("stop", (audioBuffer: Buffer, duration: number) => {
-			this.lastOverlayAudioLevelAt = 0;
-			this.smoothedOverlayLevel = 0;
 			this.setStatus("processing");
 			if (this.recordingMode === "soniox") {
 				this.notifyStateChange(
@@ -383,13 +345,7 @@ export class DaemonService extends EventEmitter {
 			notify("Warning", msg, "warning");
 		});
 
-		this.recorder.on("level", (payload: AudioLevelPayload) => {
-			this.handleRecorderLevel(payload);
-		});
-
 		this.recorder.on("error", (err: Error) => {
-			this.lastOverlayAudioLevelAt = 0;
-			this.smoothedOverlayLevel = 0;
 			this.errorCount++;
 			this.setStatus("error", err.message);
 

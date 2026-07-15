@@ -13,12 +13,6 @@ import { logError, logger } from "../utils/logger";
 import { withRetry } from "../utils/retry";
 import { PcmStreamExtractor } from "./pcm-stream";
 
-export interface AudioLevelPayload {
-	level: number;
-	peak: number;
-	timestamp: number;
-}
-
 export interface PcmAudioPayload {
 	pcm: Buffer;
 	timestamp: number;
@@ -143,13 +137,6 @@ export class AudioRecorder extends EventEmitter {
 							const pcmChunk = this.pcmExtractor.accept(bufferChunk);
 							if (pcmChunk) {
 								const timestamp = Date.now();
-								const level = this.getAudioLevel(pcmChunk.pcm);
-								if (level) {
-									this.emit("level", {
-										...level,
-										timestamp,
-									} satisfies AudioLevelPayload);
-								}
 								this.emit("pcm-data", {
 									...pcmChunk,
 									timestamp,
@@ -373,44 +360,5 @@ export class AudioRecorder extends EventEmitter {
 		const threshold = 100; // Low threshold for silence
 
 		return rms < threshold;
-	}
-
-	private getAudioLevel(
-		chunk: Buffer,
-	): Omit<AudioLevelPayload, "timestamp"> | null {
-		if (chunk.length < 2) {
-			return null;
-		}
-
-		const evenLength = Math.floor(chunk.length / 2) * 2;
-		if (evenLength === 0) {
-			return null;
-		}
-
-		const aligned = Buffer.from(chunk.subarray(0, evenLength));
-		const samples = new Int16Array(
-			aligned.buffer,
-			aligned.byteOffset,
-			evenLength / 2,
-		);
-
-		let sumSquares = 0;
-		let peak = 0;
-
-		for (let i = 0; i < samples.length; i++) {
-			const sample = samples[i] as number;
-			const normalized = Math.abs(sample) / 32768;
-			sumSquares += normalized * normalized;
-			if (normalized > peak) {
-				peak = normalized;
-			}
-		}
-
-		const rms = Math.sqrt(sumSquares / samples.length);
-
-		return {
-			level: Math.min(1, rms),
-			peak: Math.min(1, peak),
-		};
 	}
 }
