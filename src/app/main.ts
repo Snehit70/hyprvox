@@ -1,11 +1,8 @@
-// Phase 0 spike: single-process topology.
-//
-// One Electron process hosts BOTH the daemon (DaemonService) and the overlay
-// window, replacing the systemd -> supervisor -> daemon -> overlay-child stack.
-// For this spike the daemon still emits state over its unix socket and the
-// window's IPCClient connects to it in-process (loopback); Phase 1 replaces
-// that hop with a direct webContents.send. The point here is only to prove the
-// two halves boot and run inside a single process.
+// Single-app topology: one Electron process hosts the daemon (DaemonService)
+// and the overlay window. Daemon state flows main -> renderer directly via
+// webContents.send — there is no loopback socket and no supervision stack;
+// Electron is the single supervisor (ADR-0003). Launched via Hyprland
+// exec-once (`hyprvox start`) or lazily by `hyprvox toggle`.
 import * as path from "node:path";
 import {
 	app,
@@ -15,13 +12,33 @@ import {
 	screen,
 } from "electron";
 import { DaemonService } from "../daemon/service";
-import { type DaemonState, getIPCClient, type IPCClient } from "../../overlay/src/ipc-client";
+import type {
+	AudioLevelMessage,
+	ConnectionStatus,
+	DaemonState,
+} from "../shared/ipc-types";
+import { getBundledOverlayPath } from "../utils/project-paths";
+import { SOCKET_PATH } from "../utils/socket-path";
+import { CommandServer } from "./command-server";
 
 if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
 	console.error("[App] No display environment (DISPLAY or WAYLAND_DISPLAY)");
 	process.exit(1);
 }
 
+// The overlay parks itself off-screen by moving its own window (ADR-0001),
+// which only works as an XWayland client — native Wayland windows cannot
+// self-position, setPosition becomes a silent no-op, and the overlay freezes
+// wherever the compositor mapped it. This switch pins X11 when no ozone env
+// hint is present. It is NOT sufficient on its own: Electron consumes
+// ELECTRON_OZONE_PLATFORM_HINT in C++ before this file runs, and (verified on
+// Electron 34) hint=auto alongside --ozone-platform=x11 half-initializes the
+// browser and no window is ever created. The CLI launcher therefore strips
+// that env var from the spawn environment (src/cli/app-launcher.ts); anyone
+// exec'ing the electron binary directly must do the same.
+app.commandLine.appendSwitch("ozone-platform", "x11");
+
+// Disable GPU acceleration to prevent rendering crashes on Wayland.
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("disable-gpu");
 app.commandLine.appendSwitch("disable-software-rasterizer");
@@ -30,13 +47,14 @@ app.commandLine.appendSwitch("disable-dev-shm-usage");
 // Where the built renderer + preload live (overlay project's tsc/vite output).
 const OVERLAY_DIST =
 	process.env.HYPRVOX_OVERLAY_DIST ||
-	path.join(app.getAppPath(), "overlay", "dist");
+	path.join(getBundledOverlayPath(), "dist");
 
 const OVERLAY_CONFIG = { width: 400, height: 60, marginBottom: 80 };
 
 let mainWindow: BrowserWindow | null = null;
-let ipcClient: IPCClient | null = null;
 let service: DaemonService | null = null;
+let commandServer: CommandServer | null = null;
+let lastState: DaemonState = { status: "idle" };
 let restingPosition = { x: 0, y: 0 };
 let parkedPosition = { x: 0, y: 0 };
 let overlayVisible = false;
@@ -45,9 +63,15 @@ process.on("uncaughtException", (err) => console.error("[App] uncaught:", err));
 process.on("unhandledRejection", (r) => console.error("[App] unhandled:", r));
 
 // Without these, a SIGTERM/SIGINT kills Electron before service.stop() runs,
-// leaving a stale socket file that fails the next boot with EADDRINUSE.
+// leaving a stale pidfile/socket that fails the next boot.
 process.on("SIGTERM", () => app.quit());
 process.on("SIGINT", () => app.quit());
+
+function sendToRenderer(channel: string, payload: unknown): void {
+	if (mainWindow && !mainWindow.isDestroyed()) {
+		mainWindow.webContents.send(channel, payload);
+	}
+}
 
 function createOverlayWindow(): BrowserWindow {
 	const display = screen.getPrimaryDisplay();
@@ -55,6 +79,9 @@ function createOverlayWindow(): BrowserWindow {
 	const x = Math.floor((sw - OVERLAY_CONFIG.width) / 2);
 	const y = sh - OVERLAY_CONFIG.height - OVERLAY_CONFIG.marginBottom;
 
+	// Resting spot (visible) and a parked spot fully below the monitor. The
+	// window stays mapped (ADR-0001); when idle it moves off-screen so the
+	// compositor has no transparent rect to blur into a "ghost pill".
 	restingPosition = { x, y };
 	parkedPosition = {
 		x,
@@ -88,7 +115,62 @@ function createOverlayWindow(): BrowserWindow {
 	window.setAlwaysOnTop(true, "floating");
 	window.setIgnoreMouseEvents(true, { forward: true });
 	window.loadFile(path.join(OVERLAY_DIST, "renderer", "index.html"));
+
+	// A crashed or hung renderer only loses the window; the daemon half keeps
+	// running and the recreated window re-syncs from lastState.
+	window.on("unresponsive", () => {
+		console.error("[App] Overlay window unresponsive, recreating");
+		recreateOverlayWindow();
+	});
+	window.webContents.on("render-process-gone", (_event, details) => {
+		console.error("[App] Renderer process gone:", details);
+		recreateOverlayWindow();
+	});
+	window.webContents.on("preload-error", (_event, preloadPath, error) => {
+		console.error("[App] Preload failed:", preloadPath, error);
+	});
+	window.webContents.on(
+		"did-fail-load",
+		(_event, errorCode, errorDescription, validatedURL) => {
+			console.error(
+				"[App] Renderer failed to load:",
+				errorCode,
+				errorDescription,
+				validatedURL,
+			);
+		},
+	);
+	window.webContents.on(
+		"console-message",
+		(_event, level, message, line, sourceId) => {
+			if (level >= 2) {
+				console.error(`[Renderer:${level}] ${message} (${sourceId}:${line})`);
+			}
+		},
+	);
+	window.webContents.on("did-finish-load", () => {
+		// In-process daemon: the renderer's "connection" to it is the process
+		// itself being alive, so it is connected by definition.
+		sendToRenderer("connection-status", "connected" satisfies ConnectionStatus);
+		sendToRenderer("daemon-state", lastState);
+	});
+
 	return window;
+}
+
+function recreateOverlayWindow(): void {
+	if (mainWindow) {
+		mainWindow.destroy();
+		mainWindow = null;
+	}
+	setTimeout(() => {
+		if (!mainWindow) {
+			mainWindow = createOverlayWindow();
+			mainWindow.on("closed", () => {
+				mainWindow = null;
+			});
+		}
+	}, 2000);
 }
 
 function setOverlayWindowVisible(visible: boolean): void {
@@ -100,54 +182,51 @@ function setOverlayWindowVisible(visible: boolean): void {
 	mainWindow.setPosition(target.x, target.y);
 }
 
-function setupIPCClient(): void {
-	ipcClient = getIPCClient();
-	ipcClient.on("stateChange", (state: DaemonState) => {
-		if (mainWindow && !mainWindow.isDestroyed()) {
-			mainWindow.webContents.send("daemon-state", state);
-		}
-	});
-	ipcClient.on("connectionStatusChange", (status) => {
-		if (mainWindow && !mainWindow.isDestroyed()) {
-			mainWindow.webContents.send("connection-status", status);
-		}
-	});
-	ipcClient.on("audioLevel", (audioLevel) => {
-		if (mainWindow && !mainWindow.isDestroyed()) {
-			mainWindow.webContents.send("audio-level", audioLevel);
-		}
-	});
-	ipcClient.on("connected", () => console.log("[App] IPC connected (in-process)"));
-	ipcClient.on("error", (err: Error) => console.error("[App] IPC error:", err.message));
-	ipcClient.connect();
-}
-
 async function boot(): Promise<void> {
-	// 1. Start the daemon in-process. It binds its socket, installs its own
-	//    SIGUSR1 handler (so `hyprvox toggle` drives THIS process), and — with
-	//    HYPRVOX_EMBEDDED_OVERLAY set — does NOT spawn a child overlay.
+	// Resolved paths, not env: a boot line must identify the run it came from
+	// unambiguously (HOME remapping and env overrides both move these).
 	console.log(
-		"[App] boot: pid=%d socket=%s pidfile=%s embedded=%s",
+		"[App] boot: pid=%d socket=%s pidfile=%s",
 		process.pid,
-		process.env.HYPRVOX_SOCKET_PATH || "(default)",
-		process.env.HYPRVOX_PID_FILE || "(default)",
-		process.env.HYPRVOX_EMBEDDED_OVERLAY || "(unset)",
+		SOCKET_PATH,
+		process.env.HYPRVOX_PID_FILE || "(default daemon.pid)",
 	);
+
+	// 1. Bind the command socket first: it is the single-instance guard, so a
+	//    second launch dies here before touching the pidfile or the recorder.
+	commandServer = new CommandServer((action) => {
+		if (action === "soniox-toggle") {
+			service?.triggerSonioxToggle();
+		}
+	});
+	await commandServer.start();
+
+	// 2. Start the daemon in-process. It writes the pidfile and installs its
+	//    own SIGUSR1 handler, so `hyprvox toggle` drives THIS process.
 	service = new DaemonService();
+	service.on("state", (state: DaemonState) => {
+		lastState = state;
+		sendToRenderer("daemon-state", state);
+	});
+	service.on("audioLevel", (audioLevel: AudioLevelMessage) => {
+		sendToRenderer("audio-level", audioLevel);
+	});
 	await service.start();
 	console.log("[App] DaemonService started in-process, pid", process.pid);
 
-	// 2. Bring up the window and connect to the daemon's socket in-process.
+	// 3. Bring up the window.
+	ipcMain.on("overlay-visible", (_e: unknown, visible: boolean) =>
+		setOverlayWindowVisible(Boolean(visible)),
+	);
+	ipcMain.handle("get-daemon-state", () => lastState);
+	ipcMain.handle(
+		"get-connection-status",
+		(): ConnectionStatus => (service ? "connected" : "disconnected"),
+	);
 	mainWindow = createOverlayWindow();
 	mainWindow.on("closed", () => {
 		mainWindow = null;
 	});
-	ipcMain.on("overlay-visible", (_e: unknown, visible: boolean) =>
-		setOverlayWindowVisible(Boolean(visible)),
-	);
-	ipcMain.handle("get-daemon-state", () => ipcClient?.state || { status: "idle" });
-	ipcMain.handle("get-connection-status", () => ipcClient?.status || "disconnected");
-	setupIPCClient();
 	console.log("[App] App ready (single process)");
 }
 
@@ -162,13 +241,14 @@ app.whenReady().then(() =>
 
 let stopping = false;
 app.on("will-quit", (event: { preventDefault: () => void }) => {
-	if (stopping || !service) {
+	if (stopping || (!service && !commandServer)) {
 		return;
 	}
 	stopping = true;
 	event.preventDefault();
-	service
-		.stop()
+	Promise.resolve()
+		.then(() => service?.stop())
+		.then(() => commandServer?.stop())
 		.catch((err) => console.error("[App] Shutdown error:", err))
 		.finally(() => app.exit(0));
 });

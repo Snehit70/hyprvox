@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { unlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -15,7 +16,11 @@ import { ClipboardAccessError, ClipboardManager } from "../output/clipboard";
 import { DesktopTextTyper, LiveDictationWriter } from "../output/live-dictation";
 import { formatSonioxWithLLM } from "../transcribe/soniox-streaming";
 import { notify } from "../output/notification";
-import type { DaemonStatus } from "../shared/ipc-types";
+import type {
+	AudioLevelMessage,
+	DaemonState as DaemonStateMessage,
+	DaemonStatus,
+} from "../shared/ipc-types";
 import { appendStatsAggregateEntry } from "../stats/aggregate";
 import { DeepgramTranscriber } from "../transcribe/deepgram";
 import type {
@@ -39,14 +44,13 @@ import { ErrorTemplates, formatUserError } from "../utils/error-templates";
 import { errorIncludes, getErrorCode } from "../utils/errors";
 import { appendHistory } from "../utils/history";
 import { logError, logger } from "../utils/logger";
+import { projectRoot } from "../utils/project-paths";
 import { incrementTranscriptionCount, loadStats } from "../utils/stats";
 import { shouldCompressAudio } from "./audio-strategy";
 import { checkHotkeyConflict } from "./conflict";
 import { saveDebugAudioCapture } from "./debug-audio";
 import { runGroqTranscriptionWithLiveSession } from "./groq-transcription";
 import { HotkeyListener } from "./hotkey";
-import { getIPCServer, type IPCServer } from "./ipc";
-import { OverlayProcessManager } from "./overlay-process";
 import {
 	attachLiveDictationTranscriptHandler,
 	attachStreamingPcmHandler,
@@ -62,7 +66,6 @@ import {
 } from "./transcription-metrics";
 
 const HALLUCINATION_MAX_CHARS = 50;
-const projectRoot = join(import.meta.dir, "..", "..");
 
 // Common Whisper hallucination patterns (from YouTube training data)
 const HALLUCINATION_PATTERNS = [
@@ -97,7 +100,7 @@ export interface DaemonState {
 	lastError?: string;
 }
 
-export class DaemonService {
+export class DaemonService extends EventEmitter {
 	private static readonly OVERLAY_AUDIO_LEVEL_INTERVAL_MS = 33;
 	private status: DaemonStatus = "idle";
 	private config: Config;
@@ -126,16 +129,15 @@ export class DaemonService {
 	private reloadSignalHandler: () => void;
 	private keepAliveInterval?: NodeJS.Timeout;
 	private cancelPending = false;
-	private ipcServer: IPCServer;
 	private stateWriteDebounceTimer?: NodeJS.Timeout;
 	private pendingStateWrite = false;
-	private overlay: OverlayProcessManager;
 	private lastOverlayAudioLevelAt = 0;
 	private smoothedOverlayLevel = 0;
 	private contextLexicon: string[] = [];
 	private providerBoostWords: string[] = [];
 
 	constructor() {
+		super();
 		this.config = configService.get();
 		this.recorder = new AudioRecorder();
 		this.hotkeyListener = new HotkeyListener();
@@ -144,15 +146,9 @@ export class DaemonService {
 		this.merger = new TranscriptMerger();
 		this.refreshContextLexicon();
 		this.clipboard = new ClipboardManager();
-		this.ipcServer = getIPCServer();
 		const configDir = join(homedir(), ".config", "hypr", "vox");
 		this.pidFile = process.env.HYPRVOX_PID_FILE || join(configDir, "daemon.pid");
 		this.stateFile = join(configDir, "daemon.state");
-		this.overlay = new OverlayProcessManager(
-			this.config,
-			join(configDir, "overlay.pid"),
-			join(this.config.paths.logs, "overlay.log"),
-		);
 
 		const stats = loadStats();
 		this.transcriptionCountToday = stats.today;
@@ -171,7 +167,6 @@ export class DaemonService {
 				this.groq.reset();
 				this.deepgram.reset();
 				this.merger.reset();
-				this.overlay.updateConfig(this.config);
 				this.refreshContextLexicon();
 				logger.info("Config reloaded successfully");
 				notify("Config Reloaded", "Configuration updated", "info");
@@ -267,12 +262,22 @@ export class DaemonService {
 	}
 
 	private updateState(): void {
-		this.ipcServer.broadcastStatus(this.status, {
+		this.emit("state", this.getStateMessage());
+		this.scheduleStateWrite();
+	}
+
+	/**
+	 * Snapshot of the state the overlay renders. Emitted as the "state" event
+	 * on every status change; also served to the renderer's get-daemon-state
+	 * request when the window (re)loads after a state was already emitted.
+	 */
+	public getStateMessage(): DaemonStateMessage {
+		return {
+			status: this.status,
 			lastTranscription: this.lastTranscription?.toISOString(),
 			error: this.lastError,
 			timestamp: Date.now(),
-		});
-		this.scheduleStateWrite();
+		};
 	}
 
 	private handleRecorderLevel(payload: AudioLevelPayload): void {
@@ -280,7 +285,7 @@ export class DaemonService {
 			return;
 		}
 
-		if (this.ipcServer.clientCount === 0) {
+		if (this.listenerCount("audioLevel") === 0) {
 			return;
 		}
 
@@ -295,11 +300,13 @@ export class DaemonService {
 		this.smoothedOverlayLevel =
 			this.smoothedOverlayLevel * 0.7 + payload.level * 0.3;
 
-		this.ipcServer.broadcastAudioLevel(
-			Math.min(1, this.smoothedOverlayLevel),
-			payload.peak,
-			payload.timestamp,
-		);
+		const message: AudioLevelMessage = {
+			type: "audio_level",
+			level: Math.min(1, this.smoothedOverlayLevel),
+			peak: payload.peak,
+			timestamp: payload.timestamp,
+		};
+		this.emit("audioLevel", message);
 	}
 
 	private setStatus(status: DaemonStatus, error?: string) {
@@ -333,15 +340,18 @@ export class DaemonService {
 		notify(title, message, type);
 	}
 
+	/**
+	 * Entry point for the CLI's `soniox-toggle` verb, delivered by the app's
+	 * command socket (SIGUSR1 carries no payload, so this cannot be a signal).
+	 */
+	public triggerSonioxToggle(): void {
+		logger.info("Received soniox-toggle command via IPC");
+		this.handleSonioxTrigger();
+	}
+
 	private setupListeners() {
 		this.hotkeyListener.on("trigger", () => this.handleTrigger());
 		this.hotkeyListener.on("soniox-trigger", () => this.handleSonioxTrigger());
-		this.ipcServer.on("command", (action: string) => {
-			if (action === "soniox-toggle") {
-				logger.info("Received soniox-toggle command via IPC");
-				this.handleSonioxTrigger();
-			}
-		});
 
 		this.recorder.on("start", () => {
 			this.lastOverlayAudioLevelAt = 0;
@@ -423,9 +433,7 @@ export class DaemonService {
 		try {
 			assertAudioBackendAvailable();
 			await writeFile(this.pidFile, process.pid.toString());
-			await this.ipcServer.start();
 			this.updateState();
-			this.overlay.start();
 
 			const defaultHotkeyDisabled =
 				this.config.behavior.hotkey.toLowerCase() === "disabled";
@@ -470,7 +478,6 @@ export class DaemonService {
 	public async stop() {
 		this.hotkeyListener.stop();
 		await this.recorder.stop(true);
-		this.overlay.stop();
 		process.off("SIGUSR1", this.signalHandler);
 		process.off("SIGUSR2", this.reloadSignalHandler);
 		if (this.keepAliveInterval) {
@@ -480,7 +487,6 @@ export class DaemonService {
 			clearTimeout(this.stateWriteDebounceTimer);
 		}
 		await this.teardownStreaming("Failed to stop streaming during shutdown");
-		await this.ipcServer.stop();
 		for (const file of [this.pidFile, this.stateFile]) {
 			try {
 				unlinkSync(file);
