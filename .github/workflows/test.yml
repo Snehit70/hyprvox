@@ -27,6 +27,22 @@ jobs:
       - name: Run tests
         run: bun test
 
+      # The overlay is a separate npm project with its own tsconfig, so neither
+      # the root typecheck nor the tests above cover it. Its build is
+      # `tsc && vite build`, so this catches type errors that would otherwise
+      # ship a release whose overlay cannot be built at all.
+      - name: Install overlay dependencies
+        working-directory: overlay
+        run: npm install --no-audit --no-fund
+        env:
+          # CI only typechecks and bundles the renderer; it never launches
+          # Electron, so skip the ~100MB binary download.
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+
+      - name: Build overlay
+        working-directory: overlay
+        run: npm run build
+
       - name: Pack package
         run: bun x npm pack
 
