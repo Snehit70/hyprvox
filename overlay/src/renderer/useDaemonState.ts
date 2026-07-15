@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type {
-	AudioLevelMessage,
 	ConnectionStatus,
 	DaemonState,
 	DaemonStatus,
@@ -20,7 +19,6 @@ interface UseDaemonStateResult {
 	daemonState: DaemonState;
 	connectionStatus: ConnectionStatus;
 	errorMessage?: string;
-	audioLevel: AudioLevelMessage | null;
 }
 
 const ERROR_HIDE_DELAY_MS = 3000;
@@ -59,7 +57,6 @@ export function useDaemonState(): UseDaemonStateResult {
 	const [showSuccess, setShowSuccess] = useState(false);
 	const [hideError, setHideError] = useState(false);
 	const [reconnectExhausted, setReconnectExhausted] = useState(false);
-	const [audioLevel, setAudioLevel] = useState<AudioLevelMessage | null>(null);
 	const prevStatusRef = useRef<DaemonStatus>("idle");
 	const errorTimeoutRef = useRef<number | null>(null);
 
@@ -90,10 +87,6 @@ export function useDaemonState(): UseDaemonStateResult {
 				setHideError(false);
 			}
 
-			if (state.status !== "recording") {
-				setAudioLevel(null);
-			}
-
 			if (wasProcessing && state.status === "idle" && state.lastTranscription) {
 				setShowSuccess(true);
 				setTimeout(() => setShowSuccess(false), 1500);
@@ -115,12 +108,6 @@ export function useDaemonState(): UseDaemonStateResult {
 			setReconnectExhausted(true);
 		});
 
-		const unsubAudioLevel = api.onAudioLevel(
-			(nextAudioLevel: AudioLevelMessage) => {
-				setAudioLevel(nextAudioLevel);
-			},
-		);
-
 		void api.getDaemonState().then(handleDaemonState);
 		void api.getConnectionStatus().then(setConnectionStatus);
 
@@ -131,7 +118,6 @@ export function useDaemonState(): UseDaemonStateResult {
 			unsubState();
 			unsubConnection();
 			unsubReconnectExhausted();
-			unsubAudioLevel();
 		};
 	}, []);
 
@@ -159,6 +145,5 @@ export function useDaemonState(): UseDaemonStateResult {
 		daemonState,
 		connectionStatus,
 		errorMessage: daemonState.error,
-		audioLevel,
 	};
 }

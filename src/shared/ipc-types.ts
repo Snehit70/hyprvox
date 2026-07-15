@@ -15,13 +15,6 @@ export interface DaemonState {
 	timestamp?: number;
 }
 
-export interface AudioLevelMessage {
-	type: "audio_level";
-	level: number;
-	peak?: number;
-	timestamp: number;
-}
-
 export interface ActionMessage {
 	type: "action";
 	action: "soniox-toggle";
@@ -36,5 +29,4 @@ export type IPCMessage =
 			error?: string;
 			timestamp?: number;
 	  }
-	| AudioLevelMessage
 	| ActionMessage;
