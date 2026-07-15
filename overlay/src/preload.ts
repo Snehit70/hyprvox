@@ -3,7 +3,7 @@ import type {
 	AudioLevelMessage,
 	ConnectionStatus,
 	DaemonState,
-} from "./ipc-client";
+} from "./shared/ipc-types";
 
 const electronAPI = {
 	onToggleListening: (callback: () => void): (() => void) => {

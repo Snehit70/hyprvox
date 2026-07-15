@@ -1,6 +1,12 @@
 import { execSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { type Recording, record } from "node-record-lpcm16";
+// Default-import + destructure: node-record-lpcm16 is CJS whose `record`
+// export Node's ESM lexer cannot detect, so a named import crashes when this
+// file runs under Node/Electron (Bun tolerates it). The default export is the
+// full module.exports under both runtimes.
+import recordPkg, { type Recording } from "node-record-lpcm16";
+
+const { record } = recordPkg;
 import { loadConfig } from "../config/loader";
 import { AppError, type ErrorCode, hasErrorCode } from "../utils/errors";
 import { logError, logger } from "../utils/logger";

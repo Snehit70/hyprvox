@@ -35,21 +35,26 @@ If `hyprvox status` shows a manually started daemon before service installation,
 ## Main Commands
 
 ### `start`
-Start the transcription daemon.
+Start the hyprvox app — the daemon and the overlay window run in one Electron process (ADR-0003). Launches detached; logs go to `~/.config/hypr/vox/logs/app.log`. Requires the app bundle (`bun run build:app`) and overlay assets (`bun run build:overlay`) to have been built.
 - **Options:**
-  - `--no-supervisor`: Run the daemon directly without the auto-restarting supervisor.
-  - `--daemon-worker`: (Internal) Used by the supervisor to spawn worker processes.
+  - `--foreground`: Stay attached to the terminal (for debugging).
   - `--help`: Display help for the start command.
 
 ### `stop`
-Stop the running transcription daemon.
+Stop the running app.
 - **Options:**
   - `--help`: Display help for the stop command.
 
 ### `restart`
-Restart the transcription daemon.
+Restart the app (SIGTERM, wait for exit, relaunch).
 - **Options:**
   - `--help`: Display help for the restart command.
+
+### `toggle`
+Toggle recording. If the app is not running, it is started first and the trigger is delivered once it is up (this is the crash-recovery path).
+
+### `soniox-toggle`
+Toggle Soniox live dictation via the app's command socket (`~/.config/hypr/vox/daemon.sock`).
 
 ### `status`
 Display the current status of the daemon (PID, uptime, state, statistics).
@@ -57,9 +62,7 @@ Display the current status of the daemon (PID, uptime, state, statistics).
   - `--help`: Display help for the status command.
 
 ### `install`
-Install `hyprvox` as a systemd user service for the current user.
-
-Recommended after `config init`, `list-mics`, and `health` have passed. The command writes `~/.config/systemd/user/hyprvox.service`, runs `systemctl --user daemon-reload`, enables the service, and starts it.
+Print instructions for autostarting hyprvox with Hyprland (`exec-once = hyprvox start`) and a suggested toggle binding. No systemd unit is written — the app supervises itself, and a dead app is revived by the next `hyprvox toggle`. Warns if a legacy systemd unit is still present.
 
 - **Options:**
   - `--help`: Display help for the install command.
@@ -67,17 +70,17 @@ Recommended after `config init`, `list-mics`, and `health` have passed. The comm
 ### `setup`
 Interactively set up `hyprvox` and diagnose the host environment.
 
-The setup command detects Linux distro, Wayland/X11/headless session, container state, required commands, config validity, daemon status, and service installation. In interactive mode it can create/update config, select a microphone, recommend Wayland compositor binding behavior, and install the service.
+The setup command detects Linux distro, Wayland/X11/headless session, container state, required commands, config validity, daemon status, and service installation. In interactive mode it can create/update config, select a microphone, recommend Wayland compositor binding behavior, and show autostart instructions.
 
 - **Options:**
   - `--check`: Run setup checks without changing anything.
   - `--json`: Print setup check output as JSON. Implies check mode.
   - `--dry-run`: Show what setup would change without writing.
-  - `--skip-service`: Do not install or start the systemd user service.
+  - `--skip-service`: Do not show autostart (exec-once) instructions.
   - `--help`: Display help for the setup command.
 
 ### `uninstall`
-Remove the `hyprvox` systemd user service.
+Remove the legacy `hyprvox` systemd user service (from installs that predate the single-app topology).
 - **Options:**
   - `--help`: Display help for the uninstall command.
 

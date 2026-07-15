@@ -31,6 +31,7 @@
         "@types/pino": "^7.0.5",
         "@types/react": "^19.2.0",
         "@vitest/coverage-v8": "^4.0.17",
+        "esbuild": "^0.27.3",
         "vitest": "^4.0.17",
       },
       "peerDependencies": {

@@ -1,43 +1,10 @@
 {
 	"name": "hyprvox-overlay",
 	"version": "0.1.0",
-	"description": "Waveform overlay for hyprvox",
+	"description": "Renderer and preload assets for the hyprvox overlay window (hosted by the single hyprvox Electron app)",
 	"packageManager": "npm@10.9.4",
-	"main": "dist/main.js",
 	"scripts": {
-		"build": "tsc && vite build",
-		"start": "electron .",
-		"dev": "npm run build && electron .",
-		"pack": "electron-builder --dir",
-		"dist": "electron-builder"
-	},
-	"build": {
-		"appId": "com.hyprvox.overlay",
-		"productName": "Hyprvox Overlay",
-		"directories": {
-			"output": "release"
-		},
-		"files": [
-			"dist/**/*",
-			"package.json"
-		],
-		"linux": {
-			"target": [
-				{
-					"target": "AppImage",
-					"arch": [
-						"x64"
-					]
-				},
-				{
-					"target": "tar.gz",
-					"arch": [
-						"x64"
-					]
-				}
-			],
-			"category": "Utility"
-		}
+		"build": "tsc && vite build"
 	},
 	"devDependencies": {
 		"@types/node": "^22.0.0",
@@ -45,7 +12,6 @@
 		"@types/react-dom": "^19.2.3",
 		"@vitejs/plugin-react": "^5.1.4",
 		"electron": "^34.0.0",
-		"electron-builder": "^25.1.8",
 		"typescript": "^5.7.0",
 		"vite": "^7.3.1"
 	},

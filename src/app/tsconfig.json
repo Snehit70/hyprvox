@@ -1,0 +1,16 @@
+{
+	// The app entry runs under Electron (Node), not Bun, and the root
+	// tsconfig excludes src/app. Electron's types live only in the overlay
+	// package's node_modules, hence the paths mapping.
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"paths": {
+			"electron": ["../../overlay/node_modules/electron"]
+		}
+	},
+	// Ambient module declarations live outside src/app and must be included
+	// explicitly, since this config's include starts at src/app.
+	"include": ["./**/*.ts", "../types/**/*.d.ts"],
+	// Root config excludes src/app; neutralize the inherited exclude.
+	"exclude": ["../../overlay/node_modules"]
+}

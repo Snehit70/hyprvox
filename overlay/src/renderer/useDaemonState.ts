@@ -4,7 +4,7 @@ import type {
 	ConnectionStatus,
 	DaemonState,
 	DaemonStatus,
-} from "../ipc-client";
+} from "../shared/ipc-types";
 
 export type OverlayState =
 	| "hidden"
