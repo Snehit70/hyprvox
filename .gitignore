@@ -36,14 +36,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Test audio files
 test-audio.*
 
-# Benchmarks
-benchmark-*.ts
-benchmark-results-*.json
-compare-quality.ts
+
 
 # local planning scratchpad
 plan.md
-
-# generated model-eval artifacts (keep curated manual summary)
-docs/MODEL-EVAL-*.md
-!docs/MODEL-EVAL-MANUAL-2026-05-15-to-2026-05-19.md
