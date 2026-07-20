@@ -91,6 +91,7 @@ export class DeepgramStreamingTranscriber
 				model: "nova-3",
 				interim_results: true,
 				endpointing: DeepgramStreamingTranscriber.ENDPOINTING_MS,
+				utterance_end_ms: 1000,
 				vad_events: true,
 				smart_format: true,
 				encoding: "linear16",
@@ -148,6 +149,14 @@ export class DeepgramStreamingTranscriber
 						this.emit("transcript", transcript.trim(), event);
 					}
 				}
+			});
+
+			this.connection.on(LiveTranscriptionEvents.UtteranceEnd, (data) => {
+				logger.debug(
+					{ utteranceEnd: data },
+					"Deepgram utterance end detected",
+				);
+				this.emit("utterance_end", data);
 			});
 
 			this.connection.on(LiveTranscriptionEvents.Error, (error) => {
@@ -338,6 +347,7 @@ export class DeepgramStreamingTranscriber
 				logger.debug("Sent finalize signal to Deepgram");
 
 				// Wait for final transcript after finalize
+				// Also listen for utterance_end as fallback (Deepgram endpointing can fail)
 				const finalizeStart = Date.now();
 				stopReason = await new Promise<StreamingStopReason>((resolve) => {
 					let settled = false;
@@ -353,7 +363,14 @@ export class DeepgramStreamingTranscriber
 						clearTimeout(timeout);
 						resolve("finalize_transcript");
 					};
+					const utteranceEndHandler = () => {
+						if (settled) return;
+						settled = true;
+						clearTimeout(timeout);
+						resolve("finalize_transcript");
+					};
 					this.once("transcript", finalizeHandler);
+					this.once("utterance_end", utteranceEndHandler);
 				});
 				finalizeWaitMs = Date.now() - finalizeStart;
 
@@ -383,6 +400,7 @@ export class DeepgramStreamingTranscriber
 					stopReason = `${stopReason}+close_timeout` as StreamingStopReason;
 				}
 				this.off("transcript", transcriptMetricsHandler);
+				this.removeAllListeners("utterance_end");
 				this.stopWindowReceivedFinalChunk = receivedFinalChunk;
 				this.stopWindowHadSpeechFinal = hadSpeechFinal;
 			} catch (error) {
